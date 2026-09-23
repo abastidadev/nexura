@@ -1,4 +1,4 @@
-import type { RunStatus, StepStatus } from "@nexura/shared";
+import type { RunStatus, StepRun, StepStatus } from "@nexura/shared";
 
 export type Tone = "ok" | "err" | "warn" | "info" | "accent" | "muted";
 
@@ -19,6 +19,22 @@ export const STEP_STATUS: Record<StepStatus, { label: string; tone: Tone; icon: 
   failed: { label: "Falló", tone: "err", icon: "✕" },
   skipped: { label: "Saltado", tone: "muted", icon: "⤼" },
 };
+
+const CHANGES_REQUESTED = { label: "Pide cambios", tone: "warn" as Tone, icon: "↺" };
+
+/**
+ * Status to show for a step: a QA run with failing checks or a review asking for changes
+ * finished fine as a process, but its verdict sends the work back, so it is not "OK".
+ */
+export function stepDisplayStatus(step: StepRun): { label: string; tone: Tone; icon: string } {
+  if (step.status === "succeeded") {
+    const output = step.structuredOutput as { passed?: boolean; verdict?: string } | undefined;
+    if ((step.step === "qaCode" && output?.passed === false) || (step.step === "codeReview" && output?.verdict === "changes")) {
+      return CHANGES_REQUESTED;
+    }
+  }
+  return STEP_STATUS[step.status];
+}
 
 export const STEP_LABELS: Record<string, string> = {
   classify: "Clasificar",

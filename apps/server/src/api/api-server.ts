@@ -21,6 +21,9 @@ import {
   type StepDefinitionUpdate,
 } from "../config/config-loader.ts";
 import { NEXURA_HOME } from "../config/paths.ts";
+import { AzureError } from "../azure/azure-client.ts";
+import { azureRepoOf } from "../azure/repo-remote.ts";
+import { getTicket, ticketToText } from "../azure/work-items.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
@@ -155,6 +158,34 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   route("PUT", "/api/repos", (_params, body) => {
     saveRepos((body as { repos: RepoConfig[] }).repos ?? []);
     orchestrator.setConfig(loadConfig());
+  });
+
+  /** Loads a work item (zero tokens). The organisation comes from the chosen repo's origin remote. */
+  route("GET", "/api/azure/work-items/:id", async ([id], _body, url) => {
+    const repos = loadConfig().repos;
+    const wanted = url.searchParams.get("repo");
+    const candidates = wanted ? repos.filter((repo) => repo.name === wanted) : repos;
+    let organization: string | undefined;
+    for (const repo of candidates) {
+      organization = (await azureRepoOf(repo.path))?.organization;
+      if (organization) {
+        break;
+      }
+    }
+    organization ??= process.env.NEXURA_AZURE_ORG;
+    if (!organization) {
+      throw new HttpError(400, "Ningún repo seleccionado tiene un remote origin de Azure DevOps (o define NEXURA_AZURE_ORG)");
+    }
+    const workItemId = Number(id);
+    if (!Number.isInteger(workItemId) || workItemId <= 0) {
+      throw new HttpError(400, `ID de work item no válido: ${id}`);
+    }
+    try {
+      const ticket = await getTicket(organization, workItemId);
+      return { ticket, text: ticketToText(ticket) };
+    } catch (error) {
+      throw new HttpError(error instanceof AzureError && error.status === 404 ? 404 : 502, String((error as Error).message));
+    }
   });
 
   route("GET", "/api/quota", () => orchestrator.getQuota() ?? null);

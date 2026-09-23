@@ -2,8 +2,18 @@ import { execFileSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import type { Run, RunRequest } from "@nexura/shared";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import type { PrDraft, Run, RunRequest, Worktree } from "@nexura/shared";
+
+// Never push or call Azure DevOps from tests: record what would have been created.
+const createdPrs: PrDraft[] = [];
+vi.mock("../azure/pull-requests.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../azure/pull-requests.ts")>()),
+  pushAndCreatePr: async (worktree: Worktree, draft: PrDraft) => {
+    createdPrs.push(draft);
+    return { repo: worktree.repo, id: 42, url: "https://dev.azure.com/org/p/_git/r/pullrequest/42", title: draft.title };
+  },
+}));
 
 // Env must be set before the modules read their paths.
 const root = mkdtempSync(join(tmpdir(), "nexura-test-"));
@@ -185,6 +195,52 @@ describe("Orchestrator (fake claude)", () => {
 
     expect(run.status).toBe("done");
     expect(run.steps[0]!.prompt).toContain("EDITADO");
+    await orchestrator.cleanup(run.id, true);
+  });
+});
+
+describe("Release to Azure DevOps (push and PR mocked)", () => {
+  function onPause(orchestrator: InstanceType<typeof Orchestrator>, runId: string, act: (run: Run) => void): void {
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === runId && message.run.status === "paused" && message.run.pendingStep?.prDrafts) {
+        const run = message.run;
+        setImmediate(() => act(run));
+      }
+    });
+  }
+
+  it("pauses with a PR draft and creates it with the approved edits, linking the work item", async () => {
+    createdPrs.length = 0;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketId: "59128", ticketText: "Ticket con PR", release: "pr" }));
+    let seenDraft: PrDraft | undefined;
+    onPause(orchestrator, started.id, (run) => {
+      seenDraft = run.pendingStep!.prDrafts![0];
+      orchestrator.continue(started.id, { prDrafts: [{ ...seenDraft!, title: "feat(fake): título editado", branch: "hack/other" }] });
+    });
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.status).toBe("done");
+    expect(seenDraft).toMatchObject({ repo: "sandbox", target: "main", workItemId: 59128, title: "feat(fake): implement 1" });
+    expect(seenDraft!.description).not.toContain("59128");
+    // Title is editable; the branch is not.
+    expect(createdPrs).toEqual([expect.objectContaining({ title: "feat(fake): título editado", branch: seenDraft!.branch })]);
+    expect(run.pullRequests).toEqual([expect.objectContaining({ id: 42 })]);
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("skipping at the approval keeps the branch local and finishes the run", async () => {
+    createdPrs.length = 0;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Ticket sin PR", release: "pr" }));
+    onPause(orchestrator, started.id, () => orchestrator.continue(started.id, { skip: true }));
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.status).toBe("done");
+    expect(createdPrs).toHaveLength(0);
+    expect(run.pullRequests).toBeUndefined();
     await orchestrator.cleanup(run.id, true);
   });
 });

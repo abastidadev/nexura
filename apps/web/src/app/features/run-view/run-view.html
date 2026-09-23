@@ -66,7 +66,9 @@
     </div>
   }
 
-  @if (run.status === "paused" && run.pendingStep; as pending) {
+  @if (run.status === "paused" && run.pendingStep?.prDrafts; as drafts) {
+    <nx-pr-approval [drafts]="drafts" [busy]="busy()" (approve)="approvePrs($event)" (keepLocal)="keepLocal()" />
+  } @else if (run.status === "paused" && run.pendingStep; as pending) {
     <section class="border-b border-warn bg-warn-soft px-4 py-3" aria-labelledby="pause-title">
       <div class="flex items-center gap-3">
         <h2 id="pause-title" class="font-semibold text-warn">⏸ Pausado antes de {{ stepLabels[pending.step] ?? pending.step }}</h2>
@@ -150,6 +152,18 @@
           }
         </ul>
       </section>
+
+      @if (run.pullRequests?.length) {
+        <section aria-labelledby="prs-heading">
+          <h2 id="prs-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Pull requests</h2>
+          @for (pr of run.pullRequests; track pr.url) {
+            <a class="mb-1 block rounded-md bg-ok-soft p-2 hover:underline" target="_blank" rel="noopener" [href]="pr.url">
+              <span class="font-mono text-ok">PR #{{ pr.id }}</span> · {{ pr.repo }} ↗
+              <span class="block truncate text-[12px] text-fg-soft">{{ pr.title }}</span>
+            </a>
+          }
+        </section>
+      }
 
       <section aria-labelledby="repos-heading">
         <h2 id="repos-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Repos y ramas</h2>

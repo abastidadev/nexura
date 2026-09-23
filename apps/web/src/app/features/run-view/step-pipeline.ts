@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from "@angular/core";
 import type { StepName, StepRun } from "@nexura/shared";
-import { elapsedMs, formatCost, formatDuration, STEP_LABELS, STEP_STATUS, TONE_CLASSES } from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, STEP_LABELS, stepDisplayStatus, TONE_CLASSES } from "../../core/format";
 
 type PipelineItem =
   | {
@@ -9,7 +9,7 @@ type PipelineItem =
       label: string;
       attempt: number;
       loop: boolean;
-      status: (typeof STEP_STATUS)[keyof typeof STEP_STATUS];
+      status: ReturnType<typeof stepDisplayStatus>;
       tone: (typeof TONE_CLASSES)[keyof typeof TONE_CLASSES];
       detail: string;
       cost: string;
@@ -89,7 +89,7 @@ export class StepPipeline {
       const loop = step.step === "implement" || step.step === "codeReview" || step.step === "qaCode";
       const priorSucceeded = seen.has(step.step);
       seen.add(step.step);
-      const status = STEP_STATUS[step.status];
+      const status = stepDisplayStatus(step);
       return {
         type: "run",
         id: step.id,

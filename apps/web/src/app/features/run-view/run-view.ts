@@ -1,19 +1,20 @@
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import { STEP_NAMES, type StepName } from "@nexura/shared";
+import { STEP_NAMES, type PrDraft, type StepName } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, STEP_LABELS } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 import { StepInspector } from "./step-inspector";
 import { StepPipeline } from "./step-pipeline";
+import { PrApproval } from "./pr-approval";
 import { TerminalPanel, type TerminalRequest } from "./terminal-panel";
 
 const CLASSIFY_DETAIL = "haiku/low";
 
 @Component({
   selector: "nx-run-view",
-  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel],
+  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval],
   templateUrl: "./run-view.html",
   host: { class: "flex h-full flex-col" },
 })
@@ -131,6 +132,14 @@ export class RunView {
     const edited = this.pendingPrompt();
     const changed = run.pendingStep?.prompt !== undefined && edited !== run.pendingStep.prompt;
     return this.act(() => this.api.continue(run.id, skip ? { skip: true } : changed ? { prompt: edited } : undefined));
+  }
+
+  protected approvePrs(prDrafts: PrDraft[]): Promise<void> {
+    return this.act(() => this.api.continue(this.id(), { prDrafts }));
+  }
+
+  protected keepLocal(): Promise<void> {
+    return this.act(() => this.api.continue(this.id(), { skip: true }));
   }
 
   protected cancel(): Promise<void> {

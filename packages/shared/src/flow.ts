@@ -88,7 +88,37 @@ export type RunRequest = {
   /** Profile name, or "auto" to let the classify step decide. */
   profile: string;
   stepByStep: boolean;
+  /** `pr`: after release, pause for approval, then push and open the PR in Azure DevOps. */
+  release?: "local" | "pr";
 };
+
+/** Work item as loaded from Azure DevOps (HTML fields already converted to text). */
+export type TicketDetails = {
+  id: number;
+  type: string;
+  title: string;
+  state: string;
+  project: string;
+  url: string;
+  description: string;
+  acceptanceCriteria: string;
+  reproSteps: string;
+  comments: { author: string; date: string; text: string }[];
+  children: { id: number; title: string; state: string; type: string; done: boolean }[];
+};
+
+/** A pull request waiting for approval (editable) before push + create. */
+export type PrDraft = {
+  repo: string;
+  branch: string;
+  target: string;
+  title: string;
+  description: string;
+  workItemId?: number;
+  isDraft: boolean;
+};
+
+export type CreatedPr = { repo: string; id: number; url: string; title: string };
 
 export type StepRun = {
   id: string;
@@ -124,8 +154,12 @@ export type Run = {
   worktrees: Worktree[];
   totalCostUsd: number;
   error?: string;
-  /** Set while paused on a breakpoint: the step about to run and its rendered prompt (editable). */
-  pendingStep?: { step: StepName; prompt?: string };
+  /**
+   * Set while paused: the step about to run and its rendered prompt (editable), or the PR
+   * drafts waiting for the go-ahead before push + create.
+   */
+  pendingStep?: { step: StepName; prompt?: string; prDrafts?: PrDraft[] };
+  pullRequests?: CreatedPr[];
   /** Epoch seconds when a rate-limited run will resume. */
   resumesAt?: number;
 };
@@ -148,6 +182,8 @@ export type RetryOptions = {
   instruction?: string;
   /** Mark the failed step as skipped and go on with the next one. */
   skip?: boolean;
+  /** Approved (possibly edited) PR drafts. `skip` at the approval pause = keep the branch local. */
+  prDrafts?: PrDraft[];
 };
 
 /** Messages pushed to the UI over WebSocket. */

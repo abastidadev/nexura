@@ -9,7 +9,7 @@ import {
   formatTokens,
 
   STEP_LABELS,
-  STEP_STATUS,
+  stepDisplayStatus,
   TONE_CLASSES,
 } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -55,7 +55,7 @@ export class StepInspector {
   protected readonly copied = signal(false);
 
   protected readonly events = computed(() => this.store.events(this.run().id, this.step().id)());
-  protected readonly status = computed(() => STEP_STATUS[this.step().status]);
+  protected readonly status = computed(() => stepDisplayStatus(this.step()));
   protected readonly tone = computed(() => TONE_CLASSES[this.status().tone]);
   protected readonly label = computed(() => STEP_LABELS[this.step().step] ?? this.step().step);
   protected readonly metrics = computed(() => {

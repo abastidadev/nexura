@@ -10,6 +10,7 @@ import type {
   Run,
   RunRequest,
   StepDefinition,
+  TicketDetails,
 } from "@nexura/shared";
 
 export type StoredEvent = { seq: number; ts: string; event: NexuraEvent };
@@ -104,6 +105,13 @@ export class Api {
 
   public saveRepos(repos: RepoConfig[]): Promise<void> {
     return firstValueFrom(this.http.put<void>("/api/repos", { repos }));
+  }
+
+  public loadWorkItem(id: string, repo?: string): Promise<{ ticket: TicketDetails; text: string }> {
+    const params: Record<string, string> = repo ? { repo } : {};
+    return firstValueFrom(
+      this.http.get<{ ticket: TicketDetails; text: string }>(`/api/azure/work-items/${encodeURIComponent(id)}`, { params }),
+    );
   }
 
   public getQuota(): Promise<QuotaInfo | null> {

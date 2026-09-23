@@ -2,8 +2,10 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   STEP_NAMES,
+  type CreatedPr,
   type FlowProfile,
   type NexuraEvent,
+  type PrDraft,
   type QuotaInfo,
   type RetryOptions,
   type Run,
@@ -19,6 +21,7 @@ import { asJsonBlock, renderTemplate } from "../prompt/render.ts";
 import { ClaudeProcess } from "../runner/claude-process.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace/git.ts";
+import { buildPrDraft, pushAndCreatePr } from "../azure/pull-requests.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
 
 /** Deciding the profile must be cheap. */
@@ -507,11 +510,102 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
           "release",
           output.branches.map((b) => `${b.repo}: rama \`${b.branch}\` @ ${b.sha.slice(0, 8)}`).join("\n"),
         );
-        return output;
+        if (run.request.release !== "pr") {
+          return output;
+        }
+        const withCommits = run.worktrees.filter((worktree) =>
+          output.branches.some((branch) => branch.repo === worktree.repo && branch.commits.length > 0),
+        );
+        const pullRequests = await this.releasePullRequests(run, withCommits, stepContext, emit);
+        return { ...output, pushed: pullRequests.length > 0, pullRequests };
       }
       default:
         throw new Error(`El paso ${stepRun.step} no tiene implementación builtin`);
     }
+  }
+
+  // ---------------------------------------------------------------- pull requests
+
+  /**
+   * Builds the PR drafts, pauses for the go-ahead (nothing is pushed before it, as the
+   * create-pr skill requires), then pushes and opens each PR. Returns the created PRs.
+   */
+  private async releasePullRequests(
+    run: Run,
+    worktrees: Run["worktrees"],
+    stepContext: StepContext,
+    emit: (event: NexuraEvent) => void,
+  ): Promise<CreatedPr[]> {
+    const implementOutputs = run.steps
+      .filter((step) => step.step === "implement" && step.status === "succeeded")
+      .map((step) => step.structuredOutput as { summary: string; filesChanged: string[] });
+    const workItemId = Number(run.request.ticketId) || undefined;
+    const drafts = await Promise.all(
+      worktrees.map((worktree) => {
+        const target = this.config.repos.find((repo) => repo.name === worktree.repo)?.baseBranch ?? worktree.baseRef;
+        return buildPrDraft(worktree, target, implementOutputs, workItemId);
+      }),
+    );
+
+    emit({ kind: "text", text: `Esperando tu aprobación para hacer push y abrir ${drafts.length} PR(s).` });
+    const approved = await this.awaitPrApproval(run, drafts);
+    if (!approved) {
+      emit({ kind: "text", text: "PR descartada: las ramas se quedan en local." });
+      stepContext.ledger.append("release", "PR no creada por decisión del usuario; ramas en local.");
+      return [];
+    }
+
+    const created: CreatedPr[] = [];
+    for (const draft of approved) {
+      const worktree = worktrees.find((candidate) => candidate.repo === draft.repo)!;
+      const toolId = `pr-${draft.repo}`;
+      emit({
+        kind: "toolUse",
+        id: toolId,
+        name: "AzureDevOps",
+        input: { push: draft.branch, target: draft.target, title: draft.title, workItem: draft.workItemId },
+        parentToolUseId: null,
+      });
+      const pr = await pushAndCreatePr(worktree, draft);
+      emit({ kind: "toolResult", toolUseId: toolId, content: `PR #${pr.id} creada: ${pr.url}`, isError: false, parentToolUseId: null });
+      created.push(pr);
+      run.pullRequests = [...(run.pullRequests ?? []), pr];
+      this.persist(run);
+    }
+    stepContext.ledger.append("release", created.map((pr) => `${pr.repo}: PR #${pr.id} ${pr.url}`).join("\n"));
+    return created;
+  }
+
+  /** Pauses on the drafts. Only title, description, target and the draft flag can be edited. */
+  private async awaitPrApproval(run: Run, drafts: PrDraft[]): Promise<PrDraft[] | undefined> {
+    const context = this.contexts.get(run.id)!;
+    run.status = "paused";
+    run.pendingStep = { step: "release", prDrafts: drafts };
+    this.persist(run);
+    const options = await new Promise<RetryOptions | undefined>((resolve) => (context.release = resolve));
+    context.release = undefined;
+    if (context.cancelled) {
+      throw new CancelledError();
+    }
+    run.status = "running";
+    run.pendingStep = undefined;
+    this.persist(run);
+    if (options?.skip) {
+      return undefined;
+    }
+    return drafts.map((draft) => {
+      const edited = options?.prDrafts?.find((candidate) => candidate.repo === draft.repo);
+      if (!edited) {
+        return draft;
+      }
+      return {
+        ...draft,
+        title: edited.title.trim() || draft.title,
+        description: edited.description,
+        target: edited.target.trim() || draft.target,
+        isDraft: Boolean(edited.isDraft),
+      };
+    });
   }
 
   // ---------------------------------------------------------------- helpers

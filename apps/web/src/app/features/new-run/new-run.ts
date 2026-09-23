@@ -1,7 +1,7 @@
 import { Component, computed, inject, linkedSignal, signal } from "@angular/core";
 import { Router } from "@angular/router";
-import { STEP_NAMES, type FlowProfile, type TaskItem } from "@nexura/shared";
-import { Api } from "../../core/api";
+import { STEP_NAMES, type FlowProfile, type TaskItem, type TicketDetails } from "@nexura/shared";
+import { Api, apiError } from "../../core/api";
 import { STEP_LABELS } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
@@ -33,8 +33,14 @@ export class NewRun {
   protected readonly newTask = signal("");
   protected readonly profile = signal(AUTO_PROFILE);
   protected readonly stepByStep = signal(false);
+  protected readonly createPr = signal(false);
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
+
+  // ---- Azure DevOps work item
+  protected readonly loadedTicket = signal<TicketDetails | null>(null);
+  protected readonly loadingTicket = signal(false);
+  protected readonly ticketError = signal<string | null>(null);
 
   protected readonly repos = computed(() => this.store.config()?.repos ?? []);
   /** Pre-selects the only repo when there is just one. */
@@ -63,6 +69,34 @@ export class NewRun {
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
+  }
+
+  /** Fills the ticket text and the tasks (child work items) from Azure DevOps. No tokens. */
+  protected async loadTicket(): Promise<void> {
+    const id = this.ticketId().trim().replace(/^#/, "");
+    if (!id) {
+      return;
+    }
+    this.loadingTicket.set(true);
+    this.ticketError.set(null);
+    try {
+      const { ticket, text } = await this.api.loadWorkItem(id, this.selectedRepos()[0]);
+      this.loadedTicket.set(ticket);
+      this.ticketText.set(text);
+      this.tasks.set(
+        ticket.children.map((child, index) => ({
+          id: `t${index + 1}`,
+          title: `#${child.id} ${child.title}`,
+          selected: !child.done,
+          done: child.done,
+        })),
+      );
+    } catch (error: unknown) {
+      this.loadedTicket.set(null);
+      this.ticketError.set(apiError(error, "No se pudo cargar el work item"));
+    } finally {
+      this.loadingTicket.set(false);
+    }
   }
 
   protected toggleRepo(name: string): void {
@@ -107,20 +141,20 @@ export class NewRun {
     this.error.set(null);
     try {
       const run = await this.api.startRun({
-        ticketId: this.ticketId().trim() || undefined,
+        ticketId: this.ticketId().trim().replace(/^#/, "") || undefined,
         ticketText: this.ticketText().trim(),
         repos: this.selectedRepos(),
         tasks: this.tasks(),
         prompt: this.prompt().trim(),
         profile: this.profile(),
         stepByStep: this.stepByStep(),
+        release: this.createPr() ? "pr" : "local",
       });
       this.store.upsertRun(run);
       this.store.openTab(run.id);
       await this.router.navigate(["/runs", run.id]);
     } catch (error: unknown) {
-      const message = (error as { error?: { error?: string } }).error?.error;
-      this.error.set(message ?? "No se pudo lanzar el flujo");
+      this.error.set(apiError(error, "No se pudo lanzar el flujo"));
     } finally {
       this.submitting.set(false);
     }
