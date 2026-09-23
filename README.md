@@ -51,7 +51,9 @@ npm run nexura -- runs                   # lista
 npm run nexura -- show <runId>           # detalle, paso fallido y su sesión
 npm run nexura -- retry <runId> [--resume --instruction "..."] [--model opus] [--skip]
 npm run nexura -- cleanup <runId> [--delete-branches]
-npm run build:web && npm run serve       # UI + API en http://localhost:4310
+npm start                                # compila la UI y arranca UI + API en http://localhost:4310
+npm start -- --port 4320 --concurrency 3 # mismas opciones que `serve`
+npm run setup                            # primera vez / tras un pull: npm install + compilar la UI
 npm run dev:web                          # UI en desarrollo en :4300 (proxy a la API de :4310)
 
 npm test          # parser + orquestador con claude falso (no gasta tokens)

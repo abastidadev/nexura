@@ -12,6 +12,8 @@
     "node": ">=24"
   },
   "scripts": {
+    "setup": "npm install && npm run build:web",
+    "start": "npm run build:web && node apps/server/src/cli/cli.ts serve",
     "spike": "node --experimental-strip-types scripts/spike.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
