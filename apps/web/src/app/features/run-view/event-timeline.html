@@ -1,0 +1,111 @@
+<div class="flex items-center gap-3 border-b border-border px-4 py-1.5 text-[11px] text-muted">
+  <span>{{ items().length }} eventos · {{ toolCount() }} herramientas</span>
+  @if (errorCount()) {
+    <span class="text-err">{{ errorCount() }} con error</span>
+  }
+  <label class="ml-auto flex cursor-pointer items-center gap-1.5">
+    <input type="checkbox" class="accent-(--nx-accent)" [checked]="showThinking()" (change)="showThinking.set(!showThinking())" />
+    Razonamiento
+  </label>
+  @if (!follow()) {
+    <button type="button" class="rounded bg-accent-soft px-2 py-0.5 text-accent" (click)="jumpToEnd()">↓ Seguir</button>
+  }
+</div>
+
+<div #scroller class="min-h-0 flex-1 overflow-y-auto px-4 py-3" (scroll)="onScroll()" aria-live="polite" aria-relevant="additions">
+  @if (items().length === 0) {
+    <p class="py-10 text-center text-muted">{{ live() ? "Esperando eventos…" : "Este paso no tiene eventos." }}</p>
+  }
+  <ol class="flex flex-col gap-2">
+    @for (item of items(); track item.key) {
+      @switch (item.type) {
+        @case ("init") {
+          <li class="flex items-center gap-2 text-[11px] text-muted">
+            <span class="font-mono">{{ timeOfDay(item.ts) }}</span>
+            <span>Sesión iniciada · <span class="text-fg-soft">{{ item.model }}</span></span>
+            <span class="truncate" [attr.title]="item.tools.join(', ')">· tools: {{ item.tools.join(", ") || "ninguna" }}</span>
+          </li>
+        }
+        @case ("hook") {
+          <li class="text-[11px] text-muted">
+            <span class="font-mono">{{ timeOfDay(item.ts) }}</span> hook {{ item.name }} · {{ item.outcome }}
+          </li>
+        }
+        @case ("thinking") {
+          @if (showThinking()) {
+            <li class="rounded-md border-l-2 border-border-strong py-1 pl-3 text-[12px] whitespace-pre-wrap text-muted italic">{{ item.text }}</li>
+          }
+        }
+        @case ("text") {
+          <li class="rounded-md bg-surface-2 px-3 py-2">
+            <div class="mb-1 flex items-center gap-2 text-[11px] text-muted">
+              <span class="font-medium text-accent">Claude</span>
+              <span class="font-mono">{{ timeOfDay(item.ts) }}</span>
+            </div>
+            <div class="leading-relaxed whitespace-pre-wrap">{{ item.text }}</div>
+          </li>
+        }
+        @case ("note") {
+          <li class="text-[12px] text-muted italic">↳ {{ item.text }}</li>
+        }
+        @case ("tool") {
+          <li>
+            <details
+              class="group rounded-md border bg-surface"
+              [class]="item.result?.isError ? 'border-err' : 'border-border'"
+            >
+              <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5">
+                <span class="text-muted transition-transform group-open:rotate-90" aria-hidden="true">›</span>
+                <span class="font-mono text-[12px] font-semibold" [class]="item.result?.isError ? 'text-err' : 'text-info'">{{ item.use.name }}</span>
+                <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-soft">{{ item.summary }}</span>
+                @if (!item.result) {
+                  <span class="size-2 rounded-full bg-info nx-pulse" aria-label="En curso"></span>
+                } @else if (item.result.isError) {
+                  <span class="text-[11px] text-err">error</span>
+                }
+                <span class="font-mono text-[11px] text-muted">{{ timeOfDay(item.ts) }}</span>
+              </summary>
+              <div class="grid gap-2 border-t border-border px-3 py-2">
+                <div>
+                  <div class="mb-1 text-[10px] font-semibold text-muted uppercase">Entrada</div>
+                  <pre class="max-h-64 overflow-auto rounded bg-surface-2 p-2 font-mono text-[11px]">{{ json(item.use.input) }}</pre>
+                </div>
+                @if (item.result) {
+                  <div>
+                    <div class="mb-1 text-[10px] font-semibold uppercase" [class]="item.result.isError ? 'text-err' : 'text-muted'">Resultado</div>
+                    <pre class="max-h-80 overflow-auto rounded bg-surface-2 p-2 font-mono text-[11px] whitespace-pre-wrap">{{ item.result.content }}</pre>
+                  </div>
+                }
+              </div>
+            </details>
+          </li>
+        }
+        @case ("rate") {
+          <li class="rounded-md bg-warn-soft px-3 py-1.5 text-warn">Límite de uso: {{ item.status }} ({{ item.window }})</li>
+        }
+        @case ("result") {
+          <li
+            class="mt-1 rounded-md border px-3 py-2"
+            [class]="item.result.success ? 'border-ok bg-ok-soft' : 'border-err bg-err-soft'"
+          >
+            <div class="flex flex-wrap items-center gap-x-4 gap-y-1">
+              <span class="font-semibold" [class]="item.result.success ? 'text-ok' : 'text-err'">
+                {{ item.result.success ? "✓ Paso completado" : "✕ " + item.result.subtype }}
+              </span>
+              <span class="font-mono text-[12px]">{{ formatCost(item.result.costUsd) }}</span>
+              <span class="text-[12px] text-fg-soft">{{ item.result.numTurns }} turnos</span>
+              <span class="text-[12px] text-fg-soft">{{ formatDuration(item.result.durationMs) }}</span>
+              <span class="text-[12px] text-muted">
+                in {{ formatTokens(item.result.usage.inputTokens) }} · out {{ formatTokens(item.result.usage.outputTokens) }} · cache
+                {{ formatTokens(item.result.usage.cacheReadTokens + item.result.usage.cacheCreationTokens) }}
+              </span>
+            </div>
+            @if (!item.result.success && item.result.text) {
+              <pre class="mt-2 font-mono text-[11px] whitespace-pre-wrap text-err">{{ item.result.text }}</pre>
+            }
+          </li>
+        }
+      }
+    }
+  </ol>
+</div>

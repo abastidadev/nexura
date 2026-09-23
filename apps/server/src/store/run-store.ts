@@ -26,6 +26,10 @@ const SCHEMA = `
     data TEXT NOT NULL
   );
   CREATE INDEX IF NOT EXISTS step_runs_run ON step_runs(run_id, seq);
+  CREATE TABLE IF NOT EXISTS settings (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+  );
   CREATE TABLE IF NOT EXISTS events (
     step_run_id TEXT NOT NULL REFERENCES step_runs(id) ON DELETE CASCADE,
     seq INTEGER NOT NULL,
@@ -90,19 +94,20 @@ export class RunStore {
       );
   }
 
-  public addEvent(runId: string, stepRun: StepRun, seq: number, event: NexuraEvent, rawLine?: string): void {
+  public addEvent(runId: string, stepRun: StepRun, seq: number, event: NexuraEvent, ts = new Date().toISOString()): void {
     this.db
       .prepare("INSERT INTO events (step_run_id, seq, ts, kind, data) VALUES (?, ?, ?, ?, ?)")
-      .run(stepRun.id, seq, new Date().toISOString(), event.kind, JSON.stringify(event));
-    if (rawLine !== undefined) {
-      this.appendRaw(runId, stepRun, rawLine);
-    }
+      .run(stepRun.id, seq, ts, event.kind, JSON.stringify(event));
+  }
+
+  public rawLogFile(runId: string, stepRun: Pick<StepRun, "seq" | "step">): string {
+    return join(this.runsDir, runId, "steps", `${String(stepRun.seq).padStart(2, "0")}-${stepRun.step}.jsonl`);
   }
 
   public appendRaw(runId: string, stepRun: StepRun, rawLine: string): void {
-    const dir = join(this.runsDir, runId, "steps");
-    mkdirSync(dir, { recursive: true });
-    appendFileSync(join(dir, `${String(stepRun.seq).padStart(2, "0")}-${stepRun.step}.jsonl`), rawLine + "\n");
+    const file = this.rawLogFile(runId, stepRun);
+    mkdirSync(dirname(file), { recursive: true });
+    appendFileSync(file, rawLine + "\n");
   }
 
   public getRun(id: string): Run | undefined {
@@ -149,6 +154,17 @@ export class RunStore {
         this.saveRun({ ...run, status: "failed", error: "Servidor reiniciado durante la ejecución" });
       }
     }
+  }
+
+  public getSetting<T>(key: string): T | undefined {
+    const row = this.db.prepare("SELECT value FROM settings WHERE key = ?").get(key) as { value: string } | undefined;
+    return row ? (JSON.parse(row.value) as T) : undefined;
+  }
+
+  public setSetting(key: string, value: unknown): void {
+    this.db
+      .prepare("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value")
+      .run(key, JSON.stringify(value));
   }
 
   public close(): void {

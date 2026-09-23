@@ -1,0 +1,119 @@
+@import "tailwindcss";
+
+/* Semantic tokens. Dark is the default (IDE); `.light` on <html> switches the palette. */
+:root {
+  color-scheme: dark;
+  --nx-bg: #0b0e14;
+  --nx-surface: #11151d;
+  --nx-surface-2: #171c26;
+  --nx-surface-3: #1f2632;
+  --nx-border: #262e3b;
+  --nx-border-strong: #364152;
+  --nx-fg: #e4e8ef;
+  --nx-fg-soft: #b7c0cd;
+  --nx-muted: #8a95a6;
+  --nx-accent: #8b7bff;
+  --nx-accent-soft: rgb(139 123 255 / 0.14);
+  --nx-accent-strong: #6552e8;
+  --nx-ok: #3fcf8e;
+  --nx-ok-soft: rgb(63 207 142 / 0.13);
+  --nx-warn: #f2b84b;
+  --nx-warn-soft: rgb(242 184 75 / 0.13);
+  --nx-err: #ff6b6b;
+  --nx-err-soft: rgb(255 107 107 / 0.13);
+  --nx-info: #5aa9ff;
+  --nx-info-soft: rgb(90 169 255 / 0.13);
+}
+
+:root.light {
+  color-scheme: light;
+  --nx-bg: #f4f5f8;
+  --nx-surface: #ffffff;
+  --nx-surface-2: #f7f8fa;
+  --nx-surface-3: #eceef3;
+  --nx-border: #dfe2e8;
+  --nx-border-strong: #c7ccd6;
+  --nx-fg: #161a21;
+  --nx-fg-soft: #3c4452;
+  --nx-muted: #5c6575;
+  --nx-accent: #5b47e0;
+  --nx-accent-soft: rgb(91 71 224 / 0.1);
+  --nx-accent-strong: #5b47e0;
+  --nx-ok: #13815a;
+  --nx-ok-soft: rgb(19 129 90 / 0.1);
+  --nx-warn: #8f5d00;
+  --nx-warn-soft: rgb(154 100 0 / 0.1);
+  --nx-err: #c62e2e;
+  --nx-err-soft: rgb(198 46 46 / 0.09);
+  --nx-info: #1e6fd0;
+  --nx-info-soft: rgb(30 111 208 / 0.1);
+}
+
+@theme inline {
+  --color-bg: var(--nx-bg);
+  --color-surface: var(--nx-surface);
+  --color-surface-2: var(--nx-surface-2);
+  --color-surface-3: var(--nx-surface-3);
+  --color-border: var(--nx-border);
+  --color-border-strong: var(--nx-border-strong);
+  --color-fg: var(--nx-fg);
+  --color-fg-soft: var(--nx-fg-soft);
+  --color-muted: var(--nx-muted);
+  --color-accent: var(--nx-accent);
+  --color-accent-soft: var(--nx-accent-soft);
+  --color-accent-strong: var(--nx-accent-strong);
+  --color-ok: var(--nx-ok);
+  --color-ok-soft: var(--nx-ok-soft);
+  --color-warn: var(--nx-warn);
+  --color-warn-soft: var(--nx-warn-soft);
+  --color-err: var(--nx-err);
+  --color-err-soft: var(--nx-err-soft);
+  --color-info: var(--nx-info);
+  --color-info-soft: var(--nx-info-soft);
+  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  background: var(--nx-bg);
+  color: var(--nx-fg);
+  font-family: var(--font-sans);
+  font-size: 13px;
+  -webkit-font-smoothing: antialiased;
+}
+
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--nx-border-strong) transparent;
+}
+
+:focus-visible {
+  outline: 2px solid var(--nx-accent);
+  outline-offset: 1px;
+}
+
+@keyframes nx-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
+.nx-pulse {
+  animation: nx-pulse 1.4s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .nx-pulse {
+    animation: none;
+  }
+}

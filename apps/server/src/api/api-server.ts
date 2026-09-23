@@ -1,14 +1,15 @@
-import { createReadStream, existsSync, statSync } from "node:fs";
+import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { FlowProfile, RetryOptions, RunRequest, ServerMessage, StepName } from "@nexura/shared";
 import { loadConfig, saveProfile, saveStepPrompt } from "../config/config-loader.ts";
 import { NEXURA_HOME } from "../config/paths.ts";
+import { Ledger } from "../ledger/ledger.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
 
-const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "browser");
+const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -79,6 +80,15 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   route("GET", "/api/runs/:id/steps/:stepRunId/events", ([, stepRunId], _body, url) =>
     store.getEvents(stepRunId!, Number(url.searchParams.get("after") ?? -1)),
   );
+  route("GET", "/api/runs/:id/ledger", ([id]) => ({ markdown: new Ledger(requireRun(id!).id).read() }));
+  route("GET", "/api/runs/:id/steps/:stepRunId/raw", ([id, stepRunId]) => {
+    const stepRun = requireRun(id!).steps.find((step) => step.id === stepRunId);
+    if (!stepRun) {
+      throw new HttpError(404, "Paso no encontrado");
+    }
+    const file = store.rawLogFile(id!, stepRun);
+    return { jsonl: existsSync(file) ? readFileSync(file, "utf8") : "" };
+  });
   route("POST", "/api/runs", (_params, body) => orchestrator.start(body as RunRequest));
   route("POST", "/api/runs/:id/cancel", ([id]) => orchestrator.cancel(id!));
   route("POST", "/api/runs/:id/continue", ([id], body) => orchestrator.continue(id!, body as RetryOptions));

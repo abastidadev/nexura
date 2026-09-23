@@ -1,0 +1,79 @@
+<header class="flex h-11 shrink-0 items-stretch gap-2 border-b border-border bg-surface pl-3">
+  <a routerLink="/" class="mr-2 flex items-center gap-2 rounded" aria-label="Nexura, inicio">
+    <svg viewBox="0 0 24 24" class="size-5 text-accent" aria-hidden="true">
+      <path fill="currentColor" d="M12 2 21 7v10l-9 5-9-5V7l9-5Zm0 2.3L5 8.2v7.6l7 3.9 7-3.9V8.2l-7-3.9Z" />
+      <path fill="currentColor" d="M8.5 15.5v-7h1.6l3.9 4.6V8.5h1.5v7h-1.6l-3.9-4.6v4.6H8.5Z" />
+    </svg>
+    <span class="text-[14px] font-semibold tracking-tight">Nexura</span>
+    <span class="hidden text-[11px] text-muted sm:inline">by abastidadev</span>
+  </a>
+
+  <nav class="flex min-w-0 flex-1 items-stretch overflow-x-auto" aria-label="Flujos abiertos">
+    <a
+      routerLink="/"
+      routerLinkActive="!text-fg border-accent"
+      [routerLinkActiveOptions]="{ exact: true }"
+      class="flex items-center gap-1.5 border-b-2 border-transparent px-3 text-muted hover:text-fg"
+    >
+      Flujos
+      @if (store.activeCount()) {
+        <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info">{{ store.activeCount() }}</span>
+      }
+    </a>
+    @for (tab of tabs(); track tab.id) {
+      <a
+        [routerLink]="['/runs', tab.id]"
+        routerLinkActive="!text-fg border-accent bg-surface-2"
+        class="group flex max-w-60 items-center gap-2 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
+        [attr.title]="tab.status.label"
+      >
+        <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.status.live" aria-hidden="true"></span>
+        <span class="truncate">{{ tab.label }}</span>
+        <span class="font-mono text-[10px] text-muted">{{ formatCost(tab.cost) }}</span>
+        <button
+          type="button"
+          class="-mr-1 rounded px-1 text-muted opacity-60 hover:bg-surface-3 hover:text-fg group-hover:opacity-100"
+          [attr.aria-label]="'Cerrar pestaña ' + tab.label"
+          (click)="closeTab($event, tab.id)"
+        >
+          ×
+        </button>
+      </a>
+    }
+    <a
+      routerLink="/new"
+      routerLinkActive="!text-fg border-accent"
+      class="flex items-center gap-1 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
+    >
+      <span class="text-[15px] leading-none" aria-hidden="true">+</span> Nuevo flujo
+    </a>
+  </nav>
+
+  <div class="flex shrink-0 items-center gap-4 pr-3">
+    <nx-quota-meter />
+    <span
+      class="flex items-center gap-1.5 text-[11px]"
+      [class]="store.connected() ? 'text-muted' : 'text-err'"
+      role="status"
+    >
+      <span class="size-2 rounded-full" [class]="store.connected() ? 'bg-ok' : 'bg-err nx-pulse'" aria-hidden="true"></span>
+      {{ store.connected() ? "Conectado" : "Sin conexión" }}
+    </span>
+    <button
+      type="button"
+      class="rounded px-1.5 py-1 text-muted hover:bg-surface-3 hover:text-fg"
+      [attr.aria-label]="store.theme() === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'"
+      (click)="store.toggleTheme()"
+    >
+      {{ store.theme() === "dark" ? "☀" : "☾" }}
+    </button>
+  </div>
+</header>
+
+@if (loadError(); as error) {
+  <div class="border-b border-err bg-err-soft px-4 py-2 text-err" role="alert">{{ error }}</div>
+}
+
+<main class="min-h-0 flex-1">
+  <router-outlet />
+</main>

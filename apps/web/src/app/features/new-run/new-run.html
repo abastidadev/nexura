@@ -1,0 +1,187 @@
+<form class="mx-auto grid max-w-6xl gap-6 px-6 py-6 lg:grid-cols-[1fr_380px]" (submit)="$event.preventDefault(); submit()">
+  <div class="flex min-w-0 flex-col gap-5">
+    <div>
+      <h1 class="text-xl font-semibold tracking-tight">Nuevo flujo</h1>
+      <p class="mt-1 text-muted">Cuanto mejor sea la entrada, menos huecos tendrá que rellenar el flujo (y menos gastará).</p>
+    </div>
+
+    <section class="rounded-lg border border-border bg-surface p-4">
+      <div class="mb-3 flex gap-3">
+        <label class="flex w-40 flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">ID del ticket</span>
+          <input
+            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent"
+            placeholder="1234"
+            [value]="ticketId()"
+            (input)="ticketId.set(value($event))"
+          />
+        </label>
+        <p class="self-end pb-1.5 text-[11px] text-muted">La carga desde Azure DevOps llega en la fase 5; de momento pega el contenido.</p>
+      </div>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">Ticket <span class="text-err">*</span></span>
+        <textarea
+          rows="9"
+          class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 leading-relaxed outline-none focus:border-accent"
+          placeholder="Título en la primera línea&#10;&#10;Descripción, criterios de aceptación, contexto…"
+          [value]="ticketText()"
+          (input)="ticketText.set(value($event))"
+        ></textarea>
+      </label>
+    </section>
+
+    <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="tasks-title">
+      <div class="mb-3 flex items-center justify-between">
+        <h2 id="tasks-title" class="font-semibold">
+          Tareas <span class="font-normal text-muted">· {{ selectedTaskCount() }} de {{ tasks().length }} seleccionadas</span>
+        </h2>
+        <button
+          type="button"
+          class="rounded-md border border-border px-2 py-1 text-[12px] text-fg-soft hover:bg-surface-3 disabled:opacity-40"
+          [disabled]="!ticketText()"
+          (click)="extractTasks()"
+        >
+          Extraer de las viñetas del ticket
+        </button>
+      </div>
+      @if (tasks().length) {
+        <ul class="mb-3 flex flex-col divide-y divide-border rounded-md border border-border">
+          @for (task of tasks(); track task.id) {
+            <li class="flex items-center gap-2.5 px-3 py-2">
+              <input
+                type="checkbox"
+                class="size-4 accent-(--nx-accent)"
+                [id]="'task-' + task.id"
+                [checked]="task.selected"
+                (change)="toggleTask(task.id)"
+              />
+              <label class="flex-1 cursor-pointer" [for]="'task-' + task.id" [class.text-muted]="!task.selected">
+                <span class="mr-1.5 font-mono text-[11px] text-muted">{{ task.id }}</span>{{ task.title }}
+              </label>
+              <button
+                type="button"
+                class="rounded px-1.5 text-muted hover:bg-surface-3 hover:text-err"
+                [attr.aria-label]="'Quitar tarea ' + task.title"
+                (click)="removeTask(task.id)"
+              >
+                ×
+              </button>
+            </li>
+          }
+        </ul>
+      }
+      <div class="flex gap-2">
+        <input
+          class="flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          placeholder="Añadir tarea…"
+          aria-label="Nueva tarea"
+          [value]="newTask()"
+          (input)="newTask.set(value($event))"
+          (keydown.enter)="$event.preventDefault(); addTask()"
+        />
+        <button type="button" class="rounded-md border border-border px-3 hover:bg-surface-3" (click)="addTask()">Añadir</button>
+      </div>
+    </section>
+
+    <section class="rounded-lg border border-border bg-surface p-4">
+      <label class="flex flex-col gap-1">
+        <span class="font-semibold">Prompt adicional</span>
+        <span class="text-[12px] text-muted">Se añade a cada paso como “Indicaciones del usuario”.</span>
+        <textarea
+          rows="4"
+          class="mt-1 resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 leading-relaxed outline-none focus:border-accent"
+          placeholder="Ej.: reutiliza el componente ags-badge, no toques los estilos globales…"
+          [value]="prompt()"
+          (input)="prompt.set(value($event))"
+        ></textarea>
+      </label>
+    </section>
+  </div>
+
+  <aside class="flex flex-col gap-5 lg:sticky lg:top-6 lg:self-start">
+    <fieldset class="rounded-lg border border-border bg-surface p-4">
+      <legend class="px-1 font-semibold">Repositorios <span class="text-err">*</span></legend>
+      @if (repos().length === 0) {
+        <p class="text-muted">No hay repos en <code class="font-mono">config/repos.json</code>.</p>
+      }
+      <div class="flex flex-col gap-1">
+        @for (repo of repos(); track repo.name) {
+          <label class="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 hover:bg-surface-2">
+            <input
+              type="checkbox"
+              class="mt-0.5 size-4 accent-(--nx-accent)"
+              [checked]="selectedRepos().includes(repo.name)"
+              (change)="toggleRepo(repo.name)"
+            />
+            <span class="min-w-0">
+              <span class="block font-medium">{{ repo.name }}</span>
+              <span class="block truncate text-[11px] text-muted" [attr.title]="repo.path">
+                {{ repo.baseBranch }} · {{ repo.checks.length }} check(s)
+              </span>
+            </span>
+          </label>
+        }
+      </div>
+    </fieldset>
+
+    <fieldset class="rounded-lg border border-border bg-surface p-4">
+      <legend class="px-1 font-semibold">Perfil del flujo</legend>
+      <div class="flex flex-col gap-2">
+        @for (card of profiles(); track card.name) {
+          <label
+            class="cursor-pointer rounded-md border p-3 transition-colors"
+            [class]="profile() === card.name ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-2'"
+          >
+            <span class="flex items-center gap-2">
+              <input
+                type="radio"
+                name="profile"
+                class="size-4 accent-(--nx-accent)"
+                [value]="card.name"
+                [checked]="profile() === card.name"
+                (change)="profile.set(card.name)"
+              />
+              <span class="font-medium">{{ card.title }}</span>
+              @if (card.maxLoops !== undefined) {
+                <span class="ml-auto text-[11px] text-muted">{{ card.maxLoops }} vuelta(s) máx.</span>
+              }
+            </span>
+            <span class="mt-1 block text-[12px] text-muted">{{ card.description }}</span>
+            <span class="mt-2 flex flex-wrap gap-1">
+              @for (step of card.steps; track step.label) {
+                <span class="rounded bg-surface-3 px-1.5 py-0.5 text-[11px]">
+                  {{ step.label }} <span class="text-muted">{{ step.detail }}</span>
+                </span>
+              }
+            </span>
+          </label>
+        }
+      </div>
+    </fieldset>
+
+    <label class="flex cursor-pointer items-start gap-2.5 rounded-lg border border-border bg-surface p-4">
+      <input
+        type="checkbox"
+        class="mt-0.5 size-4 accent-(--nx-accent)"
+        [checked]="stepByStep()"
+        (change)="stepByStep.set(!stepByStep())"
+      />
+      <span>
+        <span class="block font-medium">Paso a paso</span>
+        <span class="block text-[12px] text-muted">Pausa antes de cada paso para revisar o editar su prompt.</span>
+      </span>
+    </label>
+
+    @if (error(); as message) {
+      <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">{{ message }}</p>
+    }
+
+    <button
+      type="submit"
+      class="rounded-md bg-accent-strong px-4 py-2.5 text-[14px] font-semibold text-white hover:opacity-90 disabled:cursor-not-allowed disabled:opacity-40"
+      [disabled]="!canSubmit()"
+    >
+      {{ submitting() ? "Lanzando…" : "Lanzar flujo" }}
+    </button>
+  </aside>
+</form>

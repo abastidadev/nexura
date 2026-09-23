@@ -12,7 +12,7 @@ IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) qu
 |---|---|
 | 0. Spike del CLI | ✅ hecho |
 | 1. Núcleo backend | ✅ hecho: runner, orquestador, worktrees, SQLite, ledger, API REST/WS, CLI |
-| 2. UI base | ⏳ |
+| 2. UI base | ✅ hecho: tabs, nuevo flujo, pipeline, timeline en vivo, cuota, depuración básica |
 | 3. Depuración | ⏳ |
 | 4. Perfiles y `classify` | ⏳ |
 | 5. Azure DevOps | ⏳ |
@@ -31,7 +31,7 @@ apps/server/src/
   ledger/                   libro de tareas por run (data/runs/<id>/ledger.md)
   api/                      REST + WebSocket (/ws) en :4310
   cli/                      comando nexura
-apps/web/                   UI Angular (fase 2)
+apps/web/                   UI Angular 22 + Tailwind v4 (tabs, nuevo flujo, vista del flujo)
 config/profiles/*.json      minimal / standard / full
 config/steps/<paso>/        step.json (tools, allowlist, timeout) · prompt.md · schema.json
 config/repos.json           tus repos (local, gitignored; ver repos.example.json)
@@ -50,12 +50,21 @@ npm run nexura -- runs                   # lista
 npm run nexura -- show <runId>           # detalle, paso fallido y su sesión
 npm run nexura -- retry <runId> [--resume --instruction "..."] [--model opus] [--skip]
 npm run nexura -- cleanup <runId> [--delete-branches]
-npm run serve                            # API en http://localhost:4310
+npm run build:web && npm run serve       # UI + API en http://localhost:4310
+npm run dev:web                          # UI en desarrollo en :4300 (proxy a la API de :4310)
 
 npm test          # parser + orquestador con claude falso (no gasta tokens)
 npm run typecheck
 npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 ```
+
+## La UI
+
+- **Pestañas**: cada flujo abierto es una pestaña con su estado y coste; puedes tener varios corriendo a la vez.
+- **Nuevo flujo**: ticket, tareas con checkbox (se extraen de las viñetas del ticket), repos con checkbox, prompt adicional, perfil (automático o uno concreto) y modo *paso a paso*.
+- **Vista del flujo**: pipeline de pasos (con reintentos y vueltas), timeline en vivo de cada paso (texto, herramientas con entrada/resultado, errores en rojo, resultado con coste/tokens/turnos), prompt renderizado, salida JSON, log crudo y el comando exacto. A la derecha: tareas que se van marcando, ramas/worktrees y el libro de tareas.
+- **Depuración**: en el paso que falló, reintentar (editando prompt, modelo o esfuerzo), continuar su sesión de Claude con una instrucción, o saltarlo. En modo paso a paso, se para antes de cada paso para revisar o editar el prompt.
+- **Cuota**: medidor en vivo de las ventanas de 5 h y 7 días del plan.
 
 ## Cómo funciona cada paso
 

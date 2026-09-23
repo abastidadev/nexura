@@ -1,0 +1,163 @@
+<div class="border-b border-border px-4 pt-3">
+  <div class="flex flex-wrap items-center gap-x-3 gap-y-1">
+    <h2 class="text-[15px] font-semibold">{{ label() }}</h2>
+    <span class="rounded bg-surface-3 px-1.5 text-[11px] text-muted">intento {{ step().attempt }}</span>
+    <span class="rounded-full px-2 py-0.5 text-[11px] font-medium" [class]="tone().bg + ' ' + tone().text">{{ status().label }}</span>
+    <span class="text-[12px] text-fg-soft">{{ isClaude() ? step().model + " / " + step().effort : "builtin · sin LLM" }}</span>
+    <span class="ml-auto flex items-center gap-4 text-[12px]">
+      <span class="flex gap-1"><span class="text-muted">Coste</span><span class="font-mono">{{ metrics().cost }}</span></span>
+      <span class="flex gap-1"><span class="text-muted">Turnos</span><span class="font-mono">{{ step().numTurns }}</span></span>
+      <span class="flex gap-1"><span class="text-muted">Tiempo</span><span class="font-mono">{{ metrics().duration }}</span></span>
+    </span>
+  </div>
+  <div class="mt-1 flex flex-wrap items-center gap-x-4 text-[11px] text-muted">
+    <span>Tokens: {{ metrics().tokens }}</span>
+    @if (step().sessionId; as sessionId) {
+      <button type="button" class="font-mono hover:text-fg" title="Copiar comando para reanudar en tu terminal" (click)="copySession()">
+        sesión {{ sessionId.slice(0, 8) }} {{ copied() ? "✓ copiado" : "⧉" }}
+      </button>
+    }
+  </div>
+
+  @if (step().error) {
+    <div class="mt-2 rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">
+      <span class="font-semibold">Error:</span>
+      <span class="whitespace-pre-wrap">{{ step().error }}</span>
+    </div>
+  }
+
+  <div class="mt-2 flex gap-1" role="tablist" aria-label="Detalle del paso">
+    @for (item of tabs; track item.id) {
+      <button
+        type="button"
+        role="tab"
+        class="border-b-2 px-3 py-1.5"
+        [class]="tab() === item.id ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'"
+        [attr.aria-selected]="tab() === item.id"
+        (click)="tab.set(item.id)"
+      >
+        {{ item.label }}
+      </button>
+    }
+  </div>
+</div>
+
+@if (canDebug()) {
+  <section class="border-b border-border bg-surface-2 px-4 py-3" aria-labelledby="debug-title">
+    <div class="flex flex-wrap items-center gap-3">
+      <h3 id="debug-title" class="font-semibold">Depurar este paso</h3>
+      <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Modo">
+        @for (option of debugModes; track option.id) {
+          <button
+            type="button"
+            role="radio"
+            class="px-2.5 py-1 text-[12px]"
+            [class]="mode() === option.id ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+            [attr.aria-checked]="mode() === option.id"
+            [disabled]="option.id === 'resume' && !step().sessionId"
+            (click)="mode.set(option.id)"
+          >
+            {{ option.label }}
+          </button>
+        }
+      </div>
+      @if (mode() !== "skip" && isClaude()) {
+        <label class="flex items-center gap-1.5 text-[12px]">
+          Modelo
+          <select class="rounded border border-border bg-surface px-1.5 py-0.5" [value]="model()" (change)="model.set($any(value($event)))">
+            @for (option of models; track option) {
+              <option [value]="option">{{ option }}</option>
+            }
+          </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-[12px]">
+          Esfuerzo
+          <select class="rounded border border-border bg-surface px-1.5 py-0.5" [value]="effort()" (change)="effort.set($any(value($event)))">
+            @for (option of efforts; track option) {
+              <option [value]="option">{{ option }}</option>
+            }
+          </select>
+        </label>
+      }
+    </div>
+
+    @switch (mode()) {
+      @case ("retry") {
+        @if (isClaude()) {
+          <label class="mt-2 flex flex-col gap-1">
+            <span class="text-[12px] text-muted">
+              Prompt del reintento (editable). Si el cambio sirve para todos los tickets, llévalo a
+              <code class="font-mono">config/steps/{{ step().step }}/prompt.md</code>: se arregla la pieza, no el output.
+            </span>
+            <textarea
+              rows="8"
+              class="resize-y rounded-md border border-border bg-surface px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+              [value]="editedPrompt()"
+              (input)="editedPrompt.set(value($event))"
+            ></textarea>
+          </label>
+        } @else {
+          <p class="mt-2 text-[12px] text-muted">Paso sin LLM: se vuelve a ejecutar tal cual (útil tras arreglar algo a mano en el worktree).</p>
+        }
+      }
+      @case ("resume") {
+        <label class="mt-2 flex flex-col gap-1">
+          <span class="text-[12px] text-muted">
+            Continúa la sesión {{ step().sessionId?.slice(0, 8) }} (se bifurca con --fork-session, la original no se toca). Claude conserva todo su contexto.
+          </span>
+          <textarea
+            rows="3"
+            class="resize-y rounded-md border border-border bg-surface px-2.5 py-2 outline-none focus:border-accent"
+            placeholder="Ej.: el fichero correcto es src/lib/badge/badge.component.ts, vuelve a intentarlo ahí."
+            [value]="instruction()"
+            (input)="instruction.set(value($event))"
+          ></textarea>
+        </label>
+      }
+      @case ("skip") {
+        <p class="mt-2 text-[12px] text-muted">Marca el paso como saltado y sigue con el siguiente del perfil.</p>
+      }
+    }
+
+    <div class="mt-2 flex items-center gap-3">
+      <button
+        type="button"
+        class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40"
+        [disabled]="busy()"
+        (click)="launchDebug()"
+      >
+        {{ busy() ? "Lanzando…" : mode() === "skip" ? "Saltar y continuar" : "Relanzar desde este paso" }}
+      </button>
+      @if (debugError(); as message) {
+        <span class="text-err" role="alert">{{ message }}</span>
+      }
+    </div>
+  </section>
+}
+
+<div class="min-h-0 flex-1" role="tabpanel">
+  @switch (tab()) {
+    @case ("events") {
+      <nx-event-timeline class="h-full" [events]="events()" [live]="step().status === 'running'" />
+    }
+    @case ("prompt") {
+      <pre class="h-full overflow-auto p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">{{
+        step().prompt || "Este paso no usa prompt (builtin)."
+      }}</pre>
+    }
+    @case ("output") {
+      <pre class="h-full overflow-auto p-4 font-mono text-[12px] whitespace-pre-wrap">{{ output() || "Sin salida estructurada." }}</pre>
+    }
+    @case ("raw") {
+      <pre class="h-full overflow-auto p-4 font-mono text-[11px] whitespace-pre text-fg-soft">{{
+        raw.isLoading() ? "Cargando…" : raw.value() || "Sin log crudo (los pasos builtin no lo generan)."
+      }}</pre>
+    }
+    @case ("command") {
+      <div class="h-full overflow-auto p-4">
+        <p class="mb-2 text-[12px] text-muted">Comando exacto lanzado (el prompt va por stdin):</p>
+        <pre class="rounded-md bg-surface-2 p-3 font-mono text-[12px] whitespace-pre-wrap">{{ command() || "Paso builtin: sin comando claude." }}</pre>
+      </div>
+    }
+  }
+</div>

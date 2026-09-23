@@ -26,6 +26,7 @@ const CLASSIFY_CONFIG: StepConfig = { model: "haiku", effort: "low", enabled: tr
 const DEFAULT_BRANCH_PREFIX = "feat";
 const RATE_LIMIT_MARGIN_MS = 60_000;
 const ERROR_TEXT_MAX = 1500;
+const QUOTA_KEY = "quota";
 const RESUME_DEFAULT_INSTRUCTION = "Continúa donde lo dejaste y termina el paso.";
 
 class CancelledError extends Error {}
@@ -64,6 +65,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
     this.config = config;
     this.store = store;
     this.options = options;
+    this.quota = store.getSetting<QuotaInfo>(QUOTA_KEY);
   }
 
   public setConfig(config: NexuraConfig): void {
@@ -664,8 +666,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
   private recordEvent(run: Run, stepRun: StepRun, event: NexuraEvent): void {
     const seq = this.eventSeq.get(stepRun.id) ?? 0;
     this.eventSeq.set(stepRun.id, seq + 1);
-    this.store.addEvent(run.id, stepRun, seq, event);
-    this.emit("message", { type: "event", runId: run.id, stepRunId: stepRun.id, seq, event });
+    const ts = new Date().toISOString();
+    this.store.addEvent(run.id, stepRun, seq, event, ts);
+    this.emit("message", { type: "event", runId: run.id, stepRunId: stepRun.id, seq, ts, event });
   }
 
   private updateQuota(event: Extract<NexuraEvent, { kind: "rateLimit" }>): void {
@@ -675,6 +678,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
       sevenDay: event.sevenDay,
       updatedAt: new Date().toISOString(),
     };
+    this.store.setSetting(QUOTA_KEY, this.quota);
     this.emit("message", { type: "quota", quota: this.quota });
   }
 

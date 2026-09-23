@@ -16,7 +16,9 @@
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
     "nexura": "node apps/server/src/cli/cli.ts",
-    "serve": "node apps/server/src/cli/cli.ts serve"
+    "serve": "node apps/server/src/cli/cli.ts serve",
+    "build:web": "npm run build -w @nexura/web",
+    "dev:web": "npm start -w @nexura/web"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",

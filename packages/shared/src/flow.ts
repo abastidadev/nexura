@@ -153,5 +153,5 @@ export type RetryOptions = {
 /** Messages pushed to the UI over WebSocket. */
 export type ServerMessage =
   | { type: "run"; run: Run }
-  | { type: "event"; runId: string; stepRunId: string; seq: number; event: NexuraEvent }
+  | { type: "event"; runId: string; stepRunId: string; seq: number; ts: string; event: NexuraEvent }
   | { type: "quota"; quota: QuotaInfo };

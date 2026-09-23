@@ -1,0 +1,150 @@
+import { Component, computed, inject, linkedSignal, signal } from "@angular/core";
+import { Router } from "@angular/router";
+import { STEP_NAMES, type FlowProfile, type TaskItem } from "@nexura/shared";
+import { Api } from "../../core/api";
+import { STEP_LABELS } from "../../core/format";
+import { NexuraStore } from "../../core/nexura-store";
+
+export const AUTO_PROFILE = "auto";
+const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/;
+
+type ProfileCard = {
+  name: string;
+  title: string;
+  description: string;
+  steps: { label: string; detail: string }[];
+  maxLoops?: number;
+};
+
+@Component({
+  selector: "nx-new-run",
+  templateUrl: "./new-run.html",
+  host: { class: "block h-full overflow-y-auto" },
+})
+export class NewRun {
+  private readonly api = inject(Api);
+  private readonly router = inject(Router);
+  protected readonly store = inject(NexuraStore);
+
+  protected readonly ticketId = signal("");
+  protected readonly ticketText = signal("");
+  protected readonly prompt = signal("");
+  protected readonly tasks = signal<TaskItem[]>([]);
+  protected readonly newTask = signal("");
+  protected readonly profile = signal(AUTO_PROFILE);
+  protected readonly stepByStep = signal(false);
+  protected readonly submitting = signal(false);
+  protected readonly error = signal<string | null>(null);
+
+  protected readonly repos = computed(() => this.store.config()?.repos ?? []);
+  /** Pre-selects the only repo when there is just one. */
+  protected readonly selectedRepos = linkedSignal<string[]>(() => {
+    const repos = this.repos();
+    return repos.length === 1 ? [repos[0]!.name] : [];
+  });
+
+  protected readonly profiles = computed<ProfileCard[]>(() => [
+    {
+      name: AUTO_PROFILE,
+      title: "Automático",
+      description: "Un paso classify (haiku, esfuerzo bajo) lee el ticket y elige el perfil.",
+      steps: [{ label: STEP_LABELS["classify"]!, detail: "haiku/low" }],
+    },
+    // Cheapest first: fewer enabled steps, then fewer loops.
+    ...[...(this.store.config()?.profiles ?? [])]
+      .sort((a, b) => this.enabledCount(a) - this.enabledCount(b) || a.maxLoops - b.maxLoops)
+      .map((profile) => this.toCard(profile)),
+  ]);
+
+  protected readonly selectedTaskCount = computed(() => this.tasks().filter((task) => task.selected).length);
+  protected readonly canSubmit = computed(
+    () => this.ticketText().trim().length > 0 && this.selectedRepos().length > 0 && !this.submitting(),
+  );
+
+  protected value(event: Event): string {
+    return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
+  }
+
+  protected toggleRepo(name: string): void {
+    this.selectedRepos.update((repos) => (repos.includes(name) ? repos.filter((repo) => repo !== name) : [...repos, name]));
+  }
+
+  protected addTask(): void {
+    const title = this.newTask().trim();
+    if (!title) {
+      return;
+    }
+    this.tasks.update((tasks) => [...tasks, this.task(title, tasks.length)]);
+    this.newTask.set("");
+  }
+
+  /** Turns the bullet/numbered lines of the ticket into tasks. */
+  protected extractTasks(): void {
+    const titles = this.ticketText()
+      .split(/\r?\n/)
+      .map((line) => BULLET.exec(line)?.[1]?.trim())
+      .filter((title): title is string => Boolean(title));
+    this.tasks.update((tasks) => {
+      const existing = new Set(tasks.map((task) => task.title));
+      const added = titles.filter((title) => !existing.has(title));
+      return [...tasks, ...added.map((title, index) => this.task(title, tasks.length + index))];
+    });
+  }
+
+  protected toggleTask(id: string): void {
+    this.tasks.update((tasks) => tasks.map((task) => (task.id === id ? { ...task, selected: !task.selected } : task)));
+  }
+
+  protected removeTask(id: string): void {
+    this.tasks.update((tasks) => tasks.filter((task) => task.id !== id));
+  }
+
+  protected async submit(): Promise<void> {
+    if (!this.canSubmit()) {
+      return;
+    }
+    this.submitting.set(true);
+    this.error.set(null);
+    try {
+      const run = await this.api.startRun({
+        ticketId: this.ticketId().trim() || undefined,
+        ticketText: this.ticketText().trim(),
+        repos: this.selectedRepos(),
+        tasks: this.tasks(),
+        prompt: this.prompt().trim(),
+        profile: this.profile(),
+        stepByStep: this.stepByStep(),
+      });
+      this.store.upsertRun(run);
+      this.store.openTab(run.id);
+      await this.router.navigate(["/runs", run.id]);
+    } catch (error: unknown) {
+      const message = (error as { error?: { error?: string } }).error?.error;
+      this.error.set(message ?? "No se pudo lanzar el flujo");
+    } finally {
+      this.submitting.set(false);
+    }
+  }
+
+  private enabledCount(profile: FlowProfile): number {
+    return Object.values(profile.steps).filter((step) => step?.enabled).length;
+  }
+
+  private task(title: string, index: number): TaskItem {
+    return { id: `t${index + 1}`, title, selected: true, done: false };
+  }
+
+  private toCard(profile: FlowProfile): ProfileCard {
+    return {
+      name: profile.name,
+      title: profile.name.charAt(0).toUpperCase() + profile.name.slice(1),
+      description: profile.description,
+      maxLoops: profile.maxLoops,
+      steps: STEP_NAMES.filter((name) => profile.steps[name]?.enabled).map((name) => {
+        const step = profile.steps[name]!;
+        const builtin = this.store.config()?.steps.find((definition) => definition.name === name)?.kind === "builtin";
+        return { label: STEP_LABELS[name] ?? name, detail: builtin ? "sin LLM" : `${step.model}/${step.effort}` };
+      }),
+    };
+  }
+}

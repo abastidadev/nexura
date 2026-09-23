@@ -1,0 +1,68 @@
+<div class="mx-auto max-w-6xl px-6 py-6">
+  <div class="mb-5 flex items-end justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-semibold tracking-tight">Flujos</h1>
+      <p class="mt-1 text-muted">{{ rows().length }} ejecuciones · coste acumulado {{ totalCost() }}</p>
+    </div>
+    <a routerLink="/new" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90">+ Nuevo flujo</a>
+  </div>
+
+  @if (rows().length === 0) {
+    <div class="rounded-lg border border-dashed border-border-strong px-6 py-14 text-center">
+      <p class="text-[15px] font-medium">Todavía no hay flujos</p>
+      <p class="mx-auto mt-1 max-w-md text-muted">
+        Crea uno con un ticket, los repos y las tareas. Nexura lo divide en pasos y te enseña en cuál está, qué consume y dónde falla.
+      </p>
+      <a routerLink="/new" class="mt-4 inline-block rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90">
+        Crear el primero
+      </a>
+    </div>
+  } @else {
+    <div class="overflow-hidden rounded-lg border border-border bg-surface">
+      <table class="w-full border-collapse text-left">
+        <thead class="border-b border-border bg-surface-2 text-[11px] tracking-wide text-muted uppercase">
+          <tr>
+            <th class="px-3 py-2 font-medium">Estado</th>
+            <th class="px-3 py-2 font-medium">Ticket</th>
+            <th class="px-3 py-2 font-medium">Perfil</th>
+            <th class="px-3 py-2 font-medium">Paso</th>
+            <th class="px-3 py-2 text-right font-medium">Coste</th>
+            <th class="px-3 py-2 text-right font-medium">Duración</th>
+            <th class="px-3 py-2 text-right font-medium">Creado</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of rows(); track row.id) {
+            <tr
+              class="cursor-pointer border-b border-border last:border-b-0 hover:bg-surface-2"
+              tabindex="0"
+              (click)="open(row.id)"
+              (keydown.enter)="open(row.id)"
+            >
+              <td class="px-3 py-2.5"><nx-status-pill [tone]="row.status.tone" [label]="row.status.label" [live]="row.status.live" /></td>
+              <td class="max-w-md px-3 py-2.5">
+                <div class="truncate font-medium">
+                  @if (row.ticketId) {
+                    <span class="mr-1 font-mono text-muted">#{{ row.ticketId }}</span>
+                  }
+                  {{ row.title }}
+                </div>
+                <div class="truncate text-[11px] text-muted">
+                  {{ row.repos }}
+                  @if (row.error) {
+                    · <span class="text-err">{{ row.error }}</span>
+                  }
+                </div>
+              </td>
+              <td class="px-3 py-2.5 text-fg-soft">{{ row.profile }}</td>
+              <td class="px-3 py-2.5 text-fg-soft">{{ row.step }}</td>
+              <td class="px-3 py-2.5 text-right font-mono">{{ row.cost }}</td>
+              <td class="px-3 py-2.5 text-right font-mono text-fg-soft">{{ row.duration }}</td>
+              <td class="px-3 py-2.5 text-right text-muted">{{ row.created }}</td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </div>
+  }
+</div>
