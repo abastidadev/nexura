@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, input, linkedSignal, resource, sig
 import { RouterLink } from "@angular/router";
 import { STEP_NAMES, type PrDraft, type ReviewReply, type ReviewThread, type StepName } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, STEP_LABELS } from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, STEP_LABELS, timeOfDay } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 import { StepInspector } from "./step-inspector";
@@ -99,6 +99,7 @@ export class RunView {
   protected readonly busy = signal(false);
   protected readonly actionError = signal<string | null>(null);
   protected readonly stepLabels = STEP_LABELS;
+  protected readonly timeOfDay = timeOfDay;
 
   // ---- embedded terminal
   protected readonly terminal = linkedSignal<string, TerminalRequest | null>({ source: this.id, computation: () => null });

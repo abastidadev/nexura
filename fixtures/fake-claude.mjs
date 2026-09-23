@@ -62,7 +62,7 @@ switch (step) {
     if (process.env.FAKE_FAIL_MARKER && prompt.includes(process.env.FAKE_FAIL_MARKER)) {
       error = "fake enrich failure";
     }
-    output = { summary: "fake", relevantFiles: [], conventions: [], risks: [], openQuestions: [] };
+    output = { summary: "fake", relevantFiles: [], conventions: ["Usa inject() en vez de constructores"], risks: [], openQuestions: [] };
     break;
   case "plan":
     output = { approach: "fake", changes: [], acceptanceCriteria: [{ description: "check", command: "npm run check" }] };

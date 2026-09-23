@@ -1,11 +1,13 @@
 import { Component, input, linkedSignal } from "@angular/core";
+import { GeneralSettings } from "./general-settings";
 import { ProfilesEditor } from "./profiles-editor";
 import { ReposEditor } from "./repos-editor";
 import { StepsEditor } from "./steps-editor";
 
-type SettingsTab = "profiles" | "steps" | "repos";
+type SettingsTab = "general" | "profiles" | "steps" | "repos";
 
 const TABS: { id: SettingsTab; label: string; help: string }[] = [
+  { id: "general", label: "General", help: "Umbral de cuota y revisión de comentarios de PR." },
   { id: "profiles", label: "Perfiles", help: "Qué pasos corre cada perfil y con qué modelo y esfuerzo." },
   { id: "steps", label: "Pasos", help: "Plantilla del prompt, herramientas permitidas y timeout de cada paso." },
   { id: "repos", label: "Repos", help: "Repositorios, rama base y checks de QA." },
@@ -13,12 +15,15 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
 
 @Component({
   selector: "nx-settings",
-  imports: [ProfilesEditor, StepsEditor, ReposEditor],
+  imports: [GeneralSettings, ProfilesEditor, StepsEditor, ReposEditor],
   template: `
     <div class="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
       <div>
         <h1 class="text-xl font-semibold tracking-tight">Configuración</h1>
-        <p class="mt-1 text-muted">Se guarda en <code class="font-mono">config/</code> del repo de Nexura: versiónala con git como cualquier otra pieza.</p>
+        <p class="mt-1 text-muted">
+          Perfiles, pasos y repos se guardan en <code class="font-mono">config/</code> del repo de Nexura (versiónalos con git); lo general y las notas
+          aprendidas, en <code class="font-mono">data/</code>.
+        </p>
       </div>
       <div class="flex gap-1 border-b border-border" role="tablist" aria-label="Secciones de configuración">
         @for (item of tabs; track item.id) {
@@ -37,6 +42,9 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
       </div>
       <div role="tabpanel">
         @switch (active()) {
+          @case ("general") {
+            <nx-general-settings />
+          }
           @case ("profiles") {
             <nx-profiles-editor />
           }
@@ -60,6 +68,6 @@ export class Settings {
   protected readonly tabs = TABS;
   protected readonly active = linkedSignal<SettingsTab>(() => {
     const tab = this.tab();
-    return TABS.some((item) => item.id === tab) ? (tab as SettingsTab) : "profiles";
+    return TABS.some((item) => item.id === tab) ? (tab as SettingsTab) : "general";
   });
 }

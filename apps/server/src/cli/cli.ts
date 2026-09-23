@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { ModelAlias, Run, RunRequest, StepName } from "@nexura/shared";
 import { createApiServer } from "../api/api-server.ts";
+import { PrWatcher } from "../azure/pr-watcher.ts";
 import { loadConfig } from "../config/config-loader.ts";
 import { Orchestrator } from "../orchestrator/orchestrator.ts";
 import { RunStore } from "../store/run-store.ts";
@@ -106,6 +107,7 @@ async function main(): Promise<void> {
     case "serve": {
       const { orchestrator, store } = createOrchestrator(Number(values.concurrency ?? DEFAULT_CONCURRENCY));
       const port = Number(values.port ?? DEFAULT_PORT);
+      new PrWatcher(orchestrator).start();
       createApiServer(orchestrator, store).listen(port, "127.0.0.1", () => {
         console.log(`Nexura by abastidadev · http://localhost:${port}`);
       });

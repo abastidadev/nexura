@@ -5,6 +5,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import {
   STEP_NAMES,
   type FlowProfile,
+  type NexuraSettings,
   type RepoConfig,
   type RetryOptions,
   type RunRequest,
@@ -28,6 +29,7 @@ import { Ledger } from "../ledger/ledger.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { TerminalServer } from "../terminal/terminal-server.ts";
+import { readRepoNotes, saveRepoNotes } from "../workspace/repo-context.ts";
 
 const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
 const MIME: Record<string, string> = {
@@ -163,6 +165,10 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     saveStepDefinition(name as StepName, body as StepDefinitionUpdate);
     orchestrator.setConfig(loadConfig());
   });
+  route("GET", "/api/repos/:name/notes", ([name]) => ({ markdown: readRepoNotes(name!) }));
+  route("PUT", "/api/repos/:name/notes", ([name], body) => {
+    saveRepoNotes(name!, String((body as { markdown?: string }).markdown ?? ""));
+  });
   route("PUT", "/api/repos", (_params, body) => {
     saveRepos((body as { repos: RepoConfig[] }).repos ?? []);
     orchestrator.setConfig(loadConfig());
@@ -197,6 +203,8 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   });
 
   route("GET", "/api/quota", () => orchestrator.getQuota() ?? null);
+  route("GET", "/api/settings", () => orchestrator.getSettings());
+  route("PUT", "/api/settings", (_params, body) => orchestrator.saveSettings(body as Partial<NexuraSettings>));
   route("GET", "/api/metrics/cost-by-step", () => store.costByStep());
   route("GET", "/api/metrics", (_params, _body, url) => store.metrics(Number(url.searchParams.get("days")) || undefined));
   route("POST", "/api/runs/:id/classify-feedback", ([id], body) => {

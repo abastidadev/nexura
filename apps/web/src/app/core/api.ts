@@ -5,6 +5,7 @@ import type {
   FlowProfile,
   Metrics,
   NexuraEvent,
+  NexuraSettings,
   QuotaInfo,
   RepoConfig,
   RetryOptions,
@@ -122,6 +123,22 @@ export class Api {
     return firstValueFrom(
       this.http.get<{ ticket: TicketDetails; text: string }>(`/api/azure/work-items/${encodeURIComponent(id)}`, { params }),
     );
+  }
+
+  public getSettings(): Promise<NexuraSettings> {
+    return firstValueFrom(this.http.get<NexuraSettings>("/api/settings"));
+  }
+
+  public saveSettings(settings: Partial<NexuraSettings>): Promise<NexuraSettings> {
+    return firstValueFrom(this.http.put<NexuraSettings>("/api/settings", settings));
+  }
+
+  public getRepoNotes(repo: string): Promise<string> {
+    return firstValueFrom(this.http.get<{ markdown: string }>(`/api/repos/${encodeURIComponent(repo)}/notes`)).then((r) => r.markdown);
+  }
+
+  public saveRepoNotes(repo: string, markdown: string): Promise<void> {
+    return firstValueFrom(this.http.put<void>(`/api/repos/${encodeURIComponent(repo)}/notes`, { markdown }));
   }
 
   public getQuota(): Promise<QuotaInfo | null> {

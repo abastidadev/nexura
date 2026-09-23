@@ -195,6 +195,17 @@
               <span class="block truncate text-[12px] text-fg-soft">{{ pr.title }}</span>
             </a>
           }
+          @if (run.reviewWatch; as watch) {
+            <p class="mt-1 text-[11px]" [class]="watch.error ? 'text-err' : 'text-muted'">
+              @if (watch.error) {
+                Vigilancia: {{ watch.error }}
+              } @else if (watch.prStatus !== "active") {
+                PR {{ watch.prStatus }}: ya no se vigila.
+              } @else {
+                Vigilada: {{ watch.activeThreads }} hilo(s) activo(s) · revisado a las {{ timeOfDay(watch.checkedAt) }}
+              }
+            </p>
+          }
           @if (isFinal() && run.worktrees.length) {
             <div class="mt-2 flex flex-col gap-1.5">
               <button type="button" class="rounded-md border border-border px-2 py-1 text-[12px] hover:bg-surface-3 disabled:opacity-40" [disabled]="checkingThreads()" (click)="checkThreads()">

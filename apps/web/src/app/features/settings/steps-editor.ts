@@ -13,6 +13,9 @@ export const TEMPLATE_VARIABLES: { name: string; help: string }[] = [
   { name: "userPrompt", help: "prompt adicional del flujo" },
   { name: "ledger", help: "libro de tareas hasta ahora" },
   { name: "feedback", help: "correcciones de review/QA en las vueltas" },
+  { name: "repoMap", help: "mapa del repo desde git (gratis, cacheado por commit)" },
+  { name: "repoNotes", help: "convenciones aprendidas en tickets anteriores" },
+  { name: "threads", help: "hilos activos de la PR (solo addressReview)" },
   { name: "output.enrich", help: "salida JSON de enrich" },
   { name: "output.plan", help: "salida JSON de plan" },
 ];

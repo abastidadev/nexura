@@ -182,7 +182,27 @@ export type Run = {
   resumesAt?: number;
   /** Whether the classify step picked the right profile, rated by the user (to tune its heuristics). */
   classifyFeedback?: { correct: boolean; expected?: string; ratedAt: string };
+  /** Free REST polling of the PRs of a finished run (see NexuraSettings.prPollSeconds). */
+  reviewWatch?: ReviewWatch;
 };
+
+export type ReviewWatch = {
+  checkedAt: string;
+  activeThreads: number;
+  /** Azure DevOps PR status of the first PR: active, completed, abandoned. Polling stops when not active. */
+  prStatus: string;
+  error?: string;
+};
+
+/** Server-wide settings, editable in Configuración > General. */
+export type NexuraSettings = {
+  /** Claude steps wait for the window reset while the 5 h usage is at or above this %. null = never. */
+  quotaPausePercent: number | null;
+  /** How often finished runs with an open PR are checked for new comments (REST, free). 0 = off. */
+  prPollSeconds: number;
+};
+
+export const DEFAULT_SETTINGS: NexuraSettings = { quotaPausePercent: 90, prPollSeconds: 120 };
 
 export type Metrics = {
   totals: { runs: number; done: number; failed: number; cancelled: number; active: number; costUsd: number; tokens: number };
@@ -222,4 +242,6 @@ export type RetryOptions = {
 export type ServerMessage =
   | { type: "run"; run: Run }
   | { type: "event"; runId: string; stepRunId: string; seq: number; ts: string; event: NexuraEvent }
-  | { type: "quota"; quota: QuotaInfo };
+  | { type: "quota"; quota: QuotaInfo }
+  /** Something the user should hear about even when not looking at that run (e.g. new PR comments). */
+  | { type: "notice"; runId?: string; title: string; body: string; level: "info" | "warn" };

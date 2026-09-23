@@ -25,10 +25,34 @@ export class ReposEditor {
   private readonly store = inject(NexuraStore);
 
   protected readonly options = NODE_MODULES_OPTIONS;
-  private readonly saved = computed(() => (this.store.config()?.repos ?? []).map(toDraft));
+  protected readonly saved = computed(() => (this.store.config()?.repos ?? []).map(toDraft));
   protected readonly drafts = linkedSignal(() => structuredClone(this.saved()));
   protected readonly dirty = computed(() => JSON.stringify(this.drafts()) !== JSON.stringify(this.saved()));
   protected readonly message = signal<{ ok: boolean; text: string } | null>(null);
+  /** Learned notes per repo, loaded when opened. */
+  protected readonly notes = signal<Record<string, string>>({});
+  protected readonly notesMessage = signal<Record<string, string>>({});
+
+  protected async loadNotes(repo: string): Promise<void> {
+    if (repo in this.notes()) {
+      return;
+    }
+    const markdown = await this.api.getRepoNotes(repo).catch(() => "");
+    this.notes.update((notes) => ({ ...notes, [repo]: markdown }));
+  }
+
+  protected setNotes(repo: string, markdown: string): void {
+    this.notes.update((notes) => ({ ...notes, [repo]: markdown }));
+  }
+
+  protected async saveNotes(repo: string): Promise<void> {
+    try {
+      await this.api.saveRepoNotes(repo, this.notes()[repo] ?? "");
+      this.notesMessage.update((messages) => ({ ...messages, [repo]: "Guardadas" }));
+    } catch (error: unknown) {
+      this.notesMessage.update((messages) => ({ ...messages, [repo]: apiError(error, "No se pudieron guardar") }));
+    }
+  }
   protected readonly busy = signal(false);
 
   protected value(event: Event): string {

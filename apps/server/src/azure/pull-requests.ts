@@ -38,6 +38,19 @@ export async function buildPrDraft(
 
 type CreatedResponse = { pullRequestId: number; title: string };
 
+/** active | completed | abandoned. */
+export async function getPrStatus(worktree: Worktree, prId: number): Promise<string> {
+  const remote = await azureRepoOf(worktree.repoPath);
+  if (!remote) {
+    throw new Error(`${worktree.repo}: el remote origin no es de Azure DevOps`);
+  }
+  const pr = await azureRequest<{ status: string }>(
+    remote.organization,
+    `${encodeURIComponent(remote.project)}/_apis/git/repositories/${encodeURIComponent(remote.repository)}/pullrequests/${prId}`,
+  );
+  return pr.status;
+}
+
 /** Pushes the branch and opens the PR, linking the work item on creation. */
 export async function pushAndCreatePr(worktree: Worktree, draft: PrDraft): Promise<CreatedPr> {
   const remote = await azureRepoOf(worktree.repoPath);

@@ -47,6 +47,27 @@
           ></textarea>
         </label>
       </div>
+      @if (repo.name && saved()[i]?.name === repo.name) {
+        <details class="mt-3 rounded-md border border-border" (toggle)="loadNotes(repo.name)">
+          <summary class="cursor-pointer px-3 py-2 text-fg-soft">Notas aprendidas <span class="text-[11px] text-muted">(las usa enrich/plan en cada ticket)</span></summary>
+          <div class="border-t border-border p-3">
+            <p class="mb-2 text-[11px] text-muted">
+              Se rellenan solas con las convenciones nuevas que descubre enrich. Corrige o borra lo que no valga: una por línea, empezando por "- ".
+            </p>
+            <textarea
+              rows="6"
+              spellcheck="false"
+              class="w-full resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+              [value]="notes()[repo.name] ?? ''"
+              (input)="setNotes(repo.name, value($event))"
+            ></textarea>
+            <div class="mt-2 flex items-center gap-2">
+              <button type="button" class="rounded-md border border-border px-3 py-1 text-[12px] hover:bg-surface-3" (click)="saveNotes(repo.name)">Guardar notas</button>
+              <span class="text-[12px] text-muted">{{ notesMessage()[repo.name] }}</span>
+            </div>
+          </div>
+        </details>
+      }
       <button type="button" class="mt-3 text-[12px] text-err hover:underline" (click)="remove(i)">Quitar repo</button>
     </section>
   }

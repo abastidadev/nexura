@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal, type OnInit } from "@angular/core";
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
-import { formatCost, RUN_STATUS, TONE_CLASSES } from "./core/format";
-import { NexuraStore } from "./core/nexura-store";
+import { formatCost, RUN_STATUS, TONE_CLASSES, type Tone } from "./core/format";
+import { NexuraStore, type Toast } from "./core/nexura-store";
 import { QuotaMeter } from "./shared/quota-meter";
 
 @Component({
@@ -15,6 +15,14 @@ export class App implements OnInit {
   protected readonly store = inject(NexuraStore);
   protected readonly loadError = signal<string | null>(null);
   protected readonly formatCost = formatCost;
+  protected readonly toastBorder: Record<Tone, string> = {
+    ok: "border-ok",
+    err: "border-err",
+    warn: "border-warn",
+    info: "border-info",
+    accent: "border-accent",
+    muted: "border-border",
+  };
 
   protected readonly tabs = computed(() =>
     this.store
@@ -27,8 +35,16 @@ export class App implements OnInit {
         cost: run.totalCostUsd,
         status: RUN_STATUS[run.status],
         dot: TONE_CLASSES[RUN_STATUS[run.status].tone].dot,
+        comments: run.reviewWatch?.prStatus === "active" ? run.reviewWatch.activeThreads : 0,
       })),
   );
+
+  protected openToast(toast: Toast): void {
+    this.store.dismissToast(toast.id);
+    if (toast.runId) {
+      this.store.openRun(toast.runId);
+    }
+  }
 
   public ngOnInit(): void {
     this.store.init().catch(() => this.loadError.set("No se puede conectar con el servidor de Nexura (npm run serve)."));

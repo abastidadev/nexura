@@ -1,10 +1,12 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
+  DEFAULT_SETTINGS,
   STEP_NAMES,
   type CreatedPr,
   type FlowProfile,
   type NexuraEvent,
+  type NexuraSettings,
   type PrDraft,
   type QuotaInfo,
   type RetryOptions,
@@ -23,6 +25,7 @@ import { asJsonBlock, renderTemplate } from "../prompt/render.ts";
 import { ClaudeProcess } from "../runner/claude-process.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace/git.ts";
+import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
 import { getActiveThreads, pushBranch, replyToThread, threadsToText } from "../azure/pr-threads.ts";
 import { buildPrDraft, pushAndCreatePr } from "../azure/pull-requests.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
@@ -60,9 +63,16 @@ const DEFAULT_ADDRESS_REVIEW: StepConfig = { model: "sonnet", effort: "medium", 
 
 type StepOutcome = { stepRun: StepRun; rateLimitedUntil?: number };
 
-export type OrchestratorOptions = { concurrency: number };
+export type OrchestratorOptions = {
+  concurrency: number;
+  /** Extra wait after a window reset before retrying (default 60 s; tests use 0). */
+  rateLimitMarginMs?: number;
+};
 
-export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
+const SETTINGS_KEY = "settings";
+const MIN_PR_POLL_SECONDS = 30;
+
+export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; settings: [NexuraSettings] }> {
   private config: NexuraConfig;
   private readonly store: RunStore;
   private readonly options: OrchestratorOptions;
@@ -71,6 +81,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
   private readonly eventSeq = new Map<string, number>();
   private running = 0;
   private quota?: QuotaInfo;
+  private settings: NexuraSettings;
 
   public constructor(config: NexuraConfig, store: RunStore, options: OrchestratorOptions = { concurrency: 2 }) {
     super();
@@ -78,6 +89,44 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
     this.store = store;
     this.options = options;
     this.quota = store.getSetting<QuotaInfo>(QUOTA_KEY);
+    this.settings = { ...DEFAULT_SETTINGS, ...store.getSetting<Partial<NexuraSettings>>(SETTINGS_KEY) };
+  }
+
+  public getSettings(): NexuraSettings {
+    return this.settings;
+  }
+
+  public saveSettings(update: Partial<NexuraSettings>): NexuraSettings {
+    const next = { ...this.settings, ...update };
+    if (next.quotaPausePercent !== null && (!Number.isFinite(next.quotaPausePercent) || next.quotaPausePercent <= 0 || next.quotaPausePercent > 100)) {
+      throw new Error("El umbral de cuota debe estar entre 1 y 100 (o vacío para no pausar)");
+    }
+    if (!Number.isInteger(next.prPollSeconds) || next.prPollSeconds < 0 || (next.prPollSeconds > 0 && next.prPollSeconds < MIN_PR_POLL_SECONDS)) {
+      throw new Error(`La revisión de PRs debe ser 0 (apagada) o al menos ${MIN_PR_POLL_SECONDS} s`);
+    }
+    this.settings = next;
+    this.store.setSetting(SETTINGS_KEY, next);
+    this.emit("settings", next);
+    return next;
+  }
+
+  /** For the PR watcher: runs that may still get review comments. */
+  public listRuns(): Run[] {
+    return this.store.listRuns(1000);
+  }
+
+  /** Small out-of-band updates (e.g. reviewWatch) on a run that is not executing. */
+  public patchRun(runId: string, patch: Partial<Pick<Run, "reviewWatch">>): void {
+    if (this.contexts.has(runId)) {
+      return; // Executing: its own persists would overwrite the patch anyway.
+    }
+    const run = this.requireRun(runId);
+    Object.assign(run, patch);
+    this.persist(run);
+  }
+
+  public notice(message: Omit<Extract<ServerMessage, { type: "notice" }>, "type">): void {
+    this.emit("message", { type: "notice", ...message });
   }
 
   public setConfig(config: NexuraConfig): void {
@@ -257,7 +306,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
       }
 
       // Outputs of earlier successful steps, so a retry does not redo them.
-      const stepContext: StepContext = { outputs: new Map(), ledger };
+      const stepContext: StepContext = { outputs: new Map(), ledger, extraVars: await this.repoContextVars(run) };
       for (const stepRun of run.steps) {
         if (stepRun.status === "succeeded") {
           stepContext.outputs.set(stepRun.step, stepRun.structuredOutput);
@@ -318,6 +367,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
           await this.afterImplement(run, stepRun, ledger);
           stepContext.feedback = undefined;
         }
+        if (stepName === "enrich") {
+          this.learnFromEnrich(run, stepRun);
+        }
 
         const rework = this.reworkNeeded(stepName, stepRun.structuredOutput);
         if (rework) {
@@ -367,7 +419,14 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
     stepContext: StepContext,
     options?: RetryOptions,
   ): Promise<StepRun | undefined> {
+    const usesClaude = this.config.steps.get(stepName)?.kind !== "builtin";
     for (;;) {
+      // Don't start a Claude step while the plan window is above the user's threshold.
+      const guardedUntil = usesClaude ? this.quotaGuardUntil() : undefined;
+      if (guardedUntil !== undefined) {
+        await this.waitForWindow(run, context, guardedUntil);
+        continue;
+      }
       const { stepRun, rateLimitedUntil } = await this.runStep(run, context, stepName, stepConfig, stepContext, options);
       if (context.cancelled) {
         throw new CancelledError();
@@ -379,17 +438,31 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
         this.fail(run, `Falló el paso ${stepName}: ${stepRun.error ?? "error desconocido"}`);
         return undefined;
       }
-      run.status = "waiting-rate-limit";
-      run.resumesAt = rateLimitedUntil;
-      this.persist(run);
-      await this.sleepUntil(context, rateLimitedUntil * 1000 + RATE_LIMIT_MARGIN_MS);
-      if (context.cancelled) {
-        throw new CancelledError();
-      }
-      run.status = "running";
-      run.resumesAt = undefined;
-      this.persist(run);
+      await this.waitForWindow(run, context, rateLimitedUntil);
     }
+  }
+
+  /** Epoch seconds of the 5 h window reset when its usage is at/above the configured %, else undefined. */
+  private quotaGuardUntil(): number | undefined {
+    const limit = this.settings.quotaPausePercent;
+    const window = this.quota?.fiveHour;
+    if (limit === null || !window || window.resetsAt * 1000 <= Date.now()) {
+      return undefined;
+    }
+    return window.utilization * 100 >= limit ? window.resetsAt : undefined;
+  }
+
+  private async waitForWindow(run: Run, context: RunContext, resetsAt: number): Promise<void> {
+    run.status = "waiting-rate-limit";
+    run.resumesAt = resetsAt;
+    this.persist(run);
+    await this.sleepUntil(context, resetsAt * 1000 + (this.options.rateLimitMarginMs ?? RATE_LIMIT_MARGIN_MS));
+    if (context.cancelled) {
+      throw new CancelledError();
+    }
+    run.status = "running";
+    run.resumesAt = undefined;
+    this.persist(run);
   }
 
   private async runStep(
@@ -595,6 +668,36 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
       }
       default:
         throw new Error(`El paso ${stepRun.step} no tiene implementación builtin`);
+    }
+  }
+
+  // ---------------------------------------------------------------- repo knowledge
+
+  /** `{{repoMap}}` (from git, cached per commit) and `{{repoNotes}}` (learned in earlier tickets). */
+  private async repoContextVars(run: Run): Promise<Record<string, string>> {
+    const maps = await Promise.all(run.worktrees.map((worktree) => repoMap(worktree).catch(() => "")));
+    const notes = run.worktrees
+      .map((worktree) => {
+        const text = readRepoNotes(worktree.repo).trim();
+        return text ? `**${worktree.repo}**\n${text}` : "";
+      })
+      .filter(Boolean);
+    return { repoMap: maps.filter(Boolean).join("\n\n"), repoNotes: notes.join("\n\n") };
+  }
+
+  /** Keeps enrich's conventions for the primary repo, so the next ticket starts from them. */
+  private learnFromEnrich(run: Run, stepRun: StepRun): void {
+    const conventions = (stepRun.structuredOutput as { conventions?: string[] } | undefined)?.conventions ?? [];
+    const repo = run.worktrees[0]?.repo;
+    if (!repo || conventions.length === 0) {
+      return;
+    }
+    const learned = learnRepoNotes(repo, conventions);
+    if (learned > 0) {
+      this.recordEvent(run, stepRun, {
+        kind: "text",
+        text: `Aprendidas ${learned} convención(es) nueva(s) de ${repo}: se darán a los próximos tickets.`,
+      });
     }
   }
 

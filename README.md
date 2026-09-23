@@ -76,6 +76,13 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 - **Clasificador**: en los flujos automáticos puedes marcar si `classify` acertó el perfil (y cuál debía ser). Las métricas muestran el % de acierto y los fallos con el motivo que dio, para ajustar su plantilla.
 - **`qaNotes`** (activo en `full`, haiku): plan de pruebas manual a partir del ticket y el diff; se ve en el panel derecho del flujo.
 
+## Cuota, conocimiento del repo y avisos
+
+- **Cuota**: el uso de las ventanas de 5 h y 7 días llega en cada llamada a Claude (`rate_limit_event`). No hay forma gratuita de consultarlo aparte (`/usage` en modo `-p` se lo manda al modelo y gasta), así que entre flujos el medidor indica la antigüedad del dato, cuenta hasta el reinicio y pone la ventana a 0 % cuando se reinicia. Incluye todo tu uso de Claude, no solo el de Nexura. Con el **umbral** (Configuración → General, por defecto 90 %) no se lanzan pasos nuevos con Claude hasta el reinicio.
+- **Conocimiento del repo**: cada paso recibe `{{repoMap}}` (mapa de carpetas y scripts sacado de `git ls-files`, gratis y cacheado por commit) y `{{repoNotes}}` (convenciones que enrich descubrió en tickets anteriores, guardadas en `data/repo-notes/<repo>.md` y editables en Configuración → Repos). enrich ya no relee `CLAUDE.md`: Claude Code lo carga solo.
+- **Vigilancia de PRs**: cada `prPollSeconds` (por defecto 120 s) se revisan por REST, gratis, las PRs abiertas de los flujos terminados. Si llegan comentarios avisa y marca la pestaña con 💬N; nunca lanza Claude solo. Deja de vigilar cuando la PR se completa o se abandona.
+- **Avisos**: toasts dentro de la app cuando un flujo termina, falla, se pausa o espera tu aprobación, y notificaciones del sistema (🔔 en la cabecera) cuando la pestaña no está delante. El título de la pestaña muestra `(n)` con los flujos que te esperan.
+
 ## Azure DevOps
 
 Usa la sesión de **Azure CLI** (`az login`), la misma que el plugin `azure-devops`: Nexura pide un token con `az account get-access-token` y llama a la API REST. Sin PAT y sin gastar tokens de Claude. La organización y el proyecto salen del remote `origin` de cada repo (`NEXURA_AZURE_ORG` como alternativa).

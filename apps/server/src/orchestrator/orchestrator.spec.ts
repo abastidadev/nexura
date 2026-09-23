@@ -20,8 +20,10 @@ vi.mock("../azure/pr-threads.ts", async (importOriginal) => ({
     pushed.push(worktree.branch);
   },
 }));
+const prStatus = { value: "active" };
 vi.mock("../azure/pull-requests.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../azure/pull-requests.ts")>()),
+  getPrStatus: async () => prStatus.value,
   pushAndCreatePr: async (worktree: Worktree, draft: PrDraft) => {
     createdPrs.push(draft);
     return { repo: worktree.repo, id: 42, url: "https://dev.azure.com/org/p/_git/r/pullrequest/42", title: draft.title };
@@ -42,6 +44,8 @@ process.env.NEXURA_TRUST_WORKTREES = "0";
 const { loadConfig } = await import("../config/config-loader.ts");
 const { RunStore } = await import("../store/run-store.ts");
 const { Orchestrator } = await import("./orchestrator.ts");
+const { PrWatcher } = await import("../azure/pr-watcher.ts");
+const { readRepoNotes, saveRepoNotes } = await import("../workspace/repo-context.ts");
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -378,5 +382,97 @@ describe("Budgets, classify feedback, qaNotes and metrics", () => {
     expect(metrics.byDay).toHaveLength(1);
     await orchestrator.cleanup(full.id, true);
     await orchestrator.cleanup(auto.id, true);
+  });
+});
+
+describe("Quota guard, repo knowledge and PR watcher", () => {
+  it("waits for the 5 h window reset before a claude step when usage is above the threshold", async () => {
+    const store = new RunStore(":memory:");
+    store.setSetting("quota", {
+      status: "allowed",
+      fiveHour: { utilization: 0.95, resetsAt: Math.floor(Date.now() / 1000) + 1 },
+      updatedAt: new Date().toISOString(),
+    });
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1, rateLimitMarginMs: 0 });
+    expect(orchestrator.getSettings().quotaPausePercent).toBe(90);
+    const statuses: string[] = [];
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && statuses.at(-1) !== message.run.status) {
+        statuses.push(message.run.status);
+      }
+    });
+    const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Cuota alta" })).id);
+
+    expect(run.status).toBe("done");
+    expect(statuses).toEqual(expect.arrayContaining(["waiting-rate-limit", "running", "done"]));
+    expect(statuses.indexOf("waiting-rate-limit")).toBeLessThan(statuses.lastIndexOf("running"));
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("validates settings", () => {
+    const orchestrator = new Orchestrator(loadConfig(), new RunStore(":memory:"), { concurrency: 1 });
+    expect(orchestrator.saveSettings({ quotaPausePercent: null, prPollSeconds: 0 })).toEqual({ quotaPausePercent: null, prPollSeconds: 0 });
+    expect(() => orchestrator.saveSettings({ quotaPausePercent: 150 })).toThrow(/umbral/);
+    expect(() => orchestrator.saveSettings({ prPollSeconds: 5 })).toThrow(/al menos 30/);
+  });
+
+  it("learns enrich conventions per repo and hands them, with the repo map, to the next ticket", async () => {
+    saveRepoNotes("sandbox", ""); // Earlier tests in this file already taught it.
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const first = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Aprende" })).id);
+    expect(readRepoNotes("sandbox")).toContain("- Usa inject() en vez de constructores");
+    expect(store.getEvents(first.steps[0]!.id).some((e) => e.event.kind === "text" && e.event.text.includes("Aprendidas"))).toBe(true);
+
+    const second = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Usa lo aprendido" })).id);
+    const enrichPrompt = second.steps[0]!.prompt!;
+    expect(enrichPrompt).toContain("## Notas aprendidas del repo\n**sandbox**\n- Usa inject() en vez de constructores");
+    expect(enrichPrompt).toMatch(/\*\*sandbox\*\* \(\d+ ficheros versionados\)/);
+    expect(enrichPrompt).toContain("Scripts npm: check");
+    // Already known: nothing new is learned the second time.
+    expect(store.getEvents(second.steps[0]!.id).some((e) => e.event.kind === "text" && e.event.text.includes("Aprendidas"))).toBe(false);
+    await orchestrator.cleanup(first.id, true);
+    await orchestrator.cleanup(second.id, true);
+  });
+
+  it("polls open PRs for free, notifies new comments and stops when the PR is closed", async () => {
+    prStatus.value = "active";
+    activeThreads.length = 0;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketId: "8", ticketText: "Vigilada", release: "pr" }));
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.pendingStep?.prDrafts) {
+        setImmediate(() => orchestrator.continue(started.id));
+      }
+    });
+    await waitFor(orchestrator, started.id);
+    const notices: string[] = [];
+    orchestrator.on("message", (message) => {
+      if (message.type === "notice") {
+        notices.push(message.body);
+      }
+    });
+    const watcher = new PrWatcher(orchestrator);
+
+    await watcher.tick();
+    expect(store.getRun(started.id)!.reviewWatch).toMatchObject({ activeThreads: 0, prStatus: "active" });
+    expect(notices).toEqual([]);
+
+    activeThreads.push({ repo: "sandbox", prId: 42, threadId: 1, comments: [{ author: "Ana", content: "?" }] });
+    await watcher.tick();
+    expect(store.getRun(started.id)!.reviewWatch?.activeThreads).toBe(1);
+    expect(notices).toEqual([expect.stringContaining("1 comentario(s) pendiente(s)")]);
+
+    await watcher.tick();
+    expect(notices).toHaveLength(1);
+
+    prStatus.value = "completed";
+    await watcher.tick();
+    expect(notices.at(-1)).toContain("completado");
+    const checkedAt = store.getRun(started.id)!.reviewWatch!.checkedAt;
+    await watcher.tick();
+    expect(store.getRun(started.id)!.reviewWatch!.checkedAt).toBe(checkedAt);
+    await orchestrator.cleanup(started.id, true);
   });
 });

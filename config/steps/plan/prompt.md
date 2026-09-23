@@ -14,5 +14,8 @@ Si un criterio se puede verificar con un script del repo, pon el comando en `com
 ## Investigación (enrich)
 {{output.enrich}}
 
+## Notas aprendidas del repo
+{{repoNotes}}
+
 ## Indicaciones del usuario
 {{userPrompt}}
