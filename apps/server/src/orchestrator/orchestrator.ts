@@ -8,6 +8,8 @@ import {
   type PrDraft,
   type QuotaInfo,
   type RetryOptions,
+  type ReviewReply,
+  type ReviewThread,
   type Run,
   type RunRequest,
   type ServerMessage,
@@ -21,6 +23,7 @@ import { asJsonBlock, renderTemplate } from "../prompt/render.ts";
 import { ClaudeProcess } from "../runner/claude-process.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace/git.ts";
+import { getActiveThreads, pushBranch, replyToThread, threadsToText } from "../azure/pr-threads.ts";
 import { buildPrDraft, pushAndCreatePr } from "../azure/pull-requests.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
 
@@ -47,7 +50,13 @@ type StepContext = {
   outputs: Map<StepName, unknown>;
   feedback?: string;
   ledger: Ledger;
+  /** Step-specific template variables, e.g. `threads` for addressReview. */
+  extraVars?: Record<string, string>;
 };
+
+/** Steps that never run in the profile sequence: they are launched on demand. */
+const ON_DEMAND_STEPS: ReadonlySet<StepName> = new Set(["classify", "addressReview"]);
+const DEFAULT_ADDRESS_REVIEW: StepConfig = { model: "sonnet", effort: "medium", enabled: true };
 
 type StepOutcome = { stepRun: StepRun; rateLimitedUntil?: number };
 
@@ -120,7 +129,44 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
     run.error = undefined;
     this.persist(run);
     this.contexts.set(runId, { cancelled: false });
-    void this.schedule(runId, () => this.execute(run, last ? { step: last.step, options } : undefined));
+    void this.schedule(runId, () =>
+      last?.step === "addressReview"
+        ? this.executeAddressReview(run, options)
+        : this.execute(run, last ? { step: last.step, options } : undefined),
+    );
+    return run;
+  }
+
+  /** Active comment threads of the run's PRs. Plain REST, no tokens. */
+  public async reviewThreads(runId: string): Promise<ReviewThread[]> {
+    const run = this.requireRun(runId);
+    const threads: ReviewThread[] = [];
+    for (const pr of run.pullRequests ?? []) {
+      const worktree = run.worktrees.find((candidate) => candidate.repo === pr.repo);
+      if (worktree) {
+        threads.push(...(await getActiveThreads(worktree, pr)));
+      }
+    }
+    return threads;
+  }
+
+  /** Launches addressReview on a finished run with PRs: fix, commit, then approval to push and reply. */
+  public addressReview(runId: string): Run {
+    const run = this.requireRun(runId);
+    if (this.contexts.has(runId)) {
+      throw new Error("El flujo está activo");
+    }
+    if (!run.pullRequests?.length) {
+      throw new Error("Este flujo no tiene PR creada");
+    }
+    if (run.worktrees.length === 0) {
+      throw new Error("Los worktrees de este flujo se borraron; no se puede atender la revisión");
+    }
+    run.status = "queued";
+    run.error = undefined;
+    this.persist(run);
+    this.contexts.set(runId, { cancelled: false });
+    void this.schedule(runId, () => this.executeAddressReview(run));
     return run;
   }
 
@@ -223,7 +269,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
       }
 
       const profile = this.config.profiles.get(run.resolvedProfile)!;
-      const sequence = STEP_NAMES.filter((name) => name !== "classify" && profile.steps[name]?.enabled);
+      const sequence = STEP_NAMES.filter((name) => !ON_DEMAND_STEPS.has(name) && profile.steps[name]?.enabled);
       let index = startAt && startAt.step !== "classify" ? Math.max(0, sequence.indexOf(startAt.step)) : 0;
       let loops = Math.max(0, run.steps.filter((s) => s.step === "implement" && s.status === "succeeded").length - 1);
 
@@ -524,6 +570,118 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
     }
   }
 
+  // ---------------------------------------------------------------- review feedback
+
+  private async executeAddressReview(initial: Run, options?: RetryOptions): Promise<void> {
+    const run = this.store.getRun(initial.id) ?? initial;
+    const context = this.contexts.get(run.id)!;
+    const ledger = new Ledger(run.id);
+    run.status = "running";
+    this.persist(run);
+    try {
+      const threads = await this.reviewThreads(run.id);
+      if (threads.length === 0) {
+        ledger.append("addressReview", "Sin hilos activos en la PR: nada que atender.");
+        this.finishRun(run, context);
+        return;
+      }
+
+      const profile = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile) : undefined;
+      const stepConfig = profile?.steps.addressReview ?? DEFAULT_ADDRESS_REVIEW;
+      const stepContext: StepContext = { outputs: new Map(), ledger, extraVars: { threads: threadsToText(threads) } };
+      const stepRun = await this.runWithRateLimit(run, context, "addressReview", stepConfig, stepContext, options);
+      if (!stepRun) {
+        return;
+      }
+      const output = stepRun.structuredOutput as { summary: string; commitMessage: string; replies: ReviewReply[] };
+
+      const commits: string[] = [];
+      if (output.commitMessage.trim()) {
+        for (const worktree of run.worktrees) {
+          const sha = await commitAll(worktree, output.commitMessage);
+          if (sha) {
+            commits.push(`${worktree.repo}@${sha.slice(0, 8)}`);
+            this.recordEvent(run, stepRun, { kind: "text", text: `Commit \`${sha.slice(0, 8)}\` en ${worktree.repo}` });
+          }
+        }
+      }
+      // Only answer threads that exist; the model cannot invent targets.
+      const known = new Set(threads.map((thread) => `${thread.repo}:${thread.threadId}`));
+      const replies = output.replies.filter((reply) => known.has(`${reply.repo}:${reply.threadId}`));
+      ledger.append(
+        "addressReview",
+        [output.summary, `Commits: ${commits.join(", ") || "sin cambios de código"}`, `Respuestas: ${replies.length} de ${threads.length} hilos`].join("\n"),
+      );
+
+      const approved = await this.awaitReplyApproval(run, replies, commits);
+      if (!approved) {
+        ledger.append("addressReview", "Push y respuestas descartados por el usuario; los commits quedan en local.");
+        this.finishRun(run, context);
+        return;
+      }
+      for (const worktree of run.worktrees) {
+        if (commits.some((commit) => commit.startsWith(`${worktree.repo}@`))) {
+          await pushBranch(worktree);
+        }
+      }
+      for (const reply of approved) {
+        const pr = run.pullRequests?.find((candidate) => candidate.repo === reply.repo);
+        const worktree = run.worktrees.find((candidate) => candidate.repo === reply.repo);
+        if (pr && worktree) {
+          await replyToThread(worktree, pr.id, reply);
+          this.recordEvent(run, stepRun, { kind: "text", text: `Respondido el hilo ${reply.threadId} (${reply.action}): ${reply.reply}` });
+        }
+      }
+      ledger.append("addressReview", `Push hecho y ${approved.length} hilo(s) respondido(s).`);
+      this.finishRun(run, context);
+    } catch (error) {
+      if (error instanceof CancelledError || context.cancelled) {
+        run.status = "cancelled";
+        run.pendingStep = undefined;
+        this.releaseContext(run.id, context);
+        this.persist(run);
+      } else {
+        this.fail(run, `addressReview: ${error instanceof Error ? error.message : String(error)}`);
+      }
+    }
+  }
+
+  /** Pauses on the drafted replies (editable, removable) and the local commits. */
+  private async awaitReplyApproval(run: Run, replies: ReviewReply[], commits: string[]): Promise<ReviewReply[] | undefined> {
+    const context = this.contexts.get(run.id)!;
+    run.status = "paused";
+    run.pendingStep = { step: "addressReview", replies, commits };
+    this.persist(run);
+    const options = await new Promise<RetryOptions | undefined>((resolve) => (context.release = resolve));
+    context.release = undefined;
+    if (context.cancelled) {
+      throw new CancelledError();
+    }
+    run.status = "running";
+    run.pendingStep = undefined;
+    this.persist(run);
+    if (options?.skip) {
+      return undefined;
+    }
+    if (!options?.replies) {
+      return replies;
+    }
+    // Edited text/action only for threads that were drafted; dropped ones are not answered.
+    return options.replies
+      .map((edited) => {
+        const original = replies.find((reply) => reply.repo === edited.repo && reply.threadId === edited.threadId);
+        return original ? { ...original, reply: edited.reply.trim() || original.reply, action: edited.action } : undefined;
+      })
+      .filter((reply): reply is ReviewReply => reply !== undefined);
+  }
+
+  private finishRun(run: Run, context: RunContext): void {
+    run.status = "done";
+    run.pendingStep = undefined;
+    this.releaseContext(run.id, context);
+    this.persist(run);
+  }
+
   // ---------------------------------------------------------------- pull requests
 
   /**
@@ -695,6 +853,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
       userPrompt: request.prompt,
       ledger: stepContext.ledger.read(),
       feedback: stepContext.feedback,
+      ...stepContext.extraVars,
     };
     for (const [name, output] of stepContext.outputs) {
       vars[`output.${name}`] = asJsonBlock(output);

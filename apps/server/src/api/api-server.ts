@@ -119,6 +119,14 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   route("POST", "/api/runs/:id/cancel", ([id]) => orchestrator.cancel(id!));
   route("POST", "/api/runs/:id/continue", ([id], body) => orchestrator.continue(id!, body as RetryOptions));
   route("POST", "/api/runs/:id/retry", ([id], body) => orchestrator.retry(id!, body as RetryOptions));
+  route("GET", "/api/runs/:id/review-threads", async ([id]) => {
+    try {
+      return await orchestrator.reviewThreads(id!);
+    } catch (error) {
+      throw new HttpError(502, String((error as Error).message));
+    }
+  });
+  route("POST", "/api/runs/:id/address-review", ([id]) => orchestrator.addressReview(id!));
   route("POST", "/api/runs/:id/cleanup", ([id], body) =>
     orchestrator.cleanup(id!, Boolean((body as { deleteBranches?: boolean }).deleteBranches)),
   );

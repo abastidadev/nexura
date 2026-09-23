@@ -7,6 +7,7 @@ import type {
   QuotaInfo,
   RepoConfig,
   RetryOptions,
+  ReviewThread,
   Run,
   RunRequest,
   StepDefinition,
@@ -77,6 +78,14 @@ export class Api {
 
   public retry(runId: string, options: RetryOptions): Promise<Run> {
     return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/retry`, options));
+  }
+
+  public reviewThreads(runId: string): Promise<ReviewThread[]> {
+    return firstValueFrom(this.http.get<ReviewThread[]>(`/api/runs/${runId}/review-threads`));
+  }
+
+  public addressReview(runId: string): Promise<Run> {
+    return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/address-review`, {}));
   }
 
   public cleanup(runId: string, deleteBranches: boolean): Promise<void> {

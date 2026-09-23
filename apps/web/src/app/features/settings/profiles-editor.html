@@ -62,8 +62,11 @@
       </thead>
       <tbody>
         @for (row of rows(); track row.name) {
-          <tr class="border-b border-border last:border-b-0" [class.opacity-50]="!row.config.enabled">
+          <tr class="border-b border-border last:border-b-0" [class.opacity-50]="!row.config.enabled && !row.onDemand">
             <td class="py-2 pr-3">
+              @if (row.onDemand) {
+                <span class="text-[11px] text-muted" title="Se lanza a mano desde la PR del flujo">a mano</span>
+              } @else {
               <input
                 type="checkbox"
                 class="size-4 accent-(--nx-accent)"
@@ -71,6 +74,7 @@
                 [checked]="row.config.enabled"
                 (change)="patchStep(row.name, { enabled: !row.config.enabled })"
               />
+              }
             </td>
             <td class="py-2 pr-3 font-medium">{{ row.label }}</td>
             @if (row.builtin) {

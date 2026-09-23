@@ -1,0 +1,23 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "commitMessage": { "type": "string", "description": "Conventional commit para los cambios; vacío si no cambias código" },
+    "replies": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "repo": { "type": "string" },
+          "threadId": { "type": "integer" },
+          "reply": { "type": "string", "description": "Respuesta de una línea para el hilo" },
+          "action": { "type": "string", "enum": ["fixed", "answered", "wontFix"] }
+        },
+        "required": ["repo", "threadId", "reply", "action"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["summary", "commitMessage", "replies"],
+  "additionalProperties": false
+}

@@ -66,7 +66,15 @@
     </div>
   }
 
-  @if (run.status === "paused" && run.pendingStep?.prDrafts; as drafts) {
+  @if (run.status === "paused" && run.pendingStep?.replies; as replies) {
+    <nx-review-approval
+      [replies]="replies"
+      [commits]="run.pendingStep.commits ?? []"
+      [busy]="busy()"
+      (approve)="approveReplies($event)"
+      (keepLocal)="keepLocal()"
+    />
+  } @else if (run.status === "paused" && run.pendingStep?.prDrafts; as drafts) {
     <nx-pr-approval [drafts]="drafts" [busy]="busy()" (approve)="approvePrs($event)" (keepLocal)="keepLocal()" />
   } @else if (run.status === "paused" && run.pendingStep; as pending) {
     <section class="border-b border-warn bg-warn-soft px-4 py-3" aria-labelledby="pause-title">
@@ -161,6 +169,30 @@
               <span class="font-mono text-ok">PR #{{ pr.id }}</span> · {{ pr.repo }} ↗
               <span class="block truncate text-[12px] text-fg-soft">{{ pr.title }}</span>
             </a>
+          }
+          @if (isFinal() && run.worktrees.length) {
+            <div class="mt-2 flex flex-col gap-1.5">
+              <button type="button" class="rounded-md border border-border px-2 py-1 text-[12px] hover:bg-surface-3 disabled:opacity-40" [disabled]="checkingThreads()" (click)="checkThreads()">
+                {{ checkingThreads() ? "Comprobando…" : "Comprobar comentarios (gratis)" }}
+              </button>
+              @if (threads(); as found) {
+                @if (found.length === 0) {
+                  <p class="text-[12px] text-muted">Sin hilos activos.</p>
+                } @else {
+                  <ul class="flex flex-col gap-1 text-[12px]">
+                    @for (thread of found; track thread.repo + thread.threadId) {
+                      <li class="rounded bg-surface-2 p-1.5">
+                        <span class="font-mono text-muted">{{ thread.filePath ?? "general" }}{{ thread.line ? ":" + thread.line : "" }}</span>
+                        <span class="block text-fg-soft">{{ thread.comments[0]?.author }}: {{ thread.comments[0]?.content }}</span>
+                      </li>
+                    }
+                  </ul>
+                  <button type="button" class="rounded-md bg-accent-strong px-2 py-1 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy()" (click)="addressReview()">
+                    Atender {{ found.length }} comentario(s) con Claude
+                  </button>
+                }
+              }
+            </div>
           }
         </section>
       }

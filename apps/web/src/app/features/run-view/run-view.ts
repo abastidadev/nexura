@@ -1,6 +1,6 @@
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import { STEP_NAMES, type PrDraft, type StepName } from "@nexura/shared";
+import { STEP_NAMES, type PrDraft, type ReviewReply, type ReviewThread, type StepName } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, STEP_LABELS } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -8,13 +8,14 @@ import { StatusPill } from "../../shared/status-pill";
 import { StepInspector } from "./step-inspector";
 import { StepPipeline } from "./step-pipeline";
 import { PrApproval } from "./pr-approval";
+import { ReviewApproval } from "./review-approval";
 import { TerminalPanel, type TerminalRequest } from "./terminal-panel";
 
 const CLASSIFY_DETAIL = "haiku/low";
 
 @Component({
   selector: "nx-run-view",
-  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval],
+  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval, ReviewApproval],
   templateUrl: "./run-view.html",
   host: { class: "flex h-full flex-col" },
 })
@@ -52,7 +53,7 @@ export class RunView {
     const profile = config.profiles.find((candidate) => candidate.name === run.resolvedProfile);
     for (const name of STEP_NAMES) {
       const step = profile?.steps[name];
-      if (name !== "classify" && step?.enabled) {
+      if (name !== "classify" && name !== "addressReview" && step?.enabled) {
         const builtin = config.steps.find((definition) => definition.name === name)?.kind === "builtin";
         result.push({ name, detail: builtin ? "sin LLM" : `${step.model}/${step.effort}` });
       }
@@ -136,6 +137,33 @@ export class RunView {
 
   protected approvePrs(prDrafts: PrDraft[]): Promise<void> {
     return this.act(() => this.api.continue(this.id(), { prDrafts }));
+  }
+
+  protected approveReplies(replies: ReviewReply[]): Promise<void> {
+    return this.act(() => this.api.continue(this.id(), { replies }));
+  }
+
+  // ---- PR review threads (checking is free; addressing runs Claude)
+  protected readonly threads = linkedSignal<string, ReviewThread[] | null>({ source: this.id, computation: () => null });
+  protected readonly checkingThreads = signal(false);
+
+  protected async checkThreads(): Promise<void> {
+    this.checkingThreads.set(true);
+    this.actionError.set(null);
+    try {
+      this.threads.set(await this.api.reviewThreads(this.id()));
+    } catch (error: unknown) {
+      this.actionError.set(apiError(error, "No se pudieron leer los comentarios de la PR"));
+    } finally {
+      this.checkingThreads.set(false);
+    }
+  }
+
+  protected addressReview(): Promise<void> {
+    return this.act(async () => {
+      await this.api.addressReview(this.id());
+      this.threads.set(null);
+    });
   }
 
   protected keepLocal(): Promise<void> {

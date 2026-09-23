@@ -120,6 +120,24 @@ export type PrDraft = {
 
 export type CreatedPr = { repo: string; id: number; url: string; title: string };
 
+/** An active comment thread of a PR, as read from Azure DevOps. */
+export type ReviewThread = {
+  repo: string;
+  prId: number;
+  threadId: number;
+  filePath?: string;
+  line?: number;
+  comments: { author: string; content: string }[];
+};
+
+/** addressReview's answer to one thread; `fixed`/`wontFix` also change the thread status. */
+export type ReviewReply = {
+  repo: string;
+  threadId: number;
+  reply: string;
+  action: "fixed" | "answered" | "wontFix";
+};
+
 export type StepRun = {
   id: string;
   runId: string;
@@ -158,7 +176,7 @@ export type Run = {
    * Set while paused: the step about to run and its rendered prompt (editable), or the PR
    * drafts waiting for the go-ahead before push + create.
    */
-  pendingStep?: { step: StepName; prompt?: string; prDrafts?: PrDraft[] };
+  pendingStep?: { step: StepName; prompt?: string; prDrafts?: PrDraft[]; replies?: ReviewReply[]; commits?: string[] };
   pullRequests?: CreatedPr[];
   /** Epoch seconds when a rate-limited run will resume. */
   resumesAt?: number;
@@ -184,6 +202,8 @@ export type RetryOptions = {
   skip?: boolean;
   /** Approved (possibly edited) PR drafts. `skip` at the approval pause = keep the branch local. */
   prDrafts?: PrDraft[];
+  /** Approved (possibly edited) replies to the PR threads. */
+  replies?: ReviewReply[];
 };
 
 /** Messages pushed to the UI over WebSocket. */

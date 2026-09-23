@@ -7,7 +7,7 @@ import { EFFORTS, MODELS } from "../run-view/step-inspector";
 
 const DEFAULT_STEP: StepConfig = { model: "sonnet", effort: "medium", enabled: false };
 
-type Row = { name: StepName; label: string; builtin: boolean; config: StepConfig };
+type Row = { name: StepName; label: string; builtin: boolean; onDemand: boolean; config: StepConfig };
 
 @Component({
   selector: "nx-profiles-editor",
@@ -41,6 +41,7 @@ export class ProfilesEditor {
         name: step.name,
         label: STEP_LABELS[step.name] ?? step.name,
         builtin: step.kind === "builtin",
+        onDemand: step.name === "addressReview",
         config: draft?.steps[step.name] ?? DEFAULT_STEP,
       }));
   });

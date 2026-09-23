@@ -15,7 +15,7 @@ IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) qu
 | 2. UI base | ✅ hecho: tabs, nuevo flujo, pipeline, timeline en vivo, cuota, depuración básica |
 | 3. Depuración | ✅ hecho: terminal embebida (shell y claude --resume), editor de perfiles, pasos y repos |
 | 4. Perfiles y `classify` | ⏳ |
-| 5. Azure DevOps | ⏳ |
+| 5. Azure DevOps | ✅ hecho: cargar work item, PR con aprobación, atender comentarios de la PR |
 | 6. Métricas | ⏳ |
 
 ## Estructura
@@ -68,6 +68,14 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 - **Cuota**: medidor en vivo de las ventanas de 5 h y 7 días del plan.
 - **Terminal embebida** (xterm.js + PTY): botón *Terminal* abre PowerShell en el worktree del flujo; *Abrir en Claude* reanuda la sesión de un paso (`claude --resume`) para seguir hablando con él a mano. Nexura marca como confiables solo sus worktrees (`*.worktrees/nexura-*`) en `~/.claude.json` y quita la marca al borrarlos; desactívalo con `NEXURA_TRUST_WORKTREES=0`.
 - **Configuración** (⚙): editor de perfiles (pasos, modelo, esfuerzo, vueltas; duplicar/borrar), de pasos (plantilla del prompt con sus variables, `--tools`, permitidas/prohibidas, timeout, MCP) y de repos (ruta, rama base, prefijo, checks, node_modules). Todo se guarda en `config/`; desde el panel de depuración de un paso hay un enlace directo a su plantilla.
+
+## Azure DevOps
+
+Usa la sesión de **Azure CLI** (`az login`), la misma que el plugin `azure-devops`: Nexura pide un token con `az account get-access-token` y llama a la API REST. Sin PAT y sin gastar tokens de Claude. La organización y el proyecto salen del remote `origin` de cada repo (`NEXURA_AZURE_ORG` como alternativa).
+
+- **Cargar work item**: en *Nuevo flujo*, el ID + *Cargar* trae título, descripción, criterios de aceptación (o pasos de reproducción de un bug), últimos comentarios y tareas hijas como checkboxes.
+- **PR**: con *Crear PR en Azure DevOps*, `release` prepara el borrador (título del commit principal, descripción a partir de lo que hizo implement, work item enlazado al crear, nunca en el cuerpo) y **se pausa**. Nada se sube hasta *Aprobar: push + crear PR*; *Dejar en local* termina sin push.
+- **Comentarios de la PR**: *Comprobar comentarios* lee los hilos activos (gratis). *Atender comentarios* lanza `addressReview` (Claude): corrige, hace commit en local y redacta una respuesta por hilo (`fixed` / `answered` / `wontFix`). Se pausa para aprobar: al aprobar hace push, publica las respuestas marcadas y resuelve los hilos arreglados. Las respuestas a hilos que no existen se descartan.
 
 ## Cómo funciona cada paso
 

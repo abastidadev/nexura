@@ -86,6 +86,20 @@ switch (step) {
         : { verdict: "approve", summary: "fake", issues: [] };
     break;
   }
+  case "addressReview": {
+    // Answers every "repo `x` · thread N" line of the prompt; fixes the first one in code.
+    const threads = [...prompt.matchAll(/repo `([^`]+)` · thread (\d+)/g)].map((match) => ({ repo: match[1], threadId: Number(match[2]) }));
+    writeFileSync(join(process.cwd(), `review-${count}.txt`), "fixed\n");
+    output = {
+      summary: `atendidos ${threads.length} hilos`,
+      commitMessage: "fix(fake): address review",
+      replies: [
+        ...threads.map((thread, index) => ({ ...thread, reply: `respuesta ${thread.threadId}`, action: index === 0 ? "fixed" : "answered" })),
+        { repo: "sandbox", threadId: 999, reply: "inventado", action: "fixed" },
+      ],
+    };
+    break;
+  }
   case "resumed":
     output = { summary: "fake", relevantFiles: [], conventions: [], risks: [], openQuestions: [] };
     break;

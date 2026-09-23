@@ -3,10 +3,23 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PrDraft, Run, RunRequest, Worktree } from "@nexura/shared";
+import type { PrDraft, ReviewReply, ReviewThread, Run, RunRequest, Worktree } from "@nexura/shared";
 
 // Never push or call Azure DevOps from tests: record what would have been created.
 const createdPrs: PrDraft[] = [];
+const postedReplies: ReviewReply[] = [];
+const pushed: string[] = [];
+const activeThreads: ReviewThread[] = [];
+vi.mock("../azure/pr-threads.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../azure/pr-threads.ts")>()),
+  getActiveThreads: async () => activeThreads,
+  replyToThread: async (_worktree: Worktree, _prId: number, reply: ReviewReply) => {
+    postedReplies.push(reply);
+  },
+  pushBranch: async (worktree: Worktree) => {
+    pushed.push(worktree.branch);
+  },
+}));
 vi.mock("../azure/pull-requests.ts", async (importOriginal) => ({
   ...(await importOriginal<typeof import("../azure/pull-requests.ts")>()),
   pushAndCreatePr: async (worktree: Worktree, draft: PrDraft) => {
@@ -241,6 +254,78 @@ describe("Release to Azure DevOps (push and PR mocked)", () => {
     expect(run.status).toBe("done");
     expect(createdPrs).toHaveLength(0);
     expect(run.pullRequests).toBeUndefined();
+    await orchestrator.cleanup(run.id, true);
+  });
+});
+
+describe("addressReview (Azure mocked)", () => {
+  it("fixes, commits, pauses with the replies and only pushes and answers after approval", async () => {
+    createdPrs.length = 0;
+    postedReplies.length = 0;
+    pushed.length = 0;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketId: "7", ticketText: "Ticket revisado", release: "pr" }));
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.pendingStep?.prDrafts) {
+        setImmediate(() => orchestrator.continue(started.id));
+      }
+    });
+    const released = await waitFor(orchestrator, started.id);
+    expect(released.pullRequests).toHaveLength(1);
+
+    activeThreads.splice(0, activeThreads.length,
+      { repo: "sandbox", prId: 42, threadId: 11, filePath: "/math.js", line: 3, comments: [{ author: "Ana", content: "Falta validar" }] },
+      { repo: "sandbox", prId: 42, threadId: 12, comments: [{ author: "Luis", content: "¿Por qué así?" }] },
+    );
+    expect(await orchestrator.reviewThreads(started.id)).toHaveLength(2);
+
+    let pending: Run["pendingStep"];
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.pendingStep?.replies) {
+        pending = message.run.pendingStep;
+        const edited = pending.replies!.filter((reply) => reply.threadId === 11).map((reply) => ({ ...reply, reply: "Validado, gracias" }));
+        setImmediate(() => orchestrator.continue(started.id, { replies: edited }));
+      }
+    });
+    const reviewed = waitFor(orchestrator, started.id);
+    orchestrator.addressReview(started.id);
+    const run = await reviewed;
+
+    expect(run.status).toBe("done");
+    // The invented thread 999 never reaches the approval; the prompt listed both real threads.
+    expect(pending!.replies!.map((reply) => reply.threadId)).toEqual([11, 12]);
+    expect(pending!.commits).toHaveLength(1);
+    expect(run.steps.at(-1)).toMatchObject({ step: "addressReview", status: "succeeded" });
+    expect(run.steps.at(-1)!.prompt).toContain("thread 11 · /math.js:3");
+    // Only the approved (edited) reply was posted, after pushing the fix.
+    expect(pushed).toEqual([run.worktrees[0]!.branch]);
+    expect(postedReplies).toEqual([{ repo: "sandbox", threadId: 11, reply: "Validado, gracias", action: "fixed" }]);
+    const log = git(run.worktrees[0]!.path, "log", "--format=%s", "-1");
+    expect(log).toBe("fix(fake): address review");
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("finishes without spending anything when there are no active threads", async () => {
+    postedReplies.length = 0;
+    activeThreads.length = 0;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Sin comentarios", release: "pr" }));
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.pendingStep?.prDrafts) {
+        setImmediate(() => orchestrator.continue(started.id));
+      }
+    });
+    await waitFor(orchestrator, started.id);
+    const steps = store.getRun(started.id)!.steps.length;
+
+    const reviewed = waitFor(orchestrator, started.id);
+    orchestrator.addressReview(started.id);
+    const run = await reviewed;
+    expect(run.status).toBe("done");
+    expect(run.steps).toHaveLength(steps);
+    expect(postedReplies).toHaveLength(0);
     await orchestrator.cleanup(run.id, true);
   });
 });
