@@ -99,6 +99,11 @@ export class NewRun {
     }
   }
 
+  /** One-line step list for the collapsed profile rows. */
+  protected stepSummary(card: ProfileCard): string {
+    return card.steps.map((step) => step.label).join(" · ");
+  }
+
   protected toggleRepo(name: string): void {
     this.selectedRepos.update((repos) => (repos.includes(name) ? repos.filter((repo) => repo !== name) : [...repos, name]));
   }
