@@ -1,5 +1,6 @@
 import type { NexuraEvent, TokenUsage } from "./events.ts";
 
+/** Steps shipped with Nexura, in pipeline order. Users can add their own (see StepDefinition.custom). */
 export const STEP_NAMES = [
   "classify",
   "enrich",
@@ -12,7 +13,13 @@ export const STEP_NAMES = [
   "addressReview",
 ] as const;
 
-export type StepName = (typeof STEP_NAMES)[number];
+export type BuiltinStepName = (typeof STEP_NAMES)[number];
+
+/** A built-in step or a custom one created from the UI (config/steps/<name>/). */
+export type StepName = BuiltinStepName | (string & {});
+
+/** Names a custom step may take: a letter first, then letters, digits or dashes. */
+export const CUSTOM_STEP_NAME = /^[a-zA-Z][a-zA-Z0-9-]{1,39}$/;
 
 export type ModelAlias = "haiku" | "sonnet" | "opus";
 
@@ -47,7 +54,45 @@ export type StepDefinition = {
   /** Keep MCP servers from user/project config. Off = `--strict-mcp-config` (cheaper context). */
   useMcp: boolean;
   timeoutMs: number;
+  /** Set on steps created from the UI: they can be deleted and are ordered by `after`. */
+  custom?: boolean;
+  /** Custom steps: display name. */
+  label?: string;
+  /** Custom steps: what it is for (shown in the lists). */
+  description?: string;
+  /** Custom steps: runs right after this step in the pipeline. */
+  after?: StepName;
 };
+
+/**
+ * Pipeline order: the built-in order, with each custom step right after the step named
+ * in its `after` (custom steps may chain after each other). Unknown `after` = at the end.
+ */
+export function orderSteps<T extends Pick<StepDefinition, "name" | "custom" | "after">>(steps: Iterable<T>): T[] {
+  const all = [...steps];
+  const builtins = STEP_NAMES.map((name) => all.find((step) => step.name === name && !step.custom)).filter((step): step is T => Boolean(step));
+  const customs = all.filter((step) => step.custom).sort((a, b) => a.name.localeCompare(b.name));
+  const ordered = [...builtins];
+  let pending = customs;
+  while (pending.length) {
+    const next = pending.filter((step) => !ordered.some((placed) => placed.name === step.after));
+    for (const step of pending.filter((candidate) => !next.includes(candidate))) {
+      const index = ordered.findIndex((placed) => placed.name === step.after);
+      // After its anchor and after the custom steps already anchored there.
+      let insertAt = index + 1;
+      while (insertAt < ordered.length && ordered[insertAt]!.custom && ordered[insertAt]!.after === step.after) {
+        insertAt++;
+      }
+      ordered.splice(insertAt, 0, step);
+    }
+    if (next.length === pending.length) {
+      ordered.push(...next);
+      break;
+    }
+    pending = next;
+  }
+  return ordered;
+}
 
 export type RepoConfig = {
   name: string;
@@ -258,5 +303,6 @@ export type ServerMessage =
   | { type: "run"; run: Run }
   | { type: "event"; runId: string; stepRunId: string; seq: number; ts: string; event: NexuraEvent }
   | { type: "quota"; quota: QuotaInfo }
+  | { type: "runDeleted"; runId: string }
   /** Something the user should hear about even when not looking at that run (e.g. new PR comments). */
   | { type: "notice"; runId?: string; title: string; body: string; level: "info" | "warn" };

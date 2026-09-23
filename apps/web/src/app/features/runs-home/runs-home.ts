@@ -1,7 +1,8 @@
-import { Component, computed, inject } from "@angular/core";
+import { Component, computed, inject, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import type { Run } from "@nexura/shared";
-import { elapsedMs, formatCost, formatDuration, RUN_STATUS, STEP_LABELS } from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, RUN_STATUS, stepLabel } from "../../core/format";
+import { apiError } from "../../core/api";
 import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 
@@ -17,7 +18,10 @@ type RunRow = {
   created: string;
   status: (typeof RUN_STATUS)[keyof typeof RUN_STATUS];
   error?: string;
+  active: boolean;
 };
+
+const ACTIVE = new Set(["queued", "running", "paused", "waiting-rate-limit"]);
 
 @Component({
   selector: "nx-runs-home",
@@ -35,6 +39,26 @@ export class RunsHome {
     return this.store.runs().map((run) => this.toRow(run, now));
   });
 
+  protected readonly deleting = signal<string | null>(null);
+  protected readonly error = signal<string | null>(null);
+
+  protected async remove(event: Event, row: RunRow): Promise<void> {
+    event.stopPropagation();
+    const name = row.ticketId ? `#${row.ticketId} ${row.title}` : row.title;
+    if (!confirm(`¿Borrar el flujo "${name}"?\n\nSe borran su historial, sus logs y sus worktrees. Las ramas se conservan.`)) {
+      return;
+    }
+    this.deleting.set(row.id);
+    this.error.set(null);
+    try {
+      await this.store.deleteRun(row.id);
+    } catch (error: unknown) {
+      this.error.set(apiError(error, "No se pudo borrar el flujo"));
+    } finally {
+      this.deleting.set(null);
+    }
+  }
+
   protected open(id: string): void {
     this.store.openTab(id);
     void this.router.navigate(["/runs", id]);
@@ -50,12 +74,13 @@ export class RunsHome {
       ticketId: run.request.ticketId,
       repos: run.request.repos.join(", "),
       profile: run.resolvedProfile ?? (run.request.profile === "auto" ? "auto…" : run.request.profile),
-      step: current ? `${STEP_LABELS[current.step] ?? current.step}${current.attempt > 1 ? ` #${current.attempt}` : ""}` : "—",
+      step: current ? `${stepLabel(current.step)}${current.attempt > 1 ? ` #${current.attempt}` : ""}` : "—",
       cost: formatCost(run.totalCostUsd),
       duration: formatDuration(elapsedMs(run.createdAt, live ? undefined : (last ?? run.createdAt), now)),
       created: new Date(run.createdAt).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }),
       status: RUN_STATUS[run.status],
       error: run.error,
+      active: ACTIVE.has(run.status),
     };
   }
 }

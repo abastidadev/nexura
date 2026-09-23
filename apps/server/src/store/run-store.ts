@@ -1,4 +1,4 @@
-import { mkdirSync, appendFileSync } from "node:fs";
+import { mkdirSync, appendFileSync, rmSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 import type { Metrics, NexuraEvent, Run, StepRun } from "@nexura/shared";
@@ -108,6 +108,12 @@ export class RunStore {
     const file = this.rawLogFile(runId, stepRun);
     mkdirSync(dirname(file), { recursive: true });
     appendFileSync(file, rawLine + "\n");
+  }
+
+  /** Removes the run, its steps and events (FK cascade) and its logs/ledger folder. */
+  public deleteRun(id: string): void {
+    this.db.prepare("DELETE FROM runs WHERE id = ?").run(id);
+    rmSync(join(this.runsDir, id), { recursive: true, force: true });
   }
 
   public getRun(id: string): Run | undefined {

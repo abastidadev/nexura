@@ -1,8 +1,8 @@
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import { STEP_NAMES, type PrDraft, type ReviewReply, type ReviewThread, type StepName } from "@nexura/shared";
+import { orderSteps, type PrDraft, type ReviewReply, type ReviewThread, type StepName } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, STEP_LABELS, timeOfDay } from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, stepLabel, timeOfDay } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 import { StepInspector } from "./step-inspector";
@@ -51,7 +51,7 @@ export class RunView {
       result.push({ name: "classify", detail: CLASSIFY_DETAIL });
     }
     const profile = config.profiles.find((candidate) => candidate.name === run.resolvedProfile);
-    for (const name of STEP_NAMES) {
+    for (const { name } of orderSteps(config.steps)) {
       const step = profile?.steps[name];
       if (name !== "classify" && name !== "addressReview" && step?.enabled) {
         const builtin = config.steps.find((definition) => definition.name === name)?.kind === "builtin";
@@ -98,7 +98,7 @@ export class RunView {
   protected readonly pendingPrompt = linkedSignal(() => this.run()?.pendingStep?.prompt ?? "");
   protected readonly busy = signal(false);
   protected readonly actionError = signal<string | null>(null);
-  protected readonly stepLabels = STEP_LABELS;
+  protected readonly stepLabel = stepLabel;
   protected readonly timeOfDay = timeOfDay;
 
   // ---- embedded terminal
@@ -120,7 +120,7 @@ export class RunView {
 
   protected openSession(stepRunId: string): void {
     const step = this.run()?.steps.find((candidate) => candidate.id === stepRunId);
-    const label = step ? `${STEP_LABELS[step.step] ?? step.step} #${step.attempt}` : "paso";
+    const label = step ? `${stepLabel(step.step)} #${step.attempt}` : "paso";
     this.terminal.set({ key: ++this.terminalKey, runId: this.id(), mode: "resume", stepRunId, title: `claude --resume · ${label}` });
   }
 
@@ -187,6 +187,13 @@ export class RunView {
 
   protected cancel(): Promise<void> {
     return this.act(() => this.api.cancel(this.id()));
+  }
+
+  protected deleteRun(): Promise<void> {
+    if (!confirm("¿Borrar este flujo?\n\nSe borran su historial, sus logs y sus worktrees. Las ramas se conservan.")) {
+      return Promise.resolve();
+    }
+    return this.act(() => this.store.deleteRun(this.id()));
   }
 
   protected cleanup(deleteBranches: boolean): Promise<void> {

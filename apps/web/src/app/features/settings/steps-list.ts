@@ -1,6 +1,7 @@
 import { Component, computed, inject } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import { STEP_LABELS } from "../../core/format";
+import { orderSteps } from "@nexura/shared";
+import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 const MS_PER_MINUTE = 60_000;
@@ -10,10 +11,19 @@ const ON_DEMAND: Record<string, string> = { classify: "modo Automático", addres
   selector: "nx-steps-list",
   imports: [RouterLink],
   template: `
-    <p class="mb-4 max-w-3xl text-muted">
-      Qué hace cada paso: su plantilla de prompt, las herramientas que puede usar Claude y el timeout. Qué pasos corre cada flujo, con qué modelo y esfuerzo,
-      se decide en los perfiles.
-    </p>
+    <div class="mb-4 flex flex-wrap items-start justify-between gap-3">
+      <p class="max-w-3xl text-muted">
+        Qué hace cada paso, en el orden en que corren: su plantilla de prompt, las herramientas que puede usar Claude y el timeout. Qué pasos corre cada flujo,
+        con qué modelo y esfuerzo, se decide en los perfiles. Puedes añadir pasos propios entre los de Nexura.
+      </p>
+      <a
+        class="shrink-0 rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90"
+        routerLink="/config"
+        [queryParams]="{ tab: 'steps', create: 1 }"
+      >
+        + Nuevo paso
+      </a>
+    </div>
     <div class="overflow-hidden rounded-lg border border-border bg-surface">
       <table class="w-full border-collapse text-left">
         <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
@@ -32,6 +42,9 @@ const ON_DEMAND: Record<string, string> = { classify: "modo Automático", addres
               <td class="px-4 py-2.5">
                 <a class="font-medium hover:text-accent hover:underline" routerLink="/config" [queryParams]="{ tab: 'steps', step: row.name }">{{ row.label }}</a>
                 <span class="ml-2 font-mono text-[11px] text-muted">{{ row.name }}</span>
+                @if (row.custom) {
+                  <span class="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-muted uppercase" [attr.title]="row.description">propio</span>
+                }
               </td>
               <td class="px-4 py-2.5 text-[12px] text-fg-soft">{{ row.builtin ? "sin LLM" : "claude" }}</td>
               <td class="max-w-[280px] truncate px-4 py-2.5 font-mono text-[12px] text-fg-soft" [attr.title]="row.tools">{{ row.tools }}</td>
@@ -59,9 +72,11 @@ export class StepsList {
   protected readonly rows = computed(() => {
     const config = this.store.config();
     const profiles = config?.profiles ?? [];
-    return (config?.steps ?? []).map((step) => ({
+    return orderSteps(config?.steps ?? []).map((step) => ({
       name: step.name,
-      label: STEP_LABELS[step.name] ?? step.name,
+      label: stepLabel(step.name),
+      custom: Boolean(step.custom),
+      description: step.description ?? "",
       builtin: step.kind === "builtin",
       tools: step.kind === "builtin" ? "—" : step.tools.join(", ") || "ninguna",
       timeout: `${Math.round(step.timeoutMs / MS_PER_MINUTE)} min`,

@@ -94,7 +94,12 @@
                 />
               }
             </td>
-            <td class="py-2 pr-3 font-medium">{{ row.label }}</td>
+            <td class="py-2 pr-3 font-medium">
+              {{ row.label }}
+              @if (row.custom) {
+                <span class="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-normal text-muted uppercase">propio</span>
+              }
+            </td>
             @if (row.builtin) {
               <td class="py-2 text-muted" colspan="2">sin LLM (código del orquestador, 0 tokens)</td>
             } @else {

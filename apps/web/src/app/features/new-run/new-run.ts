@@ -1,8 +1,8 @@
 import { Component, computed, inject, linkedSignal, signal } from "@angular/core";
 import { Router } from "@angular/router";
-import { STEP_NAMES, type FlowProfile, type TaskItem, type TicketDetails } from "@nexura/shared";
+import { orderSteps, type FlowProfile, type TaskItem, type TicketDetails } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { STEP_LABELS } from "../../core/format";
+import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { TicketPicker } from "./ticket-picker";
 
@@ -57,7 +57,7 @@ export class NewRun {
       name: AUTO_PROFILE,
       title: "Automático",
       description: "Un paso classify (haiku, esfuerzo bajo) lee el ticket y elige el perfil.",
-      steps: [{ label: STEP_LABELS["classify"]!, detail: "haiku/low" }],
+      steps: [{ label: stepLabel("classify"), detail: "haiku/low" }],
     },
     // Cheapest first: fewer enabled steps, then fewer loops.
     ...[...(this.store.config()?.profiles ?? [])]
@@ -188,10 +188,13 @@ export class NewRun {
       title: profile.name.charAt(0).toUpperCase() + profile.name.slice(1),
       description: profile.description,
       maxLoops: profile.maxLoops,
-      steps: STEP_NAMES.filter((name) => profile.steps[name]?.enabled).map((name) => {
+      steps: orderSteps(this.store.config()?.steps ?? [])
+        .map((definition) => definition.name)
+        .filter((name) => profile.steps[name]?.enabled)
+        .map((name) => {
         const step = profile.steps[name]!;
         const builtin = this.store.config()?.steps.find((definition) => definition.name === name)?.kind === "builtin";
-        return { label: STEP_LABELS[name] ?? name, detail: builtin ? "sin LLM" : `${step.model}/${step.effort}` };
+        return { label: stepLabel(name), detail: builtin ? "sin LLM" : `${step.model}/${step.effort}` };
       }),
     };
   }

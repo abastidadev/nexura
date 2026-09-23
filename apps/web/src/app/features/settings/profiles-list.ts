@@ -1,8 +1,8 @@
 import { Component, computed, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import { STEP_NAMES } from "@nexura/shared";
+import { orderSteps } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { STEP_LABELS } from "../../core/format";
+import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 /** Profiles shipped with Nexura; the rest were created by the user. */
@@ -79,6 +79,7 @@ export class ProfilesList {
 
   protected readonly busy = signal(false);
   protected readonly message = signal<{ ok: boolean; text: string } | null>(null);
+  private readonly order = computed(() => orderSteps(this.store.config()?.steps ?? []).map((step) => step.name));
   protected readonly cards = computed(() =>
     (this.store.config()?.profiles ?? []).map((profile) => ({
       name: profile.name,
@@ -86,7 +87,9 @@ export class ProfilesList {
       base: BASE_PROFILES.has(profile.name),
       maxLoops: profile.maxLoops,
       budget: profile.budgetUsd === undefined ? "sin límite" : `$${profile.budgetUsd.toFixed(2)}`,
-      steps: STEP_NAMES.filter((name) => profile.steps[name]?.enabled).map((name) => STEP_LABELS[name] ?? name),
+      steps: this.order()
+        .filter((name) => profile.steps[name]?.enabled)
+        .map((name) => stepLabel(name)),
     })),
   );
 

@@ -39,6 +39,61 @@ export class App implements OnInit {
       })),
   );
 
+  // ---- reordering the run tabs by drag & drop
+  protected readonly dragging = signal<string | null>(null);
+  protected readonly dropTarget = signal<{ id: string; side: "before" | "after" } | null>(null);
+
+  protected onDragStart(event: DragEvent, id: string): void {
+    this.dragging.set(id);
+    if (event.dataTransfer) {
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", id);
+    }
+  }
+
+  /** The drop side follows the pointer: left half of a tab = before it, right half = after. */
+  protected onDragOver(event: DragEvent, id: string): void {
+    const dragging = this.dragging();
+    if (!dragging) {
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) {
+      event.dataTransfer.dropEffect = "move";
+    }
+    if (dragging === id) {
+      this.dropTarget.set(null);
+      return;
+    }
+    const box = (event.currentTarget as HTMLElement).getBoundingClientRect();
+    const side = event.clientX < box.left + box.width / 2 ? "before" : "after";
+    const current = this.dropTarget();
+    if (current?.id !== id || current.side !== side) {
+      this.dropTarget.set({ id, side });
+    }
+  }
+
+  protected onDragLeave(id: string): void {
+    if (this.dropTarget()?.id === id) {
+      this.dropTarget.set(null);
+    }
+  }
+
+  protected onDrop(event: DragEvent, id: string): void {
+    event.preventDefault();
+    const dragging = this.dragging();
+    const target = this.dropTarget();
+    if (dragging && target?.id === id) {
+      this.store.moveTab(dragging, id, target.side);
+    }
+    this.onDragEnd();
+  }
+
+  protected onDragEnd(): void {
+    this.dragging.set(null);
+    this.dropTarget.set(null);
+  }
+
   protected openToast(toast: Toast): void {
     this.store.dismissToast(toast.id);
     if (toast.runId) {

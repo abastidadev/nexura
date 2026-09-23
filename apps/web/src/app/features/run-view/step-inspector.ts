@@ -2,16 +2,7 @@ import { Component, computed, inject, input, linkedSignal, output, resource, sig
 import { RouterLink } from "@angular/router";
 import type { Effort, ModelAlias, Run, StepRun } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import {
-  elapsedMs,
-  formatCost,
-  formatDuration,
-  formatTokens,
-
-  STEP_LABELS,
-  stepDisplayStatus,
-  TONE_CLASSES,
-} from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, formatTokens, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { EventTimeline } from "./event-timeline";
 
@@ -57,7 +48,7 @@ export class StepInspector {
   protected readonly events = computed(() => this.store.events(this.run().id, this.step().id)());
   protected readonly status = computed(() => stepDisplayStatus(this.step()));
   protected readonly tone = computed(() => TONE_CLASSES[this.status().tone]);
-  protected readonly label = computed(() => STEP_LABELS[this.step().step] ?? this.step().step);
+  protected readonly label = computed(() => stepLabel(this.step().step));
   protected readonly metrics = computed(() => {
     const step = this.step();
     const usage = step.usage;

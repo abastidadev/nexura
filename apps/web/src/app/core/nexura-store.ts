@@ -1,7 +1,7 @@
 import { computed, DestroyRef, effect, inject, Service, signal, type Signal, type WritableSignal } from "@angular/core";
 import { Router } from "@angular/router";
 import type { NexuraSettings, QuotaInfo, Run, ServerMessage } from "@nexura/shared";
-import { STEP_LABELS, type Tone } from "./format";
+import { setCustomStepLabels, stepLabel, type Tone } from "./format";
 import { Api, type NexuraConfigView, type StoredEvent } from "./api";
 
 const TABS_KEY = "nexura.tabs";
@@ -104,7 +104,7 @@ export class NexuraStore {
     ]);
     this.settings.set(settings);
     this.runsById.set(Object.fromEntries(runs.map((run) => [run.id, run])));
-    this.config.set(config);
+    this.setConfig(config);
     if (quota) {
       this.quota.set(quota);
     }
@@ -113,7 +113,12 @@ export class NexuraStore {
   }
 
   public async reloadConfig(): Promise<void> {
-    this.config.set(await this.api.getConfig());
+    this.setConfig(await this.api.getConfig());
+  }
+
+  private setConfig(config: NexuraConfigView): void {
+    setCustomStepLabels(config.steps);
+    this.config.set(config);
   }
 
   public run(id: string): Signal<Run | undefined> {
@@ -143,6 +148,36 @@ export class NexuraStore {
 
   public closeTab(id: string): void {
     this.openTabs.update((tabs) => tabs.filter((tab) => tab !== id));
+  }
+
+  /** Drag & drop of the header tabs: puts `id` right before or after `targetId`. */
+  public moveTab(id: string, targetId: string, side: "before" | "after"): void {
+    if (id === targetId) {
+      return;
+    }
+    this.openTabs.update((tabs) => {
+      const rest = tabs.filter((tab) => tab !== id);
+      const index = rest.indexOf(targetId);
+      if (index < 0 || !tabs.includes(id)) {
+        return tabs;
+      }
+      rest.splice(side === "before" ? index : index + 1, 0, id);
+      return rest;
+    });
+  }
+
+  /** Deletes a finished run on the server and drops it (and its tab) here. */
+  public async deleteRun(id: string, deleteBranches = false): Promise<void> {
+    await this.api.deleteRun(id, deleteBranches);
+    this.forgetRun(id);
+  }
+
+  private forgetRun(id: string): void {
+    this.runsById.update(({ [id]: _removed, ...rest }) => rest);
+    this.closeTab(id);
+    if (this.router.url.startsWith(`/runs/${id}`)) {
+      void this.router.navigate(["/"]);
+    }
   }
 
   public async toggleNotifications(): Promise<void> {
@@ -192,13 +227,13 @@ export class NexuraStore {
     const firstLine = run.request.ticketText.split("\n")[0] ?? run.id;
     const title = run.request.ticketId ? `#${run.request.ticketId} · ${firstLine}` : firstLine;
     const step = run.steps.at(-1);
-    const stepLabel = step ? (STEP_LABELS[step.step] ?? step.step) : "";
+    const failedStep = step ? stepLabel(step.step) : "";
     switch (run.status) {
       case "done":
         this.toast({ title, body: `Terminado · ${run.pullRequests?.length ? "PR creada" : "ramas en local"}`, tone: "ok", runId: run.id });
         break;
       case "failed":
-        this.toast({ title, body: `Falló en ${stepLabel}: ${run.error ?? ""}`.slice(0, 180), tone: "err", runId: run.id });
+        this.toast({ title, body: `Falló en ${failedStep}: ${run.error ?? ""}`.slice(0, 180), tone: "err", runId: run.id });
         break;
       case "paused": {
         const pending = run.pendingStep;
@@ -206,7 +241,7 @@ export class NexuraStore {
           ? "Revisa y aprueba la PR antes de subirla."
           : pending?.replies
             ? "Revisa las respuestas a la revisión antes de publicarlas."
-            : `Pausado antes de ${pending ? (STEP_LABELS[pending.step] ?? pending.step) : "el siguiente paso"}.`;
+            : `Pausado antes de ${pending ? stepLabel(pending.step) : "el siguiente paso"}.`;
         this.toast({ title, body, tone: "warn", runId: run.id });
         break;
       }
@@ -256,6 +291,9 @@ export class NexuraStore {
         break;
       case "quota":
         this.quota.set(message.quota);
+        break;
+      case "runDeleted":
+        this.forgetRun(message.runId);
         break;
       case "event":
         this.eventSignal(message.stepRunId).update((current) =>

@@ -53,7 +53,7 @@
         <tbody>
           @for (row of steps(); track row.step + row.model) {
             <tr class="border-b border-border last:border-b-0">
-              <td class="py-2 pr-3 font-medium">{{ labels[row.step] ?? row.step }}</td>
+              <td class="py-2 pr-3 font-medium">{{ stepLabel(row.step) }}</td>
               <td class="py-2 pr-3 text-fg-soft">{{ row.model }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ row.runs }}</td>
               <td class="py-2 pr-3 text-right font-mono" [class.text-err]="row.failed > 0">

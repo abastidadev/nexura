@@ -24,9 +24,23 @@
       <a
         [routerLink]="['/runs', tab.id]"
         routerLinkActive="!text-fg border-accent bg-surface-2"
-        class="group flex max-w-60 items-center gap-2 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
-        [attr.title]="tab.status.label"
+        class="group relative flex max-w-60 cursor-grab items-center gap-2 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
+        [class.opacity-40]="dragging() === tab.id"
+        [attr.title]="tab.status.label + ' · arrastra para reordenar'"
+        draggable="true"
+        (dragstart)="onDragStart($event, tab.id)"
+        (dragover)="onDragOver($event, tab.id)"
+        (dragleave)="onDragLeave(tab.id)"
+        (drop)="onDrop($event, tab.id)"
+        (dragend)="onDragEnd()"
       >
+        @if (dropTarget()?.id === tab.id) {
+          <span
+            class="pointer-events-none absolute inset-y-1 w-0.5 rounded bg-accent"
+            [class]="dropTarget()!.side === 'before' ? '-left-px' : '-right-px'"
+            aria-hidden="true"
+          ></span>
+        }
         <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.status.live" aria-hidden="true"></span>
         <span class="truncate">{{ tab.label }}</span>
         @if (tab.comments) {

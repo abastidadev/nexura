@@ -28,7 +28,10 @@ export type NexuraConfigView = {
   steps: StepDefinitionView[];
 };
 
-export type StepDefinitionEdit = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs">;
+export type StepDefinitionEdit = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs"> &
+  Partial<Pick<StepDefinition, "label" | "description" | "after">>;
+
+export type NewStep = { name: string; label?: string; description?: string; after: string };
 
 /** Server error message from an HttpErrorResponse, with a fallback. */
 export function apiError(error: unknown, fallback: string): string {
@@ -72,6 +75,11 @@ export class Api {
     return firstValueFrom(this.http.post<Run>("/api/runs", request));
   }
 
+  /** History, logs and worktrees; the branches stay unless `deleteBranches`. */
+  public deleteRun(runId: string, deleteBranches = false): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/runs/${runId}`, { params: { deleteBranches } }));
+  }
+
   public cancel(runId: string): Promise<void> {
     return firstValueFrom(this.http.post<void>(`/api/runs/${runId}/cancel`, {}));
   }
@@ -111,6 +119,15 @@ export class Api {
 
   public deleteProfile(name: string): Promise<void> {
     return firstValueFrom(this.http.delete<void>(`/api/profiles/${name}`));
+  }
+
+  public createStep(step: NewStep): Promise<void> {
+    return firstValueFrom(this.http.post<void>("/api/steps", step));
+  }
+
+  /** Only custom steps; also takes it out of every profile. */
+  public deleteStep(step: string): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/steps/${encodeURIComponent(step)}`));
   }
 
   public saveStepPrompt(step: string, template: string): Promise<void> {

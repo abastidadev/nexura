@@ -48,6 +48,23 @@ export const STEP_LABELS: Record<string, string> = {
   addressReview: "Responder PR",
 };
 
+/** Labels of the custom steps, registered whenever the config is (re)loaded. */
+const customStepLabels = new Map<string, string>();
+
+export function setCustomStepLabels(steps: { name: string; label?: string; custom?: boolean }[]): void {
+  customStepLabels.clear();
+  for (const step of steps) {
+    if (step.custom && step.label) {
+      customStepLabels.set(step.name, step.label);
+    }
+  }
+}
+
+/** Display name of a step: built-in label, custom label, or its technical name. */
+export function stepLabel(name: string): string {
+  return STEP_LABELS[name] ?? customStepLabels.get(name) ?? name;
+}
+
 /** Tailwind classes per tone: [text, soft background]. Static strings so Tailwind can see them. */
 export const TONE_CLASSES: Record<Tone, { text: string; bg: string; dot: string }> = {
   ok: { text: "text-ok", bg: "bg-ok-soft", dot: "bg-ok" },

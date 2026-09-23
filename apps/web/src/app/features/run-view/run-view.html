@@ -66,6 +66,11 @@
           Borrar worktrees
         </button>
       }
+      @if (!isActive()) {
+        <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="deleteRun()">
+          Borrar flujo
+        </button>
+      }
     </div>
   </header>
 
@@ -75,7 +80,7 @@
 
   @if (run.status === "failed" && info.failedStep; as failed) {
     <div class="flex items-center gap-3 border-b border-err bg-err-soft px-4 py-2 text-err" role="alert">
-      <span class="font-semibold">Falló en {{ stepLabels[failed.step] ?? failed.step }} #{{ failed.attempt }}</span>
+      <span class="font-semibold">Falló en {{ stepLabel(failed.step) }} #{{ failed.attempt }}</span>
       <span class="min-w-0 flex-1 truncate">{{ run.error }}</span>
       @if (selectedStep()?.id !== failed.id) {
         <button type="button" class="rounded border border-err px-2 py-0.5 hover:bg-surface" (click)="selectStep(failed.id)">Ir al paso</button>
@@ -104,7 +109,7 @@
   } @else if (run.status === "paused" && run.pendingStep; as pending) {
     <section class="border-b border-warn bg-warn-soft px-4 py-3" aria-labelledby="pause-title">
       <div class="flex items-center gap-3">
-        <h2 id="pause-title" class="font-semibold text-warn">⏸ Pausado antes de {{ stepLabels[pending.step] ?? pending.step }}</h2>
+        <h2 id="pause-title" class="font-semibold text-warn">⏸ Pausado antes de {{ stepLabel(pending.step) }}</h2>
         <span class="text-[12px] text-fg-soft">Revisa o edita el prompt; el cambio solo se aplica a esta ejecución.</span>
         <div class="ml-auto flex gap-2">
           <button type="button" class="rounded-md border border-border bg-surface px-3 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="continueRun(true)">

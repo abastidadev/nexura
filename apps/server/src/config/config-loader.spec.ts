@@ -2,9 +2,11 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import type { FlowProfile } from "@nexura/shared";
+import { orderSteps, type FlowProfile } from "@nexura/shared";
 import {
+  createStep,
   deleteProfile,
+  deleteStep,
   loadProfiles,
   loadSteps,
   saveProfile,
@@ -65,6 +67,36 @@ describe("config editing", () => {
     expect(() =>
       saveStepDefinition("qaCode", { tools: [], allowedTools: [], disallowedTools: [], useMcp: false, timeoutMs: 5 }, configDir),
     ).toThrow(/timeoutMs/);
+  });
+
+  it("creates custom steps after another step, keeps their metadata on save and deletes them from profiles", () => {
+    createStep({ name: "docs", label: "Docs", after: "implement" }, configDir);
+    createStep({ name: "changelog", after: "docs" }, configDir);
+    createStep({ name: "audit", after: "implement" }, configDir);
+    expect(() => createStep({ name: "docs", after: "plan" }, configDir)).toThrow(/Ya existe/);
+    expect(() => createStep({ name: "implement", after: "plan" }, configDir)).toThrow(/Ya existe/);
+    expect(() => createStep({ name: "1bad", after: "plan" }, configDir)).toThrow(/no válido/);
+    expect(() => createStep({ name: "orphan", after: "nope" }, configDir)).toThrow(/Después de/);
+
+    const steps = loadSteps(configDir);
+    expect(steps.get("docs")).toMatchObject({ kind: "claude", custom: true, label: "Docs", after: "implement", tools: ["Read", "Glob", "Grep"] });
+    expect(steps.get("docs")!.promptTemplate).toContain("paso **docs**");
+    expect(orderSteps(steps.values()).map((step) => step.name)).toEqual([
+      "classify", "enrich", "plan", "implement", "audit", "docs", "changelog", "codeReview", "qaCode", "release", "qaNotes", "addressReview",
+    ]);
+
+    saveStepDefinition("docs", { tools: ["Read", "Edit"], allowedTools: [], disallowedTools: [], useMcp: false, timeoutMs: 60_000, after: "codeReview" }, configDir);
+    expect(loadSteps(configDir).get("docs")).toMatchObject({ custom: true, label: "Docs", after: "codeReview", tools: ["Read", "Edit"] });
+
+    saveProfile(profile({ steps: { implement: { model: "sonnet", effort: "low", enabled: true }, audit: { model: "haiku", effort: "low", enabled: true } } }), configDir);
+    expect(() => deleteStep("implement", configDir)).toThrow(/no se puede borrar/);
+    expect(() => deleteStep("docs", configDir)).toThrow(/changelog/);
+    deleteStep("audit", configDir);
+    expect(loadSteps(configDir).has("audit")).toBe(false);
+    expect(loadProfiles(configDir).get("rapido")!.steps).not.toHaveProperty("audit");
+    deleteStep("changelog", configDir);
+    deleteStep("docs", configDir);
+    deleteProfile("rapido", configDir);
   });
 
   it("only accepts repos that are git checkouts", () => {

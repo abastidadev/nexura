@@ -108,6 +108,42 @@ afterAll(() => {
 });
 
 describe("Orchestrator (fake claude)", () => {
+  it("runs a custom step after its anchor, commits its changes, then deletes the run but keeps the branch", async () => {
+    const config = loadConfig();
+    const implement = config.steps.get("implement")!;
+    config.steps.set("docs", {
+      ...implement,
+      name: "docs",
+      custom: true,
+      label: "Docs",
+      after: "implement",
+      schema: undefined,
+      promptTemplate: "Eres el paso **docs**.\n{{output.implement}}",
+    });
+    const minimal = config.profiles.get("minimal")!;
+    config.profiles.set("docs-profile", { ...minimal, name: "docs-profile", steps: { ...minimal.steps, docs: { model: "haiku", effort: "low", enabled: true } } });
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(config, store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "docs-profile" }));
+    await expect(orchestrator.deleteRun(started.id)).rejects.toThrow(/activo/);
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.error).toBeUndefined();
+    expect(run.steps.map((step) => step.step)).toEqual(["enrich", "implement", "docs", "qaCode", "release"]);
+    expect(run.steps.find((step) => step.step === "docs")!.structuredOutput).toBe("hecho docs");
+    const worktree = run.worktrees[0]!;
+    expect(git(worktree.path, "log", "-1", "--format=%s")).toBe("chore: Docs (nexura)");
+
+    const deleted: string[] = [];
+    orchestrator.on("message", (message) => message.type === "runDeleted" && deleted.push(message.runId));
+    await orchestrator.deleteRun(run.id);
+    expect(store.getRun(run.id)).toBeUndefined();
+    expect(existsSync(worktree.path)).toBe(false);
+    expect(git(repoPath, "branch", "--list", worktree.branch)).toContain(worktree.branch);
+    expect(deleted).toEqual([run.id]);
+    git(repoPath, "branch", "-D", worktree.branch);
+  });
+
   it("delivers a message typed while a claude step runs to that same turn", async () => {
     process.env.FAKE_WAIT_MESSAGE = "1";
     const store = new RunStore(":memory:");

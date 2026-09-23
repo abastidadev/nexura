@@ -7,6 +7,9 @@
     <a routerLink="/new" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90">+ Nuevo flujo</a>
   </div>
 
+  @if (error(); as message) {
+    <p class="mb-3 rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">{{ message }}</p>
+  }
   @if (rows().length === 0) {
     <div class="rounded-lg border border-dashed border-border-strong px-6 py-14 text-center">
       <p class="text-[15px] font-medium">Todavía no hay flujos</p>
@@ -29,6 +32,7 @@
             <th class="px-3 py-2 text-right font-medium">Coste</th>
             <th class="px-3 py-2 text-right font-medium">Duración</th>
             <th class="px-3 py-2 text-right font-medium">Creado</th>
+            <th class="w-10 px-2 py-2"><span class="sr-only">Borrar</span></th>
           </tr>
         </thead>
         <tbody>
@@ -59,6 +63,21 @@
               <td class="px-3 py-2.5 text-right font-mono">{{ row.cost }}</td>
               <td class="px-3 py-2.5 text-right font-mono text-fg-soft">{{ row.duration }}</td>
               <td class="px-3 py-2.5 text-right text-muted">{{ row.created }}</td>
+              <td class="px-2 py-2.5 text-right">
+                @if (!row.active) {
+                  <button
+                    type="button"
+                    class="rounded px-1.5 py-0.5 text-muted hover:bg-err-soft hover:text-err disabled:opacity-40"
+                    title="Borrar flujo"
+                    [attr.aria-label]="'Borrar flujo ' + row.title"
+                    [disabled]="deleting() === row.id"
+                    (click)="remove($event, row)"
+                    (keydown.enter)="$event.stopPropagation()"
+                  >
+                    🗑
+                  </button>
+                }
+              </td>
             </tr>
           }
         </tbody>

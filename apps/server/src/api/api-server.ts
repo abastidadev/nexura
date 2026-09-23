@@ -14,12 +14,15 @@ import {
   type WorkItemScope,
 } from "@nexura/shared";
 import {
+  createStep,
   deleteProfile,
+  deleteStep,
   loadConfig,
   saveProfile,
   saveRepos,
   saveStepDefinition,
   saveStepPrompt,
+  type NewStep,
   type StepDefinitionUpdate,
 } from "../config/config-loader.ts";
 import { NEXURA_HOME } from "../config/paths.ts";
@@ -100,7 +103,7 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   };
 
   const requireStep = (name: string): void => {
-    if (!(STEP_NAMES as readonly string[]).includes(name)) {
+    if (!loadConfig().steps.has(name)) {
       throw new HttpError(404, `Paso desconocido: ${name}`);
     }
   };
@@ -120,6 +123,10 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     return { jsonl: existsSync(file) ? readFileSync(file, "utf8") : "" };
   });
   route("POST", "/api/runs", (_params, body) => orchestrator.start(body as RunRequest));
+  route("DELETE", "/api/runs/:id", async ([id], _body, url) => {
+    requireRun(id!);
+    await orchestrator.deleteRun(id!, url.searchParams.get("deleteBranches") === "true");
+  });
   route("POST", "/api/runs/:id/cancel", ([id]) => orchestrator.cancel(id!));
   route("POST", "/api/runs/:id/message", ([id], body) => orchestrator.sendMessage(id!, String((body as { text?: string }).text ?? "")));
   route("POST", "/api/runs/:id/continue", ([id], body) => orchestrator.continue(id!, body as RetryOptions));
@@ -156,6 +163,15 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   });
   route("DELETE", "/api/profiles/:name", ([name]) => {
     deleteProfile(name!);
+    orchestrator.setConfig(loadConfig());
+  });
+  route("POST", "/api/steps", (_params, body) => {
+    createStep(body as NewStep);
+    orchestrator.setConfig(loadConfig());
+  });
+  route("DELETE", "/api/steps/:name", ([name]) => {
+    requireStep(name!);
+    deleteStep(name!);
     orchestrator.setConfig(loadConfig());
   });
   route("PUT", "/api/steps/:name/prompt", ([name], body) => {

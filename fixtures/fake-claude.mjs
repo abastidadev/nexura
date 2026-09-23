@@ -64,6 +64,7 @@ out({
 
 let output;
 let error;
+let resultText = "ok";
 switch (step) {
   case "classify":
     output = { profile: "minimal", reason: "fake: cambio pequeño" };
@@ -125,7 +126,14 @@ switch (step) {
     output = { summary: "fake", relevantFiles: [], conventions: [], risks: [], openQuestions: [] };
     break;
   default:
-    error = `fake: unknown step for prompt: ${prompt.slice(0, 80)}`;
+    if (args.includes("--json-schema")) {
+      error = `fake: unknown step for prompt: ${prompt.slice(0, 80)}`;
+    } else {
+      // A custom step (no schema): edits a file and answers with plain text.
+      writeFileSync(join(process.cwd(), `${step}.txt`), `custom ${step}
+`);
+      resultText = `hecho ${step}`;
+    }
 }
 
 out({ type: "assistant", message: { content: [{ type: "text", text: `fake ${step} #${count}` }] } });
@@ -133,7 +141,7 @@ out({
   type: "result",
   subtype: error ? "error_during_execution" : "success",
   is_error: Boolean(error),
-  result: error ?? "ok",
+  result: error ?? resultText,
   structured_output: error ? undefined : output,
   total_cost_usd: 0.01,
   num_turns: 1,

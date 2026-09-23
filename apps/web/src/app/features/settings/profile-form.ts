@@ -1,8 +1,8 @@
 import { Component, computed, inject, input, linkedSignal, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
-import type { Effort, FlowProfile, ModelAlias, StepConfig, StepName } from "@nexura/shared";
+import { orderSteps, type Effort, type FlowProfile, type ModelAlias, type StepConfig, type StepName } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { STEP_LABELS } from "../../core/format";
+import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { EFFORTS, MODELS } from "../run-view/step-inspector";
 
@@ -25,7 +25,7 @@ const BLANK_PROFILE: FlowProfile = {
   },
 };
 
-type Row = { name: StepName; label: string; builtin: boolean; onDemand: boolean; config: StepConfig };
+type Row = { name: StepName; label: string; builtin: boolean; custom: boolean; onDemand: boolean; config: StepConfig };
 
 /** Create/edit screen of one profile (`?tab=profiles&edit=<name>`, `&create=1[&from=<name>]`). */
 @Component({
@@ -64,12 +64,13 @@ export class ProfileForm {
   /** Every step with a definition except classify (it only runs in "auto"). */
   protected readonly rows = computed<Row[]>(() => {
     const draft = this.draft();
-    return (this.store.config()?.steps ?? [])
+    return orderSteps(this.store.config()?.steps ?? [])
       .filter((step) => step.name !== "classify")
       .map((step) => ({
         name: step.name,
-        label: STEP_LABELS[step.name] ?? step.name,
+        label: stepLabel(step.name),
         builtin: step.kind === "builtin",
+        custom: Boolean(step.custom),
         onDemand: step.name === "addressReview",
         config: draft?.steps[step.name] ?? DEFAULT_STEP,
       }));

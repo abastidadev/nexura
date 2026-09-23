@@ -4,6 +4,7 @@ import { GeneralSettings } from "./general-settings";
 import { ProfileForm } from "./profile-form";
 import { ProfilesList } from "./profiles-list";
 import { RepoForm } from "./repo-form";
+import { StepCreate } from "./step-create";
 import { ReposList } from "./repos-list";
 import { StepsEditor } from "./steps-editor";
 import { StepsList } from "./steps-list";
@@ -20,11 +21,12 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
 /**
  * Each section is a list; editing or creating an item opens its own screen. The state
  * lives in the query params so the browser's back button returns to the list:
- * `?tab=repos&edit=<name>`, `?tab=repos&create=1`, `?tab=profiles&create=1&from=<name>`, `?tab=steps&step=<name>`.
+ * `?tab=repos&edit=<name>`, `?tab=repos&create=1`, `?tab=profiles&create=1&from=<name>`, `?tab=steps&step=<name>`,
+ * `?tab=steps&create=1`.
  */
 @Component({
   selector: "nx-settings",
-  imports: [GeneralSettings, ProfilesList, ProfileForm, StepsList, StepsEditor, ReposList, RepoForm],
+  imports: [GeneralSettings, ProfilesList, ProfileForm, StepsList, StepsEditor, StepCreate, ReposList, RepoForm],
   template: `
     <div class="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
       @switch (screen()) {
@@ -33,6 +35,9 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
         }
         @case ("profile-form") {
           <nx-profile-form [name]="edit()" [from]="from()" />
+        }
+        @case ("step-create") {
+          <nx-step-create />
         }
         @case ("step-form") {
           <nx-steps-editor [name]="step()!" />
@@ -105,7 +110,7 @@ export class Settings {
       case "profiles":
         return editing ? "profile-form" : "list";
       case "steps":
-        return this.step() ? "step-form" : "list";
+        return this.step() ? "step-form" : this.create() ? "step-create" : "list";
       default:
         return "list";
     }

@@ -3,7 +3,7 @@ import { DecimalPipe } from "@angular/common";
 import { RouterLink } from "@angular/router";
 import type { Metrics } from "@nexura/shared";
 import { Api } from "../../core/api";
-import { formatCost, formatTokens, STEP_LABELS } from "../../core/format";
+import { formatCost, formatTokens, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 const RANGES = [7, 14, 30] as const;
@@ -36,7 +36,7 @@ export class MetricsPage {
 
   protected readonly ranges = RANGES;
   protected readonly days = signal<number>(14);
-  protected readonly labels = STEP_LABELS;
+  protected readonly stepLabel = stepLabel;
   protected readonly formatCost = formatCost;
   protected readonly formatTokens = formatTokens;
   protected readonly percent = percent;

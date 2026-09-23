@@ -2,7 +2,7 @@ import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
   DEFAULT_SETTINGS,
-  STEP_NAMES,
+  orderSteps,
   type CreatedPr,
   type FlowProfile,
   type NexuraEvent,
@@ -278,6 +278,29 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     this.persist(run);
   }
 
+  /**
+   * Forgets a finished run: history, events and logs, plus its worktrees. The branches
+   * stay (they may hold commits or back a PR); `deleteBranches` removes them too.
+   */
+  public async deleteRun(runId: string, deleteBranches = false): Promise<void> {
+    const run = this.requireRun(runId);
+    if (this.contexts.has(runId)) {
+      throw new Error("El flujo está activo: cancélalo antes de borrarlo");
+    }
+    for (const worktree of run.worktrees) {
+      try {
+        await removeWorktree(worktree, deleteBranches);
+      } catch {
+        // Already removed by hand: nothing left to clean.
+      }
+    }
+    for (const step of run.steps) {
+      this.eventSeq.delete(step.id);
+    }
+    this.store.deleteRun(runId);
+    this.emit("message", { type: "runDeleted", runId });
+  }
+
   // ---------------------------------------------------------------- scheduling
 
   private async schedule(runId: string, job: () => Promise<void>): Promise<void> {
@@ -345,7 +368,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       }
 
       const profile = this.config.profiles.get(run.resolvedProfile)!;
-      const sequence = STEP_NAMES.filter((name) => !ON_DEMAND_STEPS.has(name) && profile.steps[name]?.enabled);
+      const sequence = orderSteps(this.config.steps.values())
+        .map((step) => step.name)
+        .filter((name) => !ON_DEMAND_STEPS.has(name) && profile.steps[name]?.enabled);
       let index = startAt && startAt.step !== "classify" ? Math.max(0, sequence.indexOf(startAt.step)) : 0;
       let loops = Math.max(0, run.steps.filter((s) => s.step === "implement" && s.status === "succeeded").length - 1);
 
@@ -382,6 +407,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         }
         if (stepName === "enrich") {
           this.learnFromEnrich(run, stepRun);
+        }
+        if (this.config.steps.get(stepName)?.custom) {
+          await this.afterCustomStep(run, stepRun, ledger);
         }
 
         const rework = this.reworkNeeded(stepName, stepRun.structuredOutput);
@@ -621,7 +649,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       stepRun.costUsd = result.costUsd;
       stepRun.numTurns = result.numTurns;
       stepRun.usage = result.usage;
-      stepRun.structuredOutput = result.structuredOutput;
+      // Steps without a schema (custom ones) hand their final text to the next steps.
+      stepRun.structuredOutput = definition.schema ? result.structuredOutput : result.text;
     }
 
     let error: string | undefined;
@@ -975,6 +1004,22 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       ].join("\n"),
     );
     this.persist(run);
+  }
+
+  /** A custom step's answer goes to the ledger; whatever it changed in the worktrees is committed. */
+  private async afterCustomStep(run: Run, stepRun: StepRun, ledger: Ledger): Promise<void> {
+    const label = this.config.steps.get(stepRun.step)?.label ?? stepRun.step;
+    const shas: string[] = [];
+    for (const worktree of run.worktrees) {
+      const sha = await commitAll(worktree, `chore: ${label} (nexura)`);
+      if (sha) {
+        shas.push(`${worktree.repo}@${sha.slice(0, 8)}`);
+        this.recordEvent(run, stepRun, { kind: "text", text: `Commit \`${sha.slice(0, 8)}\` en ${worktree.repo}` });
+      }
+    }
+    const output = stepRun.structuredOutput;
+    const text = typeof output === "string" ? output : JSON.stringify(output ?? "");
+    ledger.append(`${label} (intento ${stepRun.attempt})`, [text.slice(0, 2000), shas.length ? `Commits: ${shas.join(", ")}` : ""].filter(Boolean).join("\n"));
   }
 
   private reworkNeeded(stepName: StepName, output: unknown): string | undefined {

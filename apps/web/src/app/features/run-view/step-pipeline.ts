@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from "@angular/core";
 import type { StepName, StepRun } from "@nexura/shared";
-import { elapsedMs, formatCost, formatDuration, STEP_LABELS, stepDisplayStatus, TONE_CLASSES } from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
 
 type PipelineItem =
   | {
@@ -93,7 +93,7 @@ export class StepPipeline {
       return {
         type: "run",
         id: step.id,
-        label: STEP_LABELS[step.step] ?? step.step,
+        label: stepLabel(step.step),
         attempt: step.attempt,
         loop: loop && priorSucceeded && steps.some((s) => s.step === step.step && s.status === "succeeded" && s.seq < step.seq),
         status,
@@ -107,7 +107,7 @@ export class StepPipeline {
     });
     const pending: PipelineItem[] = this.planned()
       .filter((plan) => !seen.has(plan.name))
-      .map((plan) => ({ type: "planned", id: `planned-${plan.name}`, label: STEP_LABELS[plan.name] ?? plan.name, detail: plan.detail }));
+      .map((plan) => ({ type: "planned", id: `planned-${plan.name}`, label: stepLabel(plan.name), detail: plan.detail }));
     return [...executed, ...pending];
   });
 }

@@ -2,7 +2,7 @@
   <a class="rounded-md border border-border px-2.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" routerLink="/config" [queryParams]="{ tab: 'steps' }">
     ← Pasos
   </a>
-  <h1 class="text-xl font-semibold tracking-tight">Editar paso · {{ labels[name()] ?? name() }}</h1>
+  <h1 class="text-xl font-semibold tracking-tight">Editar paso · {{ stepLabel(name()) }}</h1>
   <span class="font-mono text-[12px] text-muted">config/steps/{{ name() }}/</span>
   @if (dirty()) {
     <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
@@ -15,6 +15,38 @@
 
 @if (step(); as current) {
   <section class="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-surface p-4">
+    @if (current.custom) {
+      <div class="grid gap-4 md:grid-cols-[1fr_1fr_2fr]">
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">Nombre visible</span>
+          <input
+            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+            [value]="draft().label"
+            (input)="patch({ label: value($event) })"
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">Se ejecuta después de</span>
+          <select class="rounded-md border border-border bg-surface-2 px-2 py-1.5" (change)="patch({ after: value($event) })">
+            @for (option of anchors(); track option.name) {
+              <option [value]="option.name" [selected]="option.name === draft().after">{{ option.label }}</option>
+            }
+          </select>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">Para qué sirve</span>
+          <input
+            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+            [value]="draft().description"
+            (input)="patch({ description: value($event) })"
+          />
+        </label>
+      </div>
+      <p class="-mt-2 text-[11px] text-muted">
+        Paso propio: su respuesta final va al libro de tareas y a <code class="font-mono">{{ "{{" }}output.{{ current.name }}{{ "}}" }}</code>; si cambia ficheros,
+        Nexura hace commit al terminar. Dale <code class="font-mono">Edit</code>/<code class="font-mono">Write</code> en Herramientas si tiene que tocar código.
+      </p>
+    }
     @if (current.kind === "claude") {
       <div class="flex flex-col gap-1">
         <label for="template" class="font-medium">Plantilla del prompt <span class="font-mono text-[11px] text-muted">prompt.md</span></label>
@@ -120,6 +152,16 @@
         Descartar cambios
       </button>
       <a class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" routerLink="/config" [queryParams]="{ tab: 'steps' }">Volver</a>
+      @if (current.custom) {
+        <button
+          type="button"
+          class="ml-auto rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40"
+          [disabled]="busy()"
+          (click)="remove()"
+        >
+          Borrar paso
+        </button>
+      }
       @if (message(); as msg) {
         <span [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
       }
