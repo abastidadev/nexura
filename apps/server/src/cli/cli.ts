@@ -108,7 +108,16 @@ async function main(): Promise<void> {
       const { orchestrator, store } = createOrchestrator(Number(values.concurrency ?? DEFAULT_CONCURRENCY));
       const port = Number(values.port ?? DEFAULT_PORT);
       new PrWatcher(orchestrator).start();
-      createApiServer(orchestrator, store).listen(port, "127.0.0.1", () => {
+      const server = createApiServer(orchestrator, store);
+      server.on("error", (error: NodeJS.ErrnoException) => {
+        console.error(
+          error.code === "EADDRINUSE"
+            ? `El puerto ${port} ya está en uso: probablemente Nexura ya está arrancado (http://localhost:${port}). Usa --port para otro.`
+            : `No se pudo arrancar el servidor: ${error.message}`,
+        );
+        process.exit(1);
+      });
+      server.listen(port, "127.0.0.1", () => {
         console.log(`Nexura by abastidadev · http://localhost:${port}`);
       });
       return;

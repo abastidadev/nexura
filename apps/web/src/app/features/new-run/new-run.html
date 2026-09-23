@@ -3,7 +3,7 @@
   its own and "Lanzar flujo" stays visible. Narrower screens stack everything with one scroll.
 -->
 <form
-  class="mx-auto grid max-w-[1600px] gap-4 px-4 py-4 xl:h-full xl:grid-cols-[minmax(0,1.25fr)_minmax(0,1fr)_360px] xl:grid-rows-[auto_minmax(0,1fr)]"
+  class="mx-auto grid max-w-[1480px] gap-4 px-4 py-4 xl:h-full xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_400px] xl:grid-rows-[auto_minmax(0,1fr)]"
   (submit)="$event.preventDefault(); submit()"
 >
   <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 xl:col-span-3">
@@ -137,8 +137,8 @@
 
   <!-- 3 · Repos, profile, options, launch -->
   <aside class="flex min-h-0 flex-col rounded-lg border border-border bg-surface">
-    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
-      <fieldset>
+    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4">
+      <fieldset class="min-w-0">
         <legend class="mb-1.5 font-semibold">Repositorios <span class="text-err">*</span></legend>
         @if (repos().length === 0) {
           <p class="text-muted">No hay repos. Añádelos en Configuración → Repos.</p>
@@ -159,13 +159,13 @@
         </div>
       </fieldset>
 
-      <fieldset>
+      <fieldset class="min-w-0">
         <legend class="mb-1.5 font-semibold">Perfil</legend>
         <div class="flex flex-col gap-1.5">
           @for (card of profiles(); track card.name) {
             @let selected = profile() === card.name;
             <label
-              class="cursor-pointer rounded-md border px-3 py-2 transition-colors"
+              class="block min-w-0 cursor-pointer rounded-md border px-3 py-2 transition-colors"
               [class]="selected ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-2'"
             >
               <span class="flex items-center gap-2">
@@ -178,7 +178,7 @@
                   (change)="profile.set(card.name)"
                 />
                 <span class="font-medium">{{ card.title }}</span>
-                <span class="ml-auto text-[11px] text-muted">
+                <span class="ml-auto shrink-0 text-[11px] text-muted">
                   {{ card.steps.length }} paso(s){{ card.maxLoops !== undefined ? " · " + card.maxLoops + " vuelta(s)" : "" }}
                 </span>
               </span>
@@ -199,7 +199,7 @@
         </div>
       </fieldset>
 
-      <fieldset class="flex flex-col gap-1">
+      <fieldset class="flex min-w-0 flex-col gap-1">
         <legend class="mb-1.5 font-semibold">Opciones</legend>
         <label class="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 hover:bg-surface-2">
           <input type="checkbox" class="mt-0.5 size-4 accent-(--nx-accent)" [checked]="stepByStep()" (change)="stepByStep.set(!stepByStep())" />
