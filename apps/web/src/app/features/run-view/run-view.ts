@@ -1,18 +1,19 @@
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import { STEP_NAMES, type StepName } from "@nexura/shared";
-import { Api } from "../../core/api";
+import { Api, apiError } from "../../core/api";
 import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, STEP_LABELS } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 import { StepInspector } from "./step-inspector";
 import { StepPipeline } from "./step-pipeline";
+import { TerminalPanel, type TerminalRequest } from "./terminal-panel";
 
 const CLASSIFY_DETAIL = "haiku/low";
 
 @Component({
   selector: "nx-run-view",
-  imports: [RouterLink, StatusPill, StepPipeline, StepInspector],
+  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel],
   templateUrl: "./run-view.html",
   host: { class: "flex h-full flex-col" },
 })
@@ -97,12 +98,27 @@ export class RunView {
   protected readonly actionError = signal<string | null>(null);
   protected readonly stepLabels = STEP_LABELS;
 
+  // ---- embedded terminal
+  protected readonly terminal = linkedSignal<string, TerminalRequest | null>({ source: this.id, computation: () => null });
+  protected readonly terminalMaximized = signal(false);
+  private terminalKey = 0;
+
   public constructor() {
     effect(() => this.store.openTab(this.id()));
   }
 
   protected value(event: Event): string {
     return (event.target as HTMLTextAreaElement).value;
+  }
+
+  protected openShell(): void {
+    this.terminal.set({ key: ++this.terminalKey, runId: this.id(), mode: "shell", title: "Terminal en el worktree" });
+  }
+
+  protected openSession(stepRunId: string): void {
+    const step = this.run()?.steps.find((candidate) => candidate.id === stepRunId);
+    const label = step ? `${STEP_LABELS[step.step] ?? step.step} #${step.attempt}` : "paso";
+    this.terminal.set({ key: ++this.terminalKey, runId: this.id(), mode: "resume", stepRunId, title: `claude --resume · ${label}` });
   }
 
   protected selectStep(id: string): void {
@@ -139,7 +155,7 @@ export class RunView {
       const run = await this.api.getRun(this.id());
       this.store.upsertRun(run);
     } catch (error: unknown) {
-      this.actionError.set((error as { error?: { error?: string } }).error?.error ?? "La acción falló");
+      this.actionError.set(apiError(error, "La acción falló"));
     } finally {
       this.busy.set(false);
     }

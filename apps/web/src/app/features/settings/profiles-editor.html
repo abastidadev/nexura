@@ -1,0 +1,124 @@
+<nav aria-label="Perfiles" class="flex flex-col gap-1">
+  @for (profile of profiles(); track profile.name) {
+    <button
+      type="button"
+      class="rounded-md px-3 py-2 text-left"
+      [class]="selected() === profile.name && !isNew() ? 'bg-accent-soft text-fg ring-1 ring-accent' : 'text-fg-soft hover:bg-surface-2'"
+      (click)="select(profile.name)"
+    >
+      <span class="block font-medium">{{ profile.name }}</span>
+      <span class="block truncate text-[11px] text-muted">{{ profile.description }}</span>
+    </button>
+  }
+  @if (isNew()) {
+    <div class="rounded-md bg-accent-soft px-3 py-2 ring-1 ring-accent">
+      <span class="block font-medium">{{ draft()?.name }}</span>
+      <span class="block text-[11px] text-muted">nuevo, sin guardar</span>
+    </div>
+  }
+</nav>
+
+@if (draft(); as profile) {
+  <section class="min-w-0 rounded-lg border border-border bg-surface p-4">
+    <div class="grid gap-3 md:grid-cols-[220px_1fr_120px]">
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">Nombre</span>
+        <input
+          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent disabled:opacity-60"
+          [value]="profile.name"
+          [disabled]="!isNew()"
+          (input)="patch({ name: value($event) })"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">Descripción</span>
+        <input
+          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          [value]="profile.description"
+          (input)="patch({ description: value($event) })"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">Vueltas máx.</span>
+        <input
+          type="number"
+          min="0"
+          max="10"
+          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent"
+          [value]="profile.maxLoops"
+          (input)="patch({ maxLoops: +value($event) })"
+        />
+      </label>
+    </div>
+
+    <table class="mt-4 w-full border-collapse text-left">
+      <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+        <tr>
+          <th class="py-2 pr-3 font-medium">Activo</th>
+          <th class="py-2 pr-3 font-medium">Paso</th>
+          <th class="py-2 pr-3 font-medium">Modelo</th>
+          <th class="py-2 font-medium">Esfuerzo</th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (row of rows(); track row.name) {
+          <tr class="border-b border-border last:border-b-0" [class.opacity-50]="!row.config.enabled">
+            <td class="py-2 pr-3">
+              <input
+                type="checkbox"
+                class="size-4 accent-(--nx-accent)"
+                [attr.aria-label]="'Activar ' + row.label"
+                [checked]="row.config.enabled"
+                (change)="patchStep(row.name, { enabled: !row.config.enabled })"
+              />
+            </td>
+            <td class="py-2 pr-3 font-medium">{{ row.label }}</td>
+            @if (row.builtin) {
+              <td class="py-2 text-muted" colspan="2">sin LLM (código del orquestador, 0 tokens)</td>
+            } @else {
+              <td class="py-2 pr-3">
+                <select
+                  class="rounded border border-border bg-surface-2 px-1.5 py-1"
+                  [attr.aria-label]="'Modelo de ' + row.label"
+                  (change)="setModel(row.name, $event)"
+                >
+                  @for (model of models; track model) {
+                    <option [value]="model" [selected]="model === row.config.model">{{ model }}</option>
+                  }
+                </select>
+              </td>
+              <td class="py-2">
+                <select
+                  class="rounded border border-border bg-surface-2 px-1.5 py-1"
+                  [attr.aria-label]="'Esfuerzo de ' + row.label"
+                  (change)="setEffort(row.name, $event)"
+                >
+                  @for (effort of efforts; track effort) {
+                    <option [value]="effort" [selected]="effort === row.config.effort">{{ effort }}</option>
+                  }
+                </select>
+              </td>
+            }
+          </tr>
+        }
+      </tbody>
+    </table>
+
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+      <button type="button" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy()" (click)="save()">
+        Guardar perfil
+      </button>
+      @if (!isNew()) {
+        <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="duplicate()">Duplicar como nuevo</button>
+        <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="remove()">
+          Borrar
+        </button>
+      } @else {
+        <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="select(selected())">Descartar</button>
+      }
+      @if (message(); as msg) {
+        <span [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
+      }
+    </div>
+  </section>
+}

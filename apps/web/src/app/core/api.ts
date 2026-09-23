@@ -22,6 +22,13 @@ export type NexuraConfigView = {
   steps: StepDefinitionView[];
 };
 
+export type StepDefinitionEdit = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs">;
+
+/** Server error message from an HttpErrorResponse, with a fallback. */
+export function apiError(error: unknown, fallback: string): string {
+  return (error as { error?: { error?: string } }).error?.error ?? fallback;
+}
+
 export type CostByStep = { step: string; model: string; runs: number; costUsd: number; avgTurns: number };
 
 /** Thin typed client of the Nexura server REST API. */
@@ -77,6 +84,26 @@ export class Api {
 
   public getConfig(): Promise<NexuraConfigView> {
     return firstValueFrom(this.http.get<NexuraConfigView>("/api/config"));
+  }
+
+  public saveProfile(profile: FlowProfile): Promise<FlowProfile> {
+    return firstValueFrom(this.http.put<FlowProfile>(`/api/profiles/${profile.name}`, profile));
+  }
+
+  public deleteProfile(name: string): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/profiles/${name}`));
+  }
+
+  public saveStepPrompt(step: string, template: string): Promise<void> {
+    return firstValueFrom(this.http.put<void>(`/api/steps/${step}/prompt`, { template }));
+  }
+
+  public saveStepDefinition(step: string, definition: StepDefinitionEdit): Promise<void> {
+    return firstValueFrom(this.http.put<void>(`/api/steps/${step}/definition`, definition));
+  }
+
+  public saveRepos(repos: RepoConfig[]): Promise<void> {
+    return firstValueFrom(this.http.put<void>("/api/repos", { repos }));
   }
 
   public getQuota(): Promise<QuotaInfo | null> {

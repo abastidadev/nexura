@@ -1,0 +1,64 @@
+<p class="mb-4 max-w-3xl text-muted">
+  Los repos que puede tocar un flujo. Cada ejecución crea un worktree en <code class="font-mono">&lt;ruta&gt;.worktrees/nexura-&lt;id&gt;</code> con una rama
+  <code class="font-mono">&lt;prefijo&gt;/&lt;ticket&gt;-&lt;título&gt;</code> desde la rama base. Los <em>checks</em> son los comandos que ejecuta el paso QA sin gastar tokens.
+</p>
+
+<div class="grid gap-4 xl:grid-cols-2">
+  @for (repo of drafts(); track $index; let i = $index) {
+    <section class="rounded-lg border border-border bg-surface p-4" [attr.aria-label]="'Repo ' + (repo.name || 'nuevo')">
+      <div class="grid gap-3 md:grid-cols-2">
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">Nombre</span>
+          <input class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent" [value]="repo.name" (input)="patch(i, { name: value($event) })" />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">Rama base</span>
+          <input class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent" [value]="repo.baseBranch" (input)="patch(i, { baseBranch: value($event) })" />
+        </label>
+        <label class="flex flex-col gap-1 md:col-span-2">
+          <span class="text-[11px] font-medium text-muted uppercase">Ruta local</span>
+          <input
+            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-accent"
+            placeholder="C:\SCB-Development\MiRepo"
+            [value]="repo.path"
+            (input)="patch(i, { path: value($event) })"
+          />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">Prefijo de rama</span>
+          <input class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent" placeholder="feat" [value]="repo.branchPrefix" (input)="patch(i, { branchPrefix: value($event) })" />
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="text-[11px] font-medium text-muted uppercase">node_modules del worktree</span>
+          <select class="rounded-md border border-border bg-surface-2 px-2 py-1.5" (change)="setNodeModules(i, $event)">
+            @for (option of options; track option.value) {
+              <option [value]="option.value" [selected]="option.value === repo.nodeModules">{{ option.label }}</option>
+            }
+          </select>
+        </label>
+        <label class="flex flex-col gap-1 md:col-span-2">
+          <span class="text-[11px] font-medium text-muted uppercase">Checks (uno por línea)</span>
+          <textarea
+            rows="3"
+            spellcheck="false"
+            class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+            [value]="repo.checks"
+            (input)="patch(i, { checks: value($event) })"
+          ></textarea>
+        </label>
+      </div>
+      <button type="button" class="mt-3 text-[12px] text-err hover:underline" (click)="remove(i)">Quitar repo</button>
+    </section>
+  }
+</div>
+
+<div class="mt-4 flex flex-wrap items-center gap-2">
+  <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="add()">+ Añadir repo</button>
+  <button type="button" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy() || !dirty()" (click)="save()">
+    Guardar repos
+  </button>
+  <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3 disabled:opacity-40" [disabled]="!dirty()" (click)="discard()">Descartar</button>
+  @if (message(); as msg) {
+    <span [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
+  }
+</div>

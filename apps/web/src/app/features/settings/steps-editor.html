@@ -1,0 +1,134 @@
+<nav aria-label="Pasos" class="flex flex-col gap-1">
+  @for (item of steps(); track item.name) {
+    <button
+      type="button"
+      class="rounded-md px-3 py-2 text-left"
+      [class]="selected() === item.name ? 'bg-accent-soft text-fg ring-1 ring-accent' : 'text-fg-soft hover:bg-surface-2'"
+      (click)="select(item.name)"
+    >
+      <span class="block font-medium">{{ labels[item.name] ?? item.name }}</span>
+      <span class="block font-mono text-[11px] text-muted">{{ item.name }} · {{ item.kind === "builtin" ? "sin LLM" : "claude" }}</span>
+    </button>
+  }
+</nav>
+
+@if (step(); as current) {
+  <section class="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-surface p-4">
+    <div class="flex items-center gap-2">
+      <h2 class="text-[15px] font-semibold">{{ labels[current.name] ?? current.name }}</h2>
+      <span class="font-mono text-[12px] text-muted">config/steps/{{ current.name }}/</span>
+      @if (dirty()) {
+        <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
+      }
+    </div>
+
+    @if (current.kind === "claude") {
+      <div class="flex flex-col gap-1">
+        <label for="template" class="font-medium">Plantilla del prompt <span class="font-mono text-[11px] text-muted">prompt.md</span></label>
+        <p class="text-[12px] text-muted">
+          Corrige aquí lo que falle en todos los tickets (pilar 2): los cambios valen para las próximas ejecuciones de este paso. Variables:
+        </p>
+        <div class="flex flex-wrap gap-1">
+          @for (variable of variables; track variable.name) {
+            <code class="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[11px]" [attr.title]="variable.help">{{ "{{" }}{{ variable.name }}{{ "}}" }}</code>
+          }
+        </div>
+        <textarea
+          id="template"
+          rows="18"
+          spellcheck="false"
+          class="mt-1 resize-y rounded-md border border-border bg-surface-2 px-3 py-2 font-mono text-[12px] leading-relaxed outline-none focus:border-accent"
+          [value]="draft().template"
+          (input)="patch({ template: value($event) })"
+        ></textarea>
+      </div>
+    } @else {
+      <p class="rounded-md bg-surface-2 px-3 py-2 text-muted">
+        Paso <strong>builtin</strong>: lo ejecuta el orquestador sin LLM, así que no tiene prompt. Solo cuenta el timeout.
+      </p>
+    }
+
+    @if (current.kind === "claude") {
+      <div class="grid gap-4 md:grid-cols-3">
+        <label class="flex flex-col gap-1">
+          <span class="font-medium">Herramientas <span class="font-mono text-[11px] text-muted">--tools</span></span>
+          <span class="text-[11px] text-muted">Lista dura: lo que no esté aquí no existe para Claude. Vacío = sin herramientas.</span>
+          <textarea
+            rows="5"
+            spellcheck="false"
+            class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+            [value]="draft().tools"
+            (input)="patch({ tools: value($event) })"
+          ></textarea>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="font-medium">Permitidas <span class="font-mono text-[11px] text-muted">--allowedTools</span></span>
+          <span class="text-[11px] text-muted">Una regla por línea, p. ej. <code class="font-mono">Bash(npm run *)</code>.</span>
+          <textarea
+            rows="5"
+            spellcheck="false"
+            class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+            [value]="draft().allowedTools"
+            (input)="patch({ allowedTools: value($event) })"
+          ></textarea>
+        </label>
+        <label class="flex flex-col gap-1">
+          <span class="font-medium">Prohibidas <span class="font-mono text-[11px] text-muted">--disallowedTools</span></span>
+          <span class="text-[11px] text-muted">Siempre denegadas, p. ej. <code class="font-mono">Bash(git push*)</code>.</span>
+          <textarea
+            rows="5"
+            spellcheck="false"
+            class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+            [value]="draft().disallowedTools"
+            (input)="patch({ disallowedTools: value($event) })"
+          ></textarea>
+        </label>
+      </div>
+    }
+
+    <div class="flex flex-wrap items-center gap-6">
+      <label class="flex items-center gap-2">
+        Timeout
+        <input
+          type="number"
+          min="1"
+          step="1"
+          class="w-20 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono outline-none focus:border-accent"
+          [value]="draft().timeoutMinutes"
+          (input)="patch({ timeoutMinutes: +value($event) })"
+        />
+        min
+      </label>
+      @if (current.kind === "claude") {
+        <label class="flex cursor-pointer items-center gap-2">
+          <input type="checkbox" class="size-4 accent-(--nx-accent)" [checked]="draft().useMcp" (change)="patch({ useMcp: !draft().useMcp })" />
+          Cargar servidores MCP <span class="text-[11px] text-muted">(más contexto = más tokens)</span>
+        </label>
+      }
+    </div>
+
+    @if (schema()) {
+      <details class="rounded-md border border-border">
+        <summary class="cursor-pointer px-3 py-2 text-fg-soft">Schema de la salida <span class="font-mono text-[11px] text-muted">schema.json</span> (solo lectura)</summary>
+        <pre class="max-h-80 overflow-auto border-t border-border p-3 font-mono text-[11px]">{{ schema() }}</pre>
+      </details>
+    }
+
+    <div class="flex flex-wrap items-center gap-2">
+      <button
+        type="button"
+        class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40"
+        [disabled]="busy() || !dirty()"
+        (click)="save()"
+      >
+        Guardar paso
+      </button>
+      <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3 disabled:opacity-40" [disabled]="!dirty()" (click)="discard()">
+        Descartar cambios
+      </button>
+      @if (message(); as msg) {
+        <span [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
+      }
+    </div>
+  </section>
+}

@@ -1,6 +1,7 @@
-import { Component, computed, inject, input, linkedSignal, resource, signal } from "@angular/core";
+import { Component, computed, inject, input, linkedSignal, output, resource, signal } from "@angular/core";
+import { RouterLink } from "@angular/router";
 import type { Effort, ModelAlias, Run, StepRun } from "@nexura/shared";
-import { Api } from "../../core/api";
+import { Api, apiError } from "../../core/api";
 import {
   elapsedMs,
   formatCost,
@@ -22,7 +23,7 @@ export const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh"];
 
 @Component({
   selector: "nx-step-inspector",
-  imports: [EventTimeline],
+  imports: [EventTimeline, RouterLink],
   templateUrl: "./step-inspector.html",
   host: { class: "flex min-h-0 flex-col" },
 })
@@ -32,6 +33,9 @@ export class StepInspector {
 
   public readonly run = input.required<Run>();
   public readonly step = input.required<StepRun>();
+  /** Whether the run still has a worktree to open a terminal in. */
+  public readonly hasWorktree = input(false);
+  public readonly openSession = output<void>();
 
   protected readonly tabs: { id: Tab; label: string }[] = [
     { id: "events", label: "Eventos" },
@@ -124,7 +128,7 @@ export class StepInspector {
       });
       this.instruction.set("");
     } catch (error: unknown) {
-      this.debugError.set((error as { error?: { error?: string } }).error?.error ?? "No se pudo relanzar el paso");
+      this.debugError.set(apiError(error, "No se pudo relanzar el paso"));
     } finally {
       this.busy.set(false);
     }

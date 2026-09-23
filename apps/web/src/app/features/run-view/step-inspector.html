@@ -16,6 +16,11 @@
       <button type="button" class="font-mono hover:text-fg" title="Copiar comando para reanudar en tu terminal" (click)="copySession()">
         sesión {{ sessionId.slice(0, 8) }} {{ copied() ? "✓ copiado" : "⧉" }}
       </button>
+      @if (hasWorktree() && step().status !== "running") {
+        <button type="button" class="rounded bg-accent-soft px-2 py-0.5 text-accent hover:underline" (click)="openSession.emit()">
+          ▸ Abrir en Claude (terminal)
+        </button>
+      }
     }
   </div>
 
@@ -64,17 +69,17 @@
       @if (mode() !== "skip" && isClaude()) {
         <label class="flex items-center gap-1.5 text-[12px]">
           Modelo
-          <select class="rounded border border-border bg-surface px-1.5 py-0.5" [value]="model()" (change)="model.set($any(value($event)))">
+          <select class="rounded border border-border bg-surface px-1.5 py-0.5" (change)="model.set($any(value($event)))">
             @for (option of models; track option) {
-              <option [value]="option">{{ option }}</option>
+              <option [value]="option" [selected]="option === model()">{{ option }}</option>
             }
           </select>
         </label>
         <label class="flex items-center gap-1.5 text-[12px]">
           Esfuerzo
-          <select class="rounded border border-border bg-surface px-1.5 py-0.5" [value]="effort()" (change)="effort.set($any(value($event)))">
+          <select class="rounded border border-border bg-surface px-1.5 py-0.5" (change)="effort.set($any(value($event)))">
             @for (option of efforts; track option) {
-              <option [value]="option">{{ option }}</option>
+              <option [value]="option" [selected]="option === effort()">{{ option }}</option>
             }
           </select>
         </label>
@@ -87,7 +92,9 @@
           <label class="mt-2 flex flex-col gap-1">
             <span class="text-[12px] text-muted">
               Prompt del reintento (editable). Si el cambio sirve para todos los tickets, llévalo a
-              <code class="font-mono">config/steps/{{ step().step }}/prompt.md</code>: se arregla la pieza, no el output.
+              <a class="font-mono text-accent hover:underline" routerLink="/config" [queryParams]="{ tab: 'steps', step: step().step }"
+                >la plantilla de {{ step().step }}</a
+              >: se arregla la pieza, no el output.
             </span>
             <textarea
               rows="8"

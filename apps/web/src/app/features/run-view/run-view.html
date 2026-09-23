@@ -28,6 +28,9 @@
     </dl>
 
     <div class="flex gap-2">
+      @if (run.worktrees.length) {
+        <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="openShell()">⌨ Terminal</button>
+      }
       @if (isActive()) {
         <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="cancel()">
           Cancelar
@@ -89,7 +92,7 @@
     </section>
   }
 
-  <div class="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px]">
+  <div class="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px]" [class.hidden]="terminal() && terminalMaximized()">
     <aside class="overflow-y-auto border-r border-border bg-surface p-3">
       <div class="mb-2 flex items-center justify-between">
         <h2 class="text-[11px] font-semibold tracking-wide text-muted uppercase">Pipeline</h2>
@@ -108,7 +111,13 @@
 
     <section class="flex min-h-0 flex-col bg-bg">
       @if (selectedStep(); as step) {
-        <nx-step-inspector class="min-h-0 flex-1" [run]="run" [step]="step" />
+        <nx-step-inspector
+          class="min-h-0 flex-1"
+          [run]="run"
+          [step]="step"
+          [hasWorktree]="run.worktrees.length > 0"
+          (openSession)="openSession(step.id)"
+        />
       } @else {
         <p class="m-auto text-muted">
           @switch (run.status) {
@@ -171,6 +180,15 @@
       </section>
     </aside>
   </div>
+  @for (request of terminal() ? [terminal()!] : []; track request.key) {
+    <nx-terminal-panel
+      class="shrink-0 border-t border-border-strong"
+      [class]="terminalMaximized() ? 'min-h-0 flex-1' : 'h-80'"
+      [request]="request"
+      (closed)="terminal.set(null); terminalMaximized.set(false)"
+      (toggleMaximize)="terminalMaximized.set(!terminalMaximized())"
+    />
+  }
 } @else {
   <div class="m-auto text-center">
     <p class="text-muted">No se encuentra el flujo <span class="font-mono">{{ id() }}</span>.</p>

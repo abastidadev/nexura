@@ -13,7 +13,7 @@ IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) qu
 | 0. Spike del CLI | ✅ hecho |
 | 1. Núcleo backend | ✅ hecho: runner, orquestador, worktrees, SQLite, ledger, API REST/WS, CLI |
 | 2. UI base | ✅ hecho: tabs, nuevo flujo, pipeline, timeline en vivo, cuota, depuración básica |
-| 3. Depuración | ⏳ |
+| 3. Depuración | ✅ hecho: terminal embebida (shell y claude --resume), editor de perfiles, pasos y repos |
 | 4. Perfiles y `classify` | ⏳ |
 | 5. Azure DevOps | ⏳ |
 | 6. Métricas | ⏳ |
@@ -29,7 +29,8 @@ apps/server/src/
   workspace/                git worktree por run y repo, junction de node_modules, commits
   store/                    SQLite (node:sqlite) + JSONL crudo por paso en data/runs/<id>/steps
   ledger/                   libro de tareas por run (data/runs/<id>/ledger.md)
-  api/                      REST + WebSocket (/ws) en :4310
+  api/                      REST + WebSocket (/ws eventos, /pty terminales) en :4310
+  terminal/                 PTY (@lydell/node-pty, binarios precompilados) para la terminal embebida
   cli/                      comando nexura
 apps/web/                   UI Angular 22 + Tailwind v4 (tabs, nuevo flujo, vista del flujo)
 config/profiles/*.json      minimal / standard / full
@@ -65,6 +66,8 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 - **Vista del flujo**: pipeline de pasos (con reintentos y vueltas), timeline en vivo de cada paso (texto, herramientas con entrada/resultado, errores en rojo, resultado con coste/tokens/turnos), prompt renderizado, salida JSON, log crudo y el comando exacto. A la derecha: tareas que se van marcando, ramas/worktrees y el libro de tareas.
 - **Depuración**: en el paso que falló, reintentar (editando prompt, modelo o esfuerzo), continuar su sesión de Claude con una instrucción, o saltarlo. En modo paso a paso, se para antes de cada paso para revisar o editar el prompt.
 - **Cuota**: medidor en vivo de las ventanas de 5 h y 7 días del plan.
+- **Terminal embebida** (xterm.js + PTY): botón *Terminal* abre PowerShell en el worktree del flujo; *Abrir en Claude* reanuda la sesión de un paso (`claude --resume`) para seguir hablando con él a mano. La primera vez en cada worktree Claude pide confiar en la carpeta.
+- **Configuración** (⚙): editor de perfiles (pasos, modelo, esfuerzo, vueltas; duplicar/borrar), de pasos (plantilla del prompt con sus variables, `--tools`, permitidas/prohibidas, timeout, MCP) y de repos (ruta, rama base, prefijo, checks, node_modules). Todo se guarda en `config/`; desde el panel de depuración de un paso hay un enlace directo a su plantilla.
 
 ## Cómo funciona cada paso
 

@@ -2,12 +2,29 @@ import { createReadStream, existsSync, readFileSync, statSync } from "node:fs";
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from "node:http";
 import { extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
-import type { FlowProfile, RetryOptions, RunRequest, ServerMessage, StepName } from "@nexura/shared";
-import { loadConfig, saveProfile, saveStepPrompt } from "../config/config-loader.ts";
+import {
+  STEP_NAMES,
+  type FlowProfile,
+  type RepoConfig,
+  type RetryOptions,
+  type RunRequest,
+  type ServerMessage,
+  type StepName,
+} from "@nexura/shared";
+import {
+  deleteProfile,
+  loadConfig,
+  saveProfile,
+  saveRepos,
+  saveStepDefinition,
+  saveStepPrompt,
+  type StepDefinitionUpdate,
+} from "../config/config-loader.ts";
 import { NEXURA_HOME } from "../config/paths.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
+import { TerminalServer } from "../terminal/terminal-server.ts";
 
 const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
 const MIME: Record<string, string> = {
@@ -75,6 +92,12 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     return run;
   };
 
+  const requireStep = (name: string): void => {
+    if (!(STEP_NAMES as readonly string[]).includes(name)) {
+      throw new HttpError(404, `Paso desconocido: ${name}`);
+    }
+  };
+
   route("GET", "/api/runs", () => store.listRuns());
   route("GET", "/api/runs/:id", ([id]) => requireRun(id!));
   route("GET", "/api/runs/:id/steps/:stepRunId/events", ([, stepRunId], _body, url) =>
@@ -115,8 +138,22 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     orchestrator.setConfig(loadConfig());
     return profile;
   });
+  route("DELETE", "/api/profiles/:name", ([name]) => {
+    deleteProfile(name!);
+    orchestrator.setConfig(loadConfig());
+  });
   route("PUT", "/api/steps/:name/prompt", ([name], body) => {
+    requireStep(name!);
     saveStepPrompt(name as StepName, (body as { template: string }).template);
+    orchestrator.setConfig(loadConfig());
+  });
+  route("PUT", "/api/steps/:name/definition", ([name], body) => {
+    requireStep(name!);
+    saveStepDefinition(name as StepName, body as StepDefinitionUpdate);
+    orchestrator.setConfig(loadConfig());
+  });
+  route("PUT", "/api/repos", (_params, body) => {
+    saveRepos((body as { repos: RepoConfig[] }).repos ?? []);
     orchestrator.setConfig(loadConfig());
   });
 
@@ -146,7 +183,19 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     }
   });
 
-  const sockets = new WebSocketServer({ server, path: "/ws" });
+  // Several WebSocket servers on one HTTP server must route the upgrade themselves.
+  const sockets = new WebSocketServer({ noServer: true });
+  const terminals = new TerminalServer(store);
+  server.on("upgrade", (request, socket, head) => {
+    const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
+    if (pathname === "/ws") {
+      sockets.handleUpgrade(request, socket, head, (ws) => sockets.emit("connection", ws, request));
+    } else if (pathname === "/pty") {
+      terminals.handleUpgrade(request, socket, head);
+    } else {
+      socket.destroy();
+    }
+  });
   const clients = new Set<WebSocket>();
   sockets.on("connection", (socket) => {
     clients.add(socket);

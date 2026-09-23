@@ -23,6 +23,7 @@
               }
             ],
             "styles": [
+              "@xterm/xterm/css/xterm.css",
               "src/styles.css"
             ]
           },

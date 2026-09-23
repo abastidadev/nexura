@@ -51,6 +51,7 @@
 
   <div class="flex shrink-0 items-center gap-4 pr-3">
     <nx-quota-meter />
+    <a routerLink="/config" routerLinkActive="!text-fg" class="text-muted hover:text-fg" aria-label="Configuración" title="Configuración">⚙</a>
     <span
       class="flex items-center gap-1.5 text-[11px]"
       [class]="store.connected() ? 'text-muted' : 'text-err'"

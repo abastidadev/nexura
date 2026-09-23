@@ -16,5 +16,10 @@ export const routes: Routes = [
     title: "Nexura · Flujo",
     loadComponent: () => import("./features/run-view/run-view").then((m) => m.RunView),
   },
+  {
+    path: "config",
+    title: "Nexura · Configuración",
+    loadComponent: () => import("./features/settings/settings").then((m) => m.Settings),
+  },
   { path: "**", redirectTo: "" },
 ];

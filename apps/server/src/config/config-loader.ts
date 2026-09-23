@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { STEP_NAMES, type FlowProfile, type RepoConfig, type StepDefinition, type StepName } from "@nexura/shared";
 import { CONFIG_DIR } from "./paths.ts";
@@ -65,9 +65,116 @@ export function saveStepPrompt(step: StepName, template: string, configDir = CON
   writeFileSync(join(configDir, "steps", step, "prompt.md"), template);
 }
 
-export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void {
-  if (!/^[a-z0-9-]+$/.test(profile.name)) {
-    throw new Error(`Invalid profile name "${profile.name}" (use a-z, 0-9 and -)`);
+const PROFILE_NAME = /^[a-z0-9-]+$/;
+const MODELS = new Set(["haiku", "sonnet", "opus"]);
+const EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+const MIN_TIMEOUT_MS = 10_000;
+
+function profileFile(name: string, configDir: string): string {
+  if (!PROFILE_NAME.test(name) || name === "auto") {
+    throw new Error(`Nombre de perfil no válido: "${name}" (usa a-z, 0-9 y -; "auto" está reservado)`);
   }
-  writeFileSync(join(configDir, "profiles", `${profile.name}.json`), JSON.stringify(profile, null, 2) + "\n");
+  return join(configDir, "profiles", `${name}.json`);
+}
+
+export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void {
+  const file = profileFile(profile.name, configDir);
+  if (!Number.isInteger(profile.maxLoops) || profile.maxLoops < 0) {
+    throw new Error("maxLoops debe ser un entero >= 0");
+  }
+  const steps: FlowProfile["steps"] = {};
+  for (const name of STEP_NAMES) {
+    const step = profile.steps[name];
+    if (!step) {
+      continue;
+    }
+    if (!MODELS.has(step.model) || !EFFORTS.has(step.effort)) {
+      throw new Error(`Modelo o esfuerzo no válido en el paso ${name}`);
+    }
+    steps[name] = { model: step.model, effort: step.effort, enabled: Boolean(step.enabled) };
+  }
+  if (!Object.values(steps).some((step) => step?.enabled)) {
+    throw new Error("El perfil necesita al menos un paso activo");
+  }
+  const clean: FlowProfile = {
+    name: profile.name,
+    description: profile.description ?? "",
+    maxLoops: profile.maxLoops,
+    steps,
+    ...(profile.budgetUsd !== undefined ? { budgetUsd: profile.budgetUsd } : {}),
+  };
+  writeFileSync(file, JSON.stringify(clean, null, 2) + "\n");
+}
+
+export function deleteProfile(name: string, configDir = CONFIG_DIR): void {
+  const file = profileFile(name, configDir);
+  if (!existsSync(file)) {
+    throw new Error(`No existe el perfil ${name}`);
+  }
+  if (loadProfiles(configDir).size <= 1) {
+    throw new Error("No se puede borrar el último perfil");
+  }
+  unlinkSync(file);
+}
+
+export type StepDefinitionUpdate = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs">;
+
+/** Updates the editable parts of step.json; `kind` never changes from the UI. */
+export function saveStepDefinition(step: StepName, update: StepDefinitionUpdate, configDir = CONFIG_DIR): void {
+  const file = join(configDir, "steps", step, "step.json");
+  if (!existsSync(file)) {
+    throw new Error(`No existe el paso ${step}`);
+  }
+  const current = readJson<Omit<StepDefinition, "name">>(file);
+  const list = (values: unknown): string[] =>
+    Array.isArray(values) ? values.map((value) => String(value).trim()).filter(Boolean) : [];
+  if (!Number.isFinite(update.timeoutMs) || update.timeoutMs < MIN_TIMEOUT_MS) {
+    throw new Error(`timeoutMs debe ser >= ${MIN_TIMEOUT_MS}`);
+  }
+  const next = {
+    kind: current.kind,
+    tools: list(update.tools),
+    allowedTools: list(update.allowedTools),
+    disallowedTools: list(update.disallowedTools),
+    useMcp: Boolean(update.useMcp),
+    timeoutMs: Math.round(update.timeoutMs),
+  };
+  writeFileSync(file, JSON.stringify(next, null, 2) + "\n");
+}
+
+/** Validates that every repo exists and is a git checkout, then writes config/repos.json. */
+export function saveRepos(repos: RepoConfig[], configDir = CONFIG_DIR): void {
+  const names = new Set<string>();
+  const clean = repos.map((repo) => {
+    const name = String(repo.name ?? "").trim();
+    const path = String(repo.path ?? "").trim();
+    if (!/^[\w.-]+$/.test(name)) {
+      throw new Error(`Nombre de repo no válido: "${name}"`);
+    }
+    if (names.has(name)) {
+      throw new Error(`Repo duplicado: ${name}`);
+    }
+    names.add(name);
+    if (!existsSync(join(path, ".git"))) {
+      throw new Error(`${name}: "${path}" no es un repositorio git`);
+    }
+    if (!repo.baseBranch?.trim()) {
+      throw new Error(`${name}: falta la rama base`);
+    }
+    const result: RepoConfig = {
+      name,
+      path,
+      baseBranch: repo.baseBranch.trim(),
+      checks: (repo.checks ?? []).map((check) => check.trim()).filter(Boolean),
+    };
+    if (repo.branchPrefix?.trim()) {
+      result.branchPrefix = repo.branchPrefix.trim();
+    }
+    if (repo.nodeModules && repo.nodeModules !== "link") {
+      result.nodeModules = repo.nodeModules;
+    }
+    return result;
+  });
+  const file = process.env.NEXURA_REPOS ?? join(configDir, "repos.json");
+  writeFileSync(file, JSON.stringify({ repos: clean }, null, 2) + "\n");
 }

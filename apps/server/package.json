@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "dependencies": {
+    "@lydell/node-pty": "^1.2.0-beta.15",
     "@nexura/shared": "*",
     "ws": "^8.21.3"
   },
