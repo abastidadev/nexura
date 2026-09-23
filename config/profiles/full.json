@@ -1,0 +1,13 @@
+{
+  "name": "full",
+  "description": "Tickets grandes o de riesgo: esfuerzo alto en plan y review.",
+  "maxLoops": 3,
+  "steps": {
+    "enrich": { "model": "sonnet", "effort": "medium", "enabled": true },
+    "plan": { "model": "opus", "effort": "high", "enabled": true },
+    "implement": { "model": "sonnet", "effort": "high", "enabled": true },
+    "codeReview": { "model": "opus", "effort": "high", "enabled": true },
+    "qaCode": { "model": "haiku", "effort": "low", "enabled": true },
+    "release": { "model": "haiku", "effort": "low", "enabled": true }
+  }
+}

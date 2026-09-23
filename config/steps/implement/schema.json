@@ -1,0 +1,12 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string" },
+    "commitMessage": { "type": "string", "description": "Conventional commit: type(scope): subject" },
+    "tasksDone": { "type": "array", "items": { "type": "string" }, "description": "Ids de las tareas completadas" },
+    "filesChanged": { "type": "array", "items": { "type": "string" } },
+    "notes": { "type": "string" }
+  },
+  "required": ["summary", "commitMessage", "tasksDone", "filesChanged", "notes"],
+  "additionalProperties": false
+}

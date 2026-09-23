@@ -4,3 +4,4 @@ data/
 .env
 *.log
 .angular/
+config/repos.json

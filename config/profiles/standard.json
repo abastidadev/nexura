@@ -1,0 +1,13 @@
+{
+  "name": "standard",
+  "description": "Features normales: añade plan y code review.",
+  "maxLoops": 2,
+  "steps": {
+    "enrich": { "model": "haiku", "effort": "medium", "enabled": true },
+    "plan": { "model": "sonnet", "effort": "medium", "enabled": true },
+    "implement": { "model": "sonnet", "effort": "medium", "enabled": true },
+    "codeReview": { "model": "sonnet", "effort": "medium", "enabled": true },
+    "qaCode": { "model": "haiku", "effort": "low", "enabled": true },
+    "release": { "model": "haiku", "effort": "low", "enabled": true }
+  }
+}

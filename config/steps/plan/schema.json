@@ -1,0 +1,29 @@
+{
+  "type": "object",
+  "properties": {
+    "approach": { "type": "string" },
+    "changes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": { "repo": { "type": "string" }, "path": { "type": "string" }, "change": { "type": "string" } },
+        "required": ["repo", "path", "change"],
+        "additionalProperties": false
+      }
+    },
+    "acceptanceCriteria": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "description": { "type": "string" },
+          "command": { "type": "string", "description": "Comando `npm run ...` que lo verifica, si existe" }
+        },
+        "required": ["description"],
+        "additionalProperties": false
+      }
+    }
+  },
+  "required": ["approach", "changes", "acceptanceCriteria"],
+  "additionalProperties": false
+}

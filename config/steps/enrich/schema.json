@@ -1,0 +1,20 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string", "description": "Qué pide el ticket, en 2-4 frases" },
+    "relevantFiles": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": { "repo": { "type": "string" }, "path": { "type": "string" }, "why": { "type": "string" } },
+        "required": ["repo", "path", "why"],
+        "additionalProperties": false
+      }
+    },
+    "conventions": { "type": "array", "items": { "type": "string" }, "description": "Convenciones del repo que afectan al cambio" },
+    "risks": { "type": "array", "items": { "type": "string" } },
+    "openQuestions": { "type": "array", "items": { "type": "string" } }
+  },
+  "required": ["summary", "relevantFiles", "conventions", "risks", "openQuestions"],
+  "additionalProperties": false
+}

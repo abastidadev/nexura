@@ -1,0 +1,11 @@
+{
+  "name": "minimal",
+  "description": "Tickets pequeños: estilos, copy, cambios puntuales. Todo barato.",
+  "maxLoops": 1,
+  "steps": {
+    "enrich": { "model": "haiku", "effort": "medium", "enabled": true },
+    "implement": { "model": "sonnet", "effort": "medium", "enabled": true },
+    "qaCode": { "model": "haiku", "effort": "low", "enabled": true },
+    "release": { "model": "haiku", "effort": "low", "enabled": true }
+  }
+}

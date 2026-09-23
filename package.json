@@ -14,11 +14,16 @@
   "scripts": {
     "spike": "node --experimental-strip-types scripts/spike.ts",
     "test": "vitest run",
-    "typecheck": "tsc -p tsconfig.json"
+    "typecheck": "tsc -p tsconfig.json",
+    "nexura": "node apps/server/src/cli/cli.ts",
+    "serve": "node apps/server/src/cli/cli.ts serve"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
+  },
+  "bin": {
+    "nexura": "apps/server/src/cli/cli.ts"
   }
 }

@@ -1,0 +1,11 @@
+{
+  "repos": [
+    {
+      "name": "AgsAngularComponentLib",
+      "path": "C:\SCB-Development\AgsAngularComponentLib",
+      "baseBranch": "dev",
+      "branchPrefix": "feat",
+      "checks": ["npm run lint-lib", "npm run build-lib"]
+    }
+  ]
+}

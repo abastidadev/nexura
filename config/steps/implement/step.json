@@ -1,0 +1,16 @@
+{
+  "kind": "claude",
+  "tools": ["Read", "Edit", "Write", "Glob", "Grep", "Bash"],
+  "allowedTools": ["Edit", "Write", "Bash(npm run *)", "Bash(npx *)", "Bash(git status*)", "Bash(git diff*)", "Bash(git log*)"],
+  "disallowedTools": [
+    "Bash(git commit*)",
+    "Bash(git push*)",
+    "Bash(git checkout*)",
+    "Bash(git switch*)",
+    "Bash(git reset*)",
+    "Bash(git stash*)",
+    "Bash(rm -rf*)"
+  ],
+  "useMcp": false,
+  "timeoutMs": 1800000
+}

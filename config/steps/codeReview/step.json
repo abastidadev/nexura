@@ -1,0 +1,8 @@
+{
+  "kind": "claude",
+  "tools": ["Read", "Glob", "Grep", "Bash"],
+  "allowedTools": ["Bash(git diff*)", "Bash(git log*)", "Bash(git show*)"],
+  "disallowedTools": [],
+  "useMcp": false,
+  "timeoutMs": 900000
+}

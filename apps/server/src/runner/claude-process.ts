@@ -8,14 +8,29 @@ import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
 
 let cachedBin: string | undefined;
 
-/** On Windows the npm shim is a .cmd/.ps1; spawning the real exe avoids cmd.exe quoting. */
+export type ClaudeCommand = { command: string; prefixArgs: string[] };
+
+/**
+ * On Windows the npm shim is a .cmd/.ps1; spawning the real exe avoids cmd.exe quoting.
+ * NEXURA_CLAUDE_BIN may point to another binary, or to a .js/.mjs script run with node
+ * (used by the tests to replay fake stream-json without spending tokens).
+ */
+export function resolveClaudeCommand(): ClaudeCommand {
+  const override = process.env.NEXURA_CLAUDE_BIN;
+  if (override && /\.m?js$/.test(override)) {
+    return { command: process.execPath, prefixArgs: [override] };
+  }
+  return { command: resolveClaudeBin(), prefixArgs: [] };
+}
+
 export function resolveClaudeBin(): string {
+  if (process.env.NEXURA_CLAUDE_BIN) {
+    return process.env.NEXURA_CLAUDE_BIN;
+  }
   if (cachedBin) {
     return cachedBin;
   }
-  if (process.env.NEXURA_CLAUDE_BIN) {
-    cachedBin = process.env.NEXURA_CLAUDE_BIN;
-  } else if (process.platform !== "win32") {
+  if (process.platform !== "win32") {
     cachedBin = "claude";
   } else {
     const shim = execFileSync("where.exe", ["claude.cmd"], { encoding: "utf8" }).split(/\r?\n/)[0]!.trim();
@@ -47,9 +62,11 @@ type ClaudeProcessEvents = {
 export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
   private child?: ChildProcess;
   private killed = false;
+  private readonly options: ClaudeRunOptions;
 
-  public constructor(private readonly options: ClaudeRunOptions) {
+  public constructor(options: ClaudeRunOptions) {
     super();
+    this.options = options;
   }
 
   public get args(): string[] {
@@ -57,7 +74,8 @@ export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
   }
 
   public run(): Promise<ClaudeOutcome> {
-    const child = spawn(resolveClaudeBin(), this.args, {
+    const { command, prefixArgs } = resolveClaudeCommand();
+    const child = spawn(command, [...prefixArgs, ...this.args], {
       cwd: this.options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
       windowsHide: true,
