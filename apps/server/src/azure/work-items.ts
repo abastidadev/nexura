@@ -1,10 +1,13 @@
-import type { TicketDetails } from "@nexura/shared";
+import type { TicketDetails, WorkItemScope, WorkItemSummary } from "@nexura/shared";
 import { azureRequest } from "./azure-client.ts";
 import { htmlToText } from "./html-to-text.ts";
 
 const CHILD_RELATION = "System.LinkTypes.Hierarchy-Forward";
 const MAX_COMMENTS = 10;
 const CLOSED_STATES = new Set(["Closed", "Done", "Removed", "Resolved"]);
+/** Work item types that are never a flow's starting point (children, tests, portfolio). */
+const NON_TICKET_TYPES = ["Task", "Epic", "Test Case", "Test Plan", "Test Suite", "Shared Steps", "Shared Parameter"];
+const MAX_OPEN_ITEMS = 200;
 
 type WorkItem = {
   id: number;
@@ -101,4 +104,57 @@ export function ticketToText(ticket: TicketDetails): string {
     );
   }
   return sections.join("\n\n");
+}
+
+const wiqlList = (values: Iterable<string>): string => [...values].map((value) => `'${value.replace(/'/g, "''")}'`).join(", ");
+
+/** WIQL for the open tickets (not closed/resolved/removed), most recently changed first. */
+export function openTicketsQuery(scope: WorkItemScope): string {
+  const filters = [
+    `[System.State] NOT IN (${wiqlList(CLOSED_STATES)})`,
+    `[System.WorkItemType] NOT IN (${wiqlList(NON_TICKET_TYPES)})`,
+    scope === "mine" ? "[System.AssignedTo] = @Me" : "[System.TeamProject] = @project",
+  ];
+  return `SELECT [System.Id] FROM WorkItems WHERE ${filters.join(" AND ")} ORDER BY [System.ChangedDate] DESC`;
+}
+
+/** Open tickets for the picker. `project` is required for the `project` scope. Plain REST, no tokens. */
+export async function listOpenTickets(organization: string, scope: WorkItemScope, project?: string): Promise<WorkItemSummary[]> {
+  if (scope === "project" && !project) {
+    throw new Error("Falta el proyecto de Azure DevOps");
+  }
+  const prefix = scope === "project" ? `${encodeURIComponent(project!)}/` : "";
+  const { workItems } = await azureRequest<{ workItems: { id: number }[] }>(organization, `${prefix}_apis/wit/wiql?$top=${MAX_OPEN_ITEMS}`, {
+    method: "POST",
+    body: { query: openTicketsQuery(scope) },
+  });
+  const ids = workItems.slice(0, MAX_OPEN_ITEMS).map((item) => item.id);
+  if (!ids.length) {
+    return [];
+  }
+  const fields = [
+    "System.Id",
+    "System.Title",
+    "System.State",
+    "System.WorkItemType",
+    "System.TeamProject",
+    "System.AssignedTo",
+    "System.IterationPath",
+    "System.ChangedDate",
+  ];
+  const { value } = await azureRequest<{ value: WorkItem[] }>(organization, `_apis/wit/workitems?ids=${ids.join(",")}&fields=${fields.join(",")}`);
+  const byId = new Map(value.map((item) => [item.id, item]));
+  return ids
+    .map((id) => byId.get(id))
+    .filter((item): item is WorkItem => Boolean(item))
+    .map((item) => ({
+      id: item.id,
+      type: field(item, "System.WorkItemType"),
+      title: field(item, "System.Title"),
+      state: field(item, "System.State"),
+      project: field(item, "System.TeamProject"),
+      assignedTo: (item.fields["System.AssignedTo"] as { displayName?: string } | undefined)?.displayName ?? "",
+      iteration: field(item, "System.IterationPath"),
+      changedDate: field(item, "System.ChangedDate"),
+    }));
 }

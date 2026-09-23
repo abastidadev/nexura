@@ -100,6 +100,7 @@ beforeEach(() => {
   mkdirSync(stateDir, { recursive: true });
   delete process.env.FAKE_REVIEW_REJECTS;
   delete process.env.FAKE_FAIL_MARKER;
+  delete process.env.FAKE_WAIT_MESSAGE;
 });
 
 afterAll(() => {
@@ -107,6 +108,27 @@ afterAll(() => {
 });
 
 describe("Orchestrator (fake claude)", () => {
+  it("delivers a message typed while a claude step runs to that same turn", async () => {
+    process.env.FAKE_WAIT_MESSAGE = "1";
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal" }));
+    expect(() => orchestrator.sendMessage(started.id, "   ")).toThrow(/vacío/);
+    orchestrator.on("message", (message) => {
+      if (message.type === "event" && message.event.kind === "text" && message.event.text === "esperando mensaje") {
+        orchestrator.sendMessage(started.id, "usa signals");
+      }
+    });
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.status).toBe("done");
+    const enrich = run.steps.find((step) => step.step === "enrich")!;
+    expect(enrich.structuredOutput).toMatchObject({ summary: "fake + usa signals" });
+    expect(store.getEvents(enrich.id, -1).map((stored) => stored.event)).toContainEqual({ kind: "userMessage", text: "usa signals" });
+    expect(() => orchestrator.sendMessage(run.id, "tarde")).toThrow(/no hay ningún paso/);
+    await orchestrator.cleanup(run.id, true);
+  });
+
   it("runs the standard profile, loops review -> implement once and commits each implement", async () => {
     process.env.FAKE_REVIEW_REJECTS = "1";
     const store = new RunStore(":memory:");

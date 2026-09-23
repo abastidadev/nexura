@@ -12,6 +12,7 @@ type TimelineItem =
   | { type: "text"; key: number; ts: string; text: string }
   | { type: "thinking"; key: number; ts: string; text: string }
   | { type: "note"; key: number; ts: string; text: string }
+  | { type: "user"; key: number; ts: string; text: string }
   | { type: "tool"; key: number; ts: string; use: ToolUse; summary: string; result?: ToolResult }
   | { type: "rate"; key: number; ts: string; status: string; window: string }
   | { type: "result"; key: number; ts: string; result: Extract<NexuraEvent, { kind: "result" }> };
@@ -90,6 +91,9 @@ export class EventTimeline {
           break;
         case "userText":
           items.push({ type: "note", key: seq, ts, text: event.text });
+          break;
+        case "userMessage":
+          items.push({ type: "user", key: seq, ts, text: event.text });
           break;
         case "toolUse": {
           const item = { type: "tool" as const, key: seq, ts, use: event, summary: summarize(event) };

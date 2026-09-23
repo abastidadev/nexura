@@ -11,6 +11,7 @@ import {
   type RunRequest,
   type ServerMessage,
   type StepName,
+  type WorkItemScope,
 } from "@nexura/shared";
 import {
   deleteProfile,
@@ -24,7 +25,8 @@ import {
 import { NEXURA_HOME } from "../config/paths.ts";
 import { AzureError } from "../azure/azure-client.ts";
 import { azureRepoOf } from "../azure/repo-remote.ts";
-import { getTicket, ticketToText } from "../azure/work-items.ts";
+import { getTicket, listOpenTickets, ticketToText } from "../azure/work-items.ts";
+import { pickFolder } from "../system/folder-picker.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
@@ -119,6 +121,7 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   });
   route("POST", "/api/runs", (_params, body) => orchestrator.start(body as RunRequest));
   route("POST", "/api/runs/:id/cancel", ([id]) => orchestrator.cancel(id!));
+  route("POST", "/api/runs/:id/message", ([id], body) => orchestrator.sendMessage(id!, String((body as { text?: string }).text ?? "")));
   route("POST", "/api/runs/:id/continue", ([id], body) => orchestrator.continue(id!, body as RetryOptions));
   route("POST", "/api/runs/:id/retry", ([id], body) => orchestrator.retry(id!, body as RetryOptions));
   route("GET", "/api/runs/:id/review-threads", async ([id]) => {
@@ -174,22 +177,35 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     orchestrator.setConfig(loadConfig());
   });
 
-  /** Loads a work item (zero tokens). The organisation comes from the chosen repo's origin remote. */
-  route("GET", "/api/azure/work-items/:id", async ([id], _body, url) => {
+  /** Organisation (and project) from the chosen repo's origin remote, or from the first Azure repo. */
+  const azureTarget = async (wanted: string | null): Promise<{ organization: string; project?: string }> => {
     const repos = loadConfig().repos;
-    const wanted = url.searchParams.get("repo");
-    const candidates = wanted ? repos.filter((repo) => repo.name === wanted) : repos;
-    let organization: string | undefined;
-    for (const repo of candidates) {
-      organization = (await azureRepoOf(repo.path))?.organization;
-      if (organization) {
-        break;
+    for (const repo of wanted ? repos.filter((candidate) => candidate.name === wanted) : repos) {
+      const remote = await azureRepoOf(repo.path);
+      if (remote) {
+        return remote;
       }
     }
-    organization ??= process.env.NEXURA_AZURE_ORG;
-    if (!organization) {
-      throw new HttpError(400, "Ningún repo seleccionado tiene un remote origin de Azure DevOps (o define NEXURA_AZURE_ORG)");
+    if (process.env.NEXURA_AZURE_ORG) {
+      return { organization: process.env.NEXURA_AZURE_ORG, project: process.env.NEXURA_AZURE_PROJECT };
     }
+    throw new HttpError(400, "Ningún repo seleccionado tiene un remote origin de Azure DevOps (o define NEXURA_AZURE_ORG)");
+  };
+
+  /** Open tickets (backlog + in progress) to pick from when creating a flow. Zero tokens. */
+  route("GET", "/api/azure/work-items", async (_params, _body, url) => {
+    const scope: WorkItemScope = url.searchParams.get("scope") === "project" ? "project" : "mine";
+    const { organization, project } = await azureTarget(url.searchParams.get("repo"));
+    try {
+      return await listOpenTickets(organization, scope, project);
+    } catch (error) {
+      throw new HttpError(502, String((error as Error).message));
+    }
+  });
+
+  /** Loads a work item (zero tokens). The organisation comes from the chosen repo's origin remote. */
+  route("GET", "/api/azure/work-items/:id", async ([id], _body, url) => {
+    const { organization } = await azureTarget(url.searchParams.get("repo"));
     const workItemId = Number(id);
     if (!Number.isInteger(workItemId) || workItemId <= 0) {
       throw new HttpError(400, `ID de work item no válido: ${id}`);
@@ -202,6 +218,10 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     }
   });
 
+  /** Native folder dialog on the machine running Nexura (it is a local app). */
+  route("POST", "/api/system/pick-folder", async (_params, body) => ({
+    path: await pickFolder(String((body as { initial?: string }).initial ?? "")),
+  }));
   route("GET", "/api/quota", () => orchestrator.getQuota() ?? null);
   route("GET", "/api/settings", () => orchestrator.getSettings());
   route("PUT", "/api/settings", (_params, body) => orchestrator.saveSettings(body as Partial<NexuraSettings>));

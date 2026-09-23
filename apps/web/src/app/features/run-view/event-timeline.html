@@ -45,6 +45,15 @@
             <div class="leading-relaxed whitespace-pre-wrap">{{ item.text }}</div>
           </li>
         }
+        @case ("user") {
+          <li class="ml-10 rounded-md border border-accent bg-accent-soft px-3 py-2">
+            <div class="mb-1 flex items-center gap-2 text-[11px] text-muted">
+              <span class="font-medium text-accent">Tú</span>
+              <span class="font-mono">{{ timeOfDay(item.ts) }}</span>
+            </div>
+            <div class="leading-relaxed whitespace-pre-wrap">{{ item.text }}</div>
+          </li>
+        }
         @case ("note") {
           <li class="text-[12px] text-muted italic">↳ {{ item.text }}</li>
         }

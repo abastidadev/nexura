@@ -24,6 +24,8 @@ export type NexuraEvent =
   | { kind: "toolUse"; id: string; name: string; input: unknown; parentToolUseId: string | null }
   | { kind: "toolResult"; toolUseId: string; content: string; isError: boolean; parentToolUseId: string | null }
   | { kind: "userText"; text: string; synthetic: boolean }
+  /** A message the user typed in Nexura while the step was running (not part of the claude stream). */
+  | { kind: "userMessage"; text: string }
   | {
       kind: "rateLimit";
       status: string;

@@ -4,6 +4,7 @@ import { STEP_NAMES, type FlowProfile, type TaskItem, type TicketDetails } from 
 import { Api, apiError } from "../../core/api";
 import { STEP_LABELS } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
+import { TicketPicker } from "./ticket-picker";
 
 export const AUTO_PROFILE = "auto";
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/;
@@ -18,6 +19,7 @@ type ProfileCard = {
 
 @Component({
   selector: "nx-new-run",
+  imports: [TicketPicker],
   templateUrl: "./new-run.html",
   host: { class: "block h-full overflow-y-auto" },
 })
@@ -41,6 +43,7 @@ export class NewRun {
   protected readonly loadedTicket = signal<TicketDetails | null>(null);
   protected readonly loadingTicket = signal(false);
   protected readonly ticketError = signal<string | null>(null);
+  protected readonly pickerOpen = signal(false);
 
   protected readonly repos = computed(() => this.store.config()?.repos ?? []);
   /** Pre-selects the only repo when there is just one. */
@@ -97,6 +100,12 @@ export class NewRun {
     } finally {
       this.loadingTicket.set(false);
     }
+  }
+
+  protected async pickTicket(id: number): Promise<void> {
+    this.pickerOpen.set(false);
+    this.ticketId.set(String(id));
+    await this.loadTicket();
   }
 
   /** One-line step list for the collapsed profile rows. */

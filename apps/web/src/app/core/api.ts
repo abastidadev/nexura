@@ -14,6 +14,8 @@ import type {
   RunRequest,
   StepDefinition,
   TicketDetails,
+  WorkItemScope,
+  WorkItemSummary,
 } from "@nexura/shared";
 
 export type StoredEvent = { seq: number; ts: string; event: NexuraEvent };
@@ -74,6 +76,11 @@ export class Api {
     return firstValueFrom(this.http.post<void>(`/api/runs/${runId}/cancel`, {}));
   }
 
+  /** Message for the claude step that is running right now (joins its current turn). */
+  public sendMessage(runId: string, text: string): Promise<void> {
+    return firstValueFrom(this.http.post<void>(`/api/runs/${runId}/message`, { text }));
+  }
+
   public continue(runId: string, options?: RetryOptions): Promise<void> {
     return firstValueFrom(this.http.post<void>(`/api/runs/${runId}/continue`, options ?? {}));
   }
@@ -123,6 +130,17 @@ export class Api {
     return firstValueFrom(
       this.http.get<{ ticket: TicketDetails; text: string }>(`/api/azure/work-items/${encodeURIComponent(id)}`, { params }),
     );
+  }
+
+  /** Open tickets (backlog + in progress) of the repo's Azure DevOps organisation/project. */
+  public listWorkItems(scope: WorkItemScope, repo?: string): Promise<WorkItemSummary[]> {
+    const params: Record<string, string> = repo ? { scope, repo } : { scope };
+    return firstValueFrom(this.http.get<WorkItemSummary[]>("/api/azure/work-items", { params }));
+  }
+
+  /** Native folder dialog on the Nexura machine; "" when cancelled. */
+  public pickFolder(initial = ""): Promise<string> {
+    return firstValueFrom(this.http.post<{ path: string }>("/api/system/pick-folder", { initial })).then((response) => response.path);
   }
 
   public getSettings(): Promise<NexuraSettings> {

@@ -1,45 +1,51 @@
-<nav aria-label="Perfiles" class="flex flex-col gap-1">
-  @for (profile of profiles(); track profile.name) {
-    <button
-      type="button"
-      class="rounded-md px-3 py-2 text-left"
-      [class]="selected() === profile.name && !isNew() ? 'bg-accent-soft text-fg ring-1 ring-accent' : 'text-fg-soft hover:bg-surface-2'"
-      (click)="select(profile.name)"
-    >
-      <span class="block font-medium">{{ profile.name }}</span>
-      <span class="block truncate text-[11px] text-muted">{{ profile.description }}</span>
-    </button>
+<div class="flex flex-wrap items-center gap-3">
+  <a class="rounded-md border border-border px-2.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" routerLink="/config" [queryParams]="{ tab: 'profiles' }">
+    ← Perfiles
+  </a>
+  <h1 class="text-xl font-semibold tracking-tight">
+    @if (isNew()) {
+      Nuevo perfil
+      @if (from()) {
+        <span class="text-[14px] font-normal text-muted">· copia de {{ from() }}</span>
+      }
+    } @else {
+      Editar perfil · <span class="font-mono">{{ name() }}</span>
+    }
+  </h1>
+  @if (dirty() && !isNew()) {
+    <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
   }
-  @if (isNew()) {
-    <div class="rounded-md bg-accent-soft px-3 py-2 ring-1 ring-accent">
-      <span class="block font-medium">{{ draft()?.name }}</span>
-      <span class="block text-[11px] text-muted">nuevo, sin guardar</span>
-    </div>
-  }
-</nav>
+</div>
 
-@if (draft(); as profile) {
-  <section class="min-w-0 rounded-lg border border-border bg-surface p-4">
+@if (notFound()) {
+  <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">No existe ningún perfil llamado {{ name() }}.</p>
+} @else if (draft(); as profile) {
+  <form class="rounded-lg border border-border bg-surface p-4" (submit)="$event.preventDefault(); save()">
     <div class="grid gap-3 md:grid-cols-[220px_1fr_120px_150px]">
       <label class="flex flex-col gap-1">
         <span class="text-[11px] font-medium text-muted uppercase">Nombre</span>
         <input
           class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent disabled:opacity-60"
+          placeholder="solo-estilos"
           [value]="profile.name"
           [disabled]="!isNew()"
           (input)="patch({ name: value($event) })"
         />
+        @if (isNew()) {
+          <span class="text-[11px] text-muted">minúsculas, números y guiones</span>
+        }
       </label>
       <label class="flex flex-col gap-1">
         <span class="text-[11px] font-medium text-muted uppercase">Descripción</span>
         <input
           class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          placeholder="Cuándo usarlo; el modo Automático decide leyendo esto"
           [value]="profile.description"
           (input)="patch({ description: value($event) })"
         />
       </label>
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-muted uppercase">Vueltas máx.</span>
+        <span class="text-[11px] font-medium text-muted uppercase" title="Cuántas veces review/QA pueden devolver el flujo a implement">Vueltas máx.</span>
         <input
           type="number"
           min="0"
@@ -79,13 +85,13 @@
               @if (row.onDemand) {
                 <span class="text-[11px] text-muted" title="Se lanza a mano desde la PR del flujo">a mano</span>
               } @else {
-              <input
-                type="checkbox"
-                class="size-4 accent-(--nx-accent)"
-                [attr.aria-label]="'Activar ' + row.label"
-                [checked]="row.config.enabled"
-                (change)="patchStep(row.name, { enabled: !row.config.enabled })"
-              />
+                <input
+                  type="checkbox"
+                  class="size-4 accent-(--nx-accent)"
+                  [attr.aria-label]="'Activar ' + row.label"
+                  [checked]="row.config.enabled"
+                  (change)="patchStep(row.name, { enabled: !row.config.enabled })"
+                />
               }
             </td>
             <td class="py-2 pr-3 font-medium">{{ row.label }}</td>
@@ -93,22 +99,14 @@
               <td class="py-2 text-muted" colspan="2">sin LLM (código del orquestador, 0 tokens)</td>
             } @else {
               <td class="py-2 pr-3">
-                <select
-                  class="rounded border border-border bg-surface-2 px-1.5 py-1"
-                  [attr.aria-label]="'Modelo de ' + row.label"
-                  (change)="setModel(row.name, $event)"
-                >
+                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" [attr.aria-label]="'Modelo de ' + row.label" (change)="setModel(row.name, $event)">
                   @for (model of models; track model) {
                     <option [value]="model" [selected]="model === row.config.model">{{ model }}</option>
                   }
                 </select>
               </td>
               <td class="py-2">
-                <select
-                  class="rounded border border-border bg-surface-2 px-1.5 py-1"
-                  [attr.aria-label]="'Esfuerzo de ' + row.label"
-                  (change)="setEffort(row.name, $event)"
-                >
+                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" [attr.aria-label]="'Esfuerzo de ' + row.label" (change)="setEffort(row.name, $event)">
                   @for (effort of efforts; track effort) {
                     <option [value]="effort" [selected]="effort === row.config.effort">{{ effort }}</option>
                   }
@@ -121,20 +119,29 @@
     </table>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
-      <button type="button" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy()" (click)="save()">
-        Guardar perfil
+      <button type="submit" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy() || !dirty()">
+        {{ isNew() ? "Crear perfil" : "Guardar cambios" }}
       </button>
+      <a class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" routerLink="/config" [queryParams]="{ tab: 'profiles' }">Cancelar</a>
       @if (!isNew()) {
-        <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="duplicate()">Duplicar como nuevo</button>
-        <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="remove()">
+        <a
+          class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3"
+          routerLink="/config"
+          [queryParams]="{ tab: 'profiles', create: 1, from: name() }"
+          >Duplicar como nuevo</a
+        >
+        <button
+          type="button"
+          class="ml-auto rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40"
+          [disabled]="busy()"
+          (click)="remove()"
+        >
           Borrar
         </button>
-      } @else {
-        <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="select(selected())">Descartar</button>
       }
       @if (message(); as msg) {
-        <span [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
+        <span class="basis-full" [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
       }
     </div>
-  </section>
+  </form>
 }

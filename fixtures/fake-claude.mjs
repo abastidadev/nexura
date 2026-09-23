@@ -5,12 +5,22 @@
 //   FAKE_STATE_DIR        where call counters are kept (required)
 //   FAKE_REVIEW_REJECTS   how many times codeReview answers "changes" before approving
 //   FAKE_FAIL_MARKER      if the prompt contains it, enrich fails (unless resumed/overridden)
+//   FAKE_WAIT_MESSAGE     enrich waits for a second stdin message and puts it in its summary
+//
+// Like the real CLI with `--input-format stream-json`: user messages arrive as JSON lines
+// on stdin, and the process only exits once stdin is closed after the result.
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { randomUUID } from "node:crypto";
+import { createInterface } from "node:readline";
 
 const args = process.argv.slice(2);
-const prompt = readFileSync(0, "utf8");
+const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
+async function nextMessage() {
+  const { value, done } = await lines.next();
+  return done ? "" : JSON.parse(value).message.content;
+}
+const prompt = await nextMessage();
 const sessionId = randomUUID();
 const stateDir = process.env.FAKE_STATE_DIR;
 const argValue = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
@@ -63,6 +73,10 @@ switch (step) {
       error = "fake enrich failure";
     }
     output = { summary: "fake", relevantFiles: [], conventions: ["Usa inject() en vez de constructores"], risks: [], openQuestions: [] };
+    if (process.env.FAKE_WAIT_MESSAGE) {
+      out({ type: "assistant", message: { content: [{ type: "text", text: "esperando mensaje" }] } });
+      output.summary = `fake + ${await nextMessage()}`;
+    }
     break;
   case "plan":
     output = { approach: "fake", changes: [], acceptanceCriteria: [{ description: "check", command: "npm run check" }] };
@@ -127,3 +141,6 @@ out({
   usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
   permission_denials: [],
 });
+
+// Drain stdin: the runner closes it after the result.
+while (!(await lines.next()).done);

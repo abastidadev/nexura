@@ -12,9 +12,18 @@
   </div>
 
   <!-- 1 · Ticket -->
-  <section class="flex min-h-[420px] flex-col rounded-lg border border-border bg-surface p-4 xl:min-h-0" aria-labelledby="ticket-title">
+  <section class="relative flex min-h-[420px] flex-col rounded-lg border border-border bg-surface p-4 xl:min-h-0" aria-labelledby="ticket-title">
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <h2 id="ticket-title" class="mr-1 font-semibold">Ticket <span class="text-err">*</span></h2>
+      <button
+        type="button"
+        class="rounded-md border px-2.5 py-1"
+        [class]="pickerOpen() ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-3'"
+        [attr.aria-expanded]="pickerOpen()"
+        (click)="pickerOpen.set(!pickerOpen())"
+      >
+        Elegir de la lista ▾
+      </button>
       <input
         class="w-28 rounded-md border border-border bg-surface-2 px-2.5 py-1 font-mono outline-none focus:border-accent"
         placeholder="ID"
@@ -57,6 +66,14 @@
       [value]="ticketText()"
       (input)="ticketText.set(value($event))"
     ></textarea>
+    @if (pickerOpen()) {
+      <nx-ticket-picker
+        class="absolute inset-x-3 top-14 bottom-3 z-10"
+        [repo]="selectedRepos()[0]"
+        (picked)="pickTicket($event)"
+        (closed)="pickerOpen.set(false)"
+      />
+    }
   </section>
 
   <!-- 2 · Tasks + extra prompt -->

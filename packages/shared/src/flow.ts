@@ -107,6 +107,21 @@ export type TicketDetails = {
   children: { id: number; title: string; state: string; type: string; done: boolean }[];
 };
 
+/** One row of the "pick a ticket" list: open (backlog or in progress) work items. */
+export type WorkItemSummary = {
+  id: number;
+  type: string;
+  title: string;
+  state: string;
+  project: string;
+  assignedTo: string;
+  iteration: string;
+  changedDate: string;
+};
+
+/** `mine`: assigned to me in any project of the organisation; `project`: everything open in the repo's project. */
+export type WorkItemScope = "mine" | "project";
+
 /** A pull request waiting for approval (editable) before push + create. */
 export type PrDraft = {
   repo: string;

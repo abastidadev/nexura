@@ -1,27 +1,20 @@
-<nav aria-label="Pasos" class="flex flex-col gap-1">
-  @for (item of steps(); track item.name) {
-    <button
-      type="button"
-      class="rounded-md px-3 py-2 text-left"
-      [class]="selected() === item.name ? 'bg-accent-soft text-fg ring-1 ring-accent' : 'text-fg-soft hover:bg-surface-2'"
-      (click)="select(item.name)"
-    >
-      <span class="block font-medium">{{ labels[item.name] ?? item.name }}</span>
-      <span class="block font-mono text-[11px] text-muted">{{ item.name }} · {{ item.kind === "builtin" ? "sin LLM" : "claude" }}</span>
-    </button>
+<div class="flex flex-wrap items-center gap-3">
+  <a class="rounded-md border border-border px-2.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" routerLink="/config" [queryParams]="{ tab: 'steps' }">
+    ← Pasos
+  </a>
+  <h1 class="text-xl font-semibold tracking-tight">Editar paso · {{ labels[name()] ?? name() }}</h1>
+  <span class="font-mono text-[12px] text-muted">config/steps/{{ name() }}/</span>
+  @if (dirty()) {
+    <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
   }
-</nav>
+</div>
+
+@if (notFound()) {
+  <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">No existe ningún paso llamado {{ name() }}.</p>
+}
 
 @if (step(); as current) {
   <section class="flex min-w-0 flex-col gap-4 rounded-lg border border-border bg-surface p-4">
-    <div class="flex items-center gap-2">
-      <h2 class="text-[15px] font-semibold">{{ labels[current.name] ?? current.name }}</h2>
-      <span class="font-mono text-[12px] text-muted">config/steps/{{ current.name }}/</span>
-      @if (dirty()) {
-        <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
-      }
-    </div>
-
     @if (current.kind === "claude") {
       <div class="flex flex-col gap-1">
         <label for="template" class="font-medium">Plantilla del prompt <span class="font-mono text-[11px] text-muted">prompt.md</span></label>
@@ -126,6 +119,7 @@
       <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3 disabled:opacity-40" [disabled]="!dirty()" (click)="discard()">
         Descartar cambios
       </button>
+      <a class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" routerLink="/config" [queryParams]="{ tab: 'steps' }">Volver</a>
       @if (message(); as msg) {
         <span [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
       }

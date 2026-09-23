@@ -168,3 +168,32 @@
     }
   }
 </div>
+
+@if (canMessage()) {
+  <form class="flex shrink-0 flex-col gap-1 border-t border-border bg-surface px-4 py-3" (submit)="$event.preventDefault(); sendMessage()">
+    <div class="flex items-end gap-2">
+      <textarea
+        rows="2"
+        class="min-w-0 flex-1 resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 leading-relaxed outline-none focus:border-accent"
+        aria-label="Mensaje para Claude"
+        placeholder="Escríbele a Claude mientras trabaja: corrígele, dale una pista o responde a lo que pregunte…"
+        [value]="draftMessage()"
+        (input)="draftMessage.set(value($event))"
+        (keydown)="onMessageKey($event)"
+      ></textarea>
+      <button
+        type="submit"
+        class="rounded-md bg-accent-strong px-3 py-2 font-medium text-white hover:opacity-90 disabled:opacity-40"
+        [disabled]="sending() || !draftMessage().trim()"
+      >
+        {{ sending() ? "Enviando…" : "Enviar" }}
+      </button>
+    </div>
+    <p class="text-[11px]" [class]="messageError() ? 'text-err' : 'text-muted'" [attr.role]="messageError() ? 'alert' : null">
+      {{
+        messageError() ??
+          "Enter envía · Mayús+Enter, salto de línea. Le llega en este mismo turno, sin reiniciar el paso. Cuando el paso termine, sigue la conversación con “Abrir en Claude”."
+      }}
+    </p>
+  </form>
+}

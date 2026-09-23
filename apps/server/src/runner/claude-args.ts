@@ -22,7 +22,9 @@ export type ClaudeRunOptions = {
 };
 
 /**
- * Builds the CLI arguments. The prompt is NOT included: it is written to stdin.
+ * Builds the CLI arguments. The prompt is NOT included: it is written to stdin as a
+ * stream-json user message, and stdin stays open so the user can send more messages
+ * while the step runs (they join the current turn; see ClaudeProcess.send).
  *
  * Permissions (verified in the spike): `--allowedTools` only ADDS rules on top of the
  * user's settings, so it does not restrict anything. The real allowlist is `--tools`,
@@ -32,6 +34,8 @@ export type ClaudeRunOptions = {
 export function buildClaudeArgs(options: ClaudeRunOptions): string[] {
   const args = [
     "-p",
+    "--input-format",
+    "stream-json",
     "--output-format",
     "stream-json",
     "--verbose",

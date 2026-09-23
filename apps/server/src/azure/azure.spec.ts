@@ -1,7 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { htmlToText } from "./html-to-text.ts";
 import { parseAzureRemote } from "./repo-remote.ts";
-import { ticketToText } from "./work-items.ts";
+import { openTicketsQuery, ticketToText } from "./work-items.ts";
+
+describe("openTicketsQuery", () => {
+  it("excludes closed states and task/test types, scoped to me or to the project", () => {
+    const mine = openTicketsQuery("mine");
+    expect(mine).toContain("[System.State] NOT IN ('Closed', 'Done', 'Removed', 'Resolved')");
+    expect(mine).toContain("'Task'");
+    expect(mine).toContain("[System.AssignedTo] = @Me");
+    expect(mine).toMatch(/ORDER BY \[System.ChangedDate\] DESC$/);
+    expect(openTicketsQuery("project")).toContain("[System.TeamProject] = @project");
+  });
+});
 
 describe("parseAzureRemote", () => {
   it("understands https, legacy visualstudio.com and ssh remotes", () => {

@@ -98,6 +98,38 @@ export class StepInspector {
   protected readonly debugError = signal<string | null>(null);
   protected readonly isClaude = computed(() => this.step().kind === "claude");
 
+  // ---- talking to the running step
+  protected readonly canMessage = computed(() => this.isClaude() && this.step().status === "running");
+  protected readonly draftMessage = signal("");
+  protected readonly sending = signal(false);
+  protected readonly messageError = signal<string | null>(null);
+
+  /** Enter sends, Shift+Enter adds a line. */
+  protected onMessageKey(event: KeyboardEvent): void {
+    if (event.key === "Enter" && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      void this.sendMessage();
+    }
+  }
+
+  protected async sendMessage(): Promise<void> {
+    const text = this.draftMessage().trim();
+    if (!text || this.sending()) {
+      return;
+    }
+    this.sending.set(true);
+    this.messageError.set(null);
+    try {
+      await this.api.sendMessage(this.run().id, text);
+      this.draftMessage.set("");
+      this.tab.set("events");
+    } catch (error: unknown) {
+      this.messageError.set(apiError(error, "No se pudo enviar el mensaje"));
+    } finally {
+      this.sending.set(false);
+    }
+  }
+
   protected value(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement).value;
   }

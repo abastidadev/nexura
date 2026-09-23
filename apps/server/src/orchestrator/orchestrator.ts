@@ -43,6 +43,8 @@ class CancelledError extends Error {}
 type RunContext = {
   cancelled: boolean;
   process?: ClaudeProcess;
+  /** Delivers a user message to the running claude step; false when there is none. */
+  send?: (text: string) => boolean;
   /** Resolves a breakpoint pause, optionally with overrides for the next step. */
   release?: (options?: RetryOptions) => void;
   /** Wakes a rate-limit wait early (cancel). */
@@ -240,6 +242,17 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       throw new Error(`El run ${runId} no está pausado`);
     }
     context.release(options);
+  }
+
+  /** A message typed by the user while a claude step runs: it joins the current turn. */
+  public sendMessage(runId: string, text: string): void {
+    const message = text.trim();
+    if (!message) {
+      throw new Error("El mensaje está vacío");
+    }
+    if (!this.contexts.get(runId)?.send?.(message)) {
+      throw new Error("Ahora mismo no hay ningún paso con Claude trabajando en este flujo");
+    }
   }
 
   public cancel(runId: string): void {
@@ -564,7 +577,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       disallowedTools: definition.disallowedTools,
       useMcp: definition.useMcp,
       addDirs: others.map((worktree) => worktree.path),
-      jsonSchema: definition.schema,
+      jsonSchema: stepRun.step === "classify" ? this.classifySchema(definition.schema) : definition.schema,
       timeoutMs: definition.timeoutMs,
       resume,
       forkSession: Boolean(resume),
@@ -591,8 +604,16 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     });
 
     context.process = process;
+    context.send = (text) => {
+      if (!process.send(text)) {
+        return false;
+      }
+      this.recordEvent(run, stepRun, { kind: "userMessage", text });
+      return true;
+    };
     const outcome = await process.run();
     context.process = undefined;
+    context.send = undefined;
 
     const result = outcome.result;
     stepRun.sessionId = outcome.sessionId ?? stepRun.sessionId;
@@ -625,6 +646,16 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     }
     stepRun.status = "succeeded";
     return undefined;
+  }
+
+  /** classify may pick any saved profile, including the ones created in the UI. */
+  private classifySchema(schema: object | undefined): object | undefined {
+    const properties = (schema as { properties?: Record<string, object> } | undefined)?.properties;
+    if (!schema || !properties?.["profile"]) {
+      return schema;
+    }
+    const profile = { ...properties["profile"], enum: [...this.config.profiles.keys()] };
+    return { ...schema, properties: { ...properties, profile } };
   }
 
   private async runBuiltin(
@@ -982,6 +1013,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         .map((w) => `- **${w.repo}**: \`${w.path}\` (rama \`${w.branch}\`, baseRef \`${w.baseRef}\`)`)
         .join("\n"),
       userPrompt: request.prompt,
+      profiles: [...this.config.profiles.values()].map((profile) => `- **${profile.name}**: ${profile.description}`).join("\n"),
       ledger: stepContext.ledger.read(),
       feedback: stepContext.feedback,
       ...stepContext.extraVars,

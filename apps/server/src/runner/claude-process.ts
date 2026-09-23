@@ -70,10 +70,16 @@ type ClaudeProcessEvents = {
   exit: [outcome: ClaudeOutcome];
 };
 
+function userMessage(text: string): string {
+  return JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n";
+}
+
 /** One `claude -p` execution. Emits every raw line and every normalised event. */
 export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
   private child?: ChildProcess;
   private killed = false;
+  /** stdin stays open until the first `result`, so `send` can reach the running turn. */
+  private accepting = false;
   private readonly options: ClaudeRunOptions;
 
   public constructor(options: ClaudeRunOptions) {
@@ -94,7 +100,9 @@ export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
       windowsHide: true,
     });
     this.child = child;
-    child.stdin.end(this.options.prompt);
+    child.stdin.on("error", () => undefined);
+    child.stdin.write(userMessage(this.options.prompt));
+    this.accepting = true;
 
     const splitter = new LineSplitter();
     const outcome: ClaudeOutcome = { exitCode: null, timedOut: false, killed: false, stderr: "" };
@@ -111,6 +119,9 @@ export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
         }
         if (event.kind === "result") {
           outcome.result = event;
+          // The turn is over: closing stdin lets claude exit instead of waiting for more input.
+          this.accepting = false;
+          child.stdin.end();
         }
         this.emit("event", event);
       }
@@ -129,6 +140,7 @@ export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
     return new Promise((resolve) => {
       child.on("close", (code) => {
         clearTimeout(timer);
+        this.accepting = false;
         splitter.flush().forEach(handleLine);
         outcome.exitCode = code;
         outcome.killed = this.killed;
@@ -139,6 +151,19 @@ export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
         outcome.stderr += String(error);
       });
     });
+  }
+
+  /**
+   * Sends another user message to the running step. Claude folds it into the current
+   * turn (verified with claude 2.1: a single `result` comes out). False once the turn ended.
+   */
+  public send(text: string): boolean {
+    const stdin = this.child?.stdin;
+    if (!this.accepting || !stdin?.writable) {
+      return false;
+    }
+    stdin.write(userMessage(text));
+    return true;
   }
 
   public kill(): void {

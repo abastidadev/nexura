@@ -1,0 +1,128 @@
+<div class="flex flex-wrap items-center gap-3">
+  <a class="rounded-md border border-border px-2.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" routerLink="/config" [queryParams]="{ tab: 'repos' }">
+    ← Repos
+  </a>
+  <h1 class="text-xl font-semibold tracking-tight">{{ isNew() ? "Nuevo repo" : "Editar repo · " + name() }}</h1>
+  @if (dirty()) {
+    <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
+  }
+</div>
+
+@if (notFound()) {
+  <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">No existe ningún repo llamado {{ name() }}.</p>
+} @else {
+  <form class="rounded-lg border border-border bg-surface p-4" (submit)="$event.preventDefault(); save()">
+    <div class="grid gap-4 md:grid-cols-2">
+      <div class="flex flex-col gap-1 md:col-span-2">
+        <label for="repo-path" class="text-[11px] font-medium text-muted uppercase">Carpeta del repo</label>
+        <div class="flex gap-2">
+          <input
+            id="repo-path"
+            class="min-w-0 flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono text-[12px] outline-none focus:border-accent"
+            placeholder="C:\SCB-Development\MiRepo"
+            [value]="draft().path"
+            (input)="patch({ path: value($event) })"
+          />
+          <button
+            type="button"
+            class="shrink-0 rounded-md border border-border px-3 py-1.5 hover:bg-surface-3 disabled:opacity-40"
+            [disabled]="picking()"
+            (click)="browse()"
+          >
+            {{ picking() ? "Esperando la ventana…" : "📁 Examinar…" }}
+          </button>
+        </div>
+        <span class="text-[11px] text-muted">Tiene que ser la raíz de un repo git. Si el nombre está vacío, se rellena con el de la carpeta.</span>
+      </div>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">Nombre</span>
+        <input
+          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          placeholder="MiRepo"
+          [value]="draft().name"
+          (input)="patch({ name: value($event) })"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">Rama base</span>
+        <input
+          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent"
+          [value]="draft().baseBranch"
+          (input)="patch({ baseBranch: value($event) })"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">Prefijo de rama</span>
+        <input
+          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent"
+          placeholder="feat"
+          [value]="draft().branchPrefix"
+          (input)="patch({ branchPrefix: value($event) })"
+        />
+      </label>
+      <label class="flex flex-col gap-1">
+        <span class="text-[11px] font-medium text-muted uppercase">node_modules del worktree</span>
+        <select class="rounded-md border border-border bg-surface-2 px-2 py-1.5" (change)="setNodeModules($event)">
+          @for (option of options; track option.value) {
+            <option [value]="option.value" [selected]="option.value === draft().nodeModules">{{ option.label }}</option>
+          }
+        </select>
+      </label>
+      <label class="flex flex-col gap-1 md:col-span-2">
+        <span class="text-[11px] font-medium text-muted uppercase">Checks (uno por línea)</span>
+        <span class="text-[11px] text-muted">Comandos que ejecuta el paso QA en el worktree, sin gastar tokens.</span>
+        <textarea
+          rows="4"
+          spellcheck="false"
+          class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+          [value]="draft().checks"
+          (input)="patch({ checks: value($event) })"
+        ></textarea>
+      </label>
+    </div>
+
+    <div class="mt-4 flex flex-wrap items-center gap-2">
+      <button type="submit" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy() || !dirty()">
+        {{ isNew() ? "Añadir repo" : "Guardar cambios" }}
+      </button>
+      <a class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" routerLink="/config" [queryParams]="{ tab: 'repos' }">Cancelar</a>
+      @if (!isNew()) {
+        <button
+          type="button"
+          class="ml-auto rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40"
+          [disabled]="busy()"
+          (click)="remove()"
+        >
+          Quitar repo
+        </button>
+      }
+      @if (message(); as msg) {
+        <span class="basis-full" [class]="msg.ok ? 'text-ok' : 'text-err'" role="status">{{ msg.text }}</span>
+      }
+    </div>
+  </form>
+
+  @if (!isNew()) {
+    <details class="rounded-lg border border-border bg-surface" (toggle)="loadNotes()">
+      <summary class="cursor-pointer px-4 py-3 font-medium">
+        Notas aprendidas <span class="text-[11px] font-normal text-muted">(las usa enrich/plan en cada ticket)</span>
+      </summary>
+      <div class="border-t border-border p-4">
+        <p class="mb-2 text-[11px] text-muted">
+          Se rellenan solas con las convenciones nuevas que descubre enrich. Corrige o borra lo que no valga: una por línea, empezando por "- ".
+        </p>
+        <textarea
+          rows="8"
+          spellcheck="false"
+          class="w-full resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+          [value]="notes() ?? ''"
+          (input)="notes.set(value($event))"
+        ></textarea>
+        <div class="mt-2 flex items-center gap-2">
+          <button type="button" class="rounded-md border border-border px-3 py-1 text-[12px] hover:bg-surface-3" (click)="saveNotes()">Guardar notas</button>
+          <span class="text-[12px] text-muted">{{ notesMessage() }}</span>
+        </div>
+      </div>
+    </details>
+  }
+}

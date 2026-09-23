@@ -1,4 +1,5 @@
 import { Component, computed, inject, input, linkedSignal, signal } from "@angular/core";
+import { RouterLink } from "@angular/router";
 import { Api, apiError, type StepDefinitionView } from "../../core/api";
 import { STEP_LABELS } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -11,6 +12,7 @@ export const TEMPLATE_VARIABLES: { name: string; help: string }[] = [
   { name: "tasks", help: "tareas seleccionadas como checklist" },
   { name: "repos", help: "worktrees, ramas y baseRef" },
   { name: "userPrompt", help: "prompt adicional del flujo" },
+  { name: "profiles", help: "perfiles guardados con su descripción (lo usa classify)" },
   { name: "ledger", help: "libro de tareas hasta ahora" },
   { name: "feedback", help: "correcciones de review/QA en las vueltas" },
   { name: "repoMap", help: "mapa del repo desde git (gratis, cacheado por commit)" },
@@ -46,23 +48,25 @@ const lines = (text: string): string[] =>
     .map((line) => line.trim())
     .filter(Boolean);
 
+/** Edit screen of one step (`?tab=steps&step=<name>`). */
 @Component({
   selector: "nx-steps-editor",
+  imports: [RouterLink],
   templateUrl: "./steps-editor.html",
-  host: { class: "grid min-h-0 grid-cols-[220px_minmax(0,1fr)] gap-6" },
+  host: { class: "flex flex-col gap-4" },
 })
 export class StepsEditor {
   private readonly api = inject(Api);
   private readonly store = inject(NexuraStore);
 
-  /** Step to open first (from `?step=`). */
-  public readonly initialStep = input<string | undefined>();
+  /** Step being edited (from `?step=`). */
+  public readonly name = input.required<string>();
 
   protected readonly variables = TEMPLATE_VARIABLES;
   protected readonly labels = STEP_LABELS;
   protected readonly steps = computed(() => this.store.config()?.steps ?? []);
-  protected readonly selected = linkedSignal(() => this.initialStep() ?? this.steps()[0]?.name ?? "");
-  protected readonly step = computed(() => this.steps().find((step) => step.name === this.selected()));
+  protected readonly step = computed(() => this.steps().find((step) => step.name === this.name()));
+  protected readonly notFound = computed(() => this.store.config() !== null && !this.step());
   protected readonly draft = linkedSignal<Draft>(() => toDraft(this.step()));
   protected readonly dirty = computed(() => JSON.stringify(this.draft()) !== JSON.stringify(toDraft(this.step())));
   protected readonly schema = computed(() => (this.step()?.schema ? JSON.stringify(this.step()!.schema, null, 2) : ""));
@@ -71,14 +75,6 @@ export class StepsEditor {
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
-  }
-
-  protected select(name: string): void {
-    if (this.dirty() && !confirm("Hay cambios sin guardar en este paso. ¿Descartarlos?")) {
-      return;
-    }
-    this.message.set(null);
-    this.selected.set(name);
   }
 
   protected patch(changes: Partial<Draft>): void {
