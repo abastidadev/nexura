@@ -1,0 +1,30 @@
+{
+  "name": "05-resume",
+  "args": [
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "haiku",
+    "--effort",
+    "low",
+    "--tools",
+    "",
+    "--resume",
+    "d3af0dae-a907-42b4-9e29-0202b59a652a"
+  ],
+  "exitCode": 0,
+  "durationMs": 6132,
+  "lines": 7,
+  "eventTypes": {
+    "system/hook_started": 1,
+    "system/hook_response": 1,
+    "system/init": 1,
+    "assistant": 2,
+    "rate_limit_event": 1,
+    "result/success": 1
+  },
+  "sessionId": "d3af0dae-a907-42b4-9e29-0202b59a652a",
+  "stderr": ""
+}

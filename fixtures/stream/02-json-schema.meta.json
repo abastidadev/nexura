@@ -1,0 +1,32 @@
+{
+  "name": "02-json-schema",
+  "args": [
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "haiku",
+    "--effort",
+    "low",
+    "--tools",
+    "",
+    "--json-schema",
+    "{\"type\":\"object\",\"properties\":{\"profile\":{\"type\":\"string\",\"enum\":[\"minimal\",\"standard\",\"full\"]},\"reason\":{\"type\":\"string\"}},\"required\":[\"profile\",\"reason\"],\"additionalProperties\":false}"
+  ],
+  "exitCode": 0,
+  "durationMs": 15686,
+  "lines": 19,
+  "eventTypes": {
+    "system/hook_started": 1,
+    "system/hook_response": 1,
+    "system/init": 1,
+    "system/thinking_tokens": 7,
+    "assistant": 4,
+    "rate_limit_event": 2,
+    "user": 2,
+    "result/success": 1
+  },
+  "sessionId": "ecc2b563-8af6-4ea1-8f28-ea334d77abfb",
+  "stderr": ""
+}

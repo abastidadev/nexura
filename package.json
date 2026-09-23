@@ -1,0 +1,24 @@
+{
+  "name": "nexura",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Nexura by abastidadev — local IDE to orchestrate Claude Code flows",
+  "type": "module",
+  "workspaces": [
+    "packages/*",
+    "apps/*"
+  ],
+  "engines": {
+    "node": ">=24"
+  },
+  "scripts": {
+    "spike": "node --experimental-strip-types scripts/spike.ts",
+    "test": "vitest run",
+    "typecheck": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.2.0"
+  }
+}

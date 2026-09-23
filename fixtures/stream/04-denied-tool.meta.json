@@ -1,0 +1,32 @@
+{
+  "name": "04-denied-tool",
+  "args": [
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "haiku",
+    "--effort",
+    "low",
+    "--allowedTools",
+    "Read",
+    "--permission-mode",
+    "dontAsk"
+  ],
+  "exitCode": 0,
+  "durationMs": 11183,
+  "lines": 14,
+  "eventTypes": {
+    "system/hook_started": 1,
+    "system/hook_response": 1,
+    "system/init": 1,
+    "system/thinking_tokens": 4,
+    "assistant": 4,
+    "rate_limit_event": 1,
+    "user": 1,
+    "result/success": 1
+  },
+  "sessionId": "5657e78d-9bec-4390-a2d2-ae8a4f3315d4",
+  "stderr": ""
+}

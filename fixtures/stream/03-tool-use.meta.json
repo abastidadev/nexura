@@ -1,0 +1,32 @@
+{
+  "name": "03-tool-use",
+  "args": [
+    "-p",
+    "--output-format",
+    "stream-json",
+    "--verbose",
+    "--model",
+    "haiku",
+    "--effort",
+    "low",
+    "--allowedTools",
+    "Read",
+    "--permission-mode",
+    "dontAsk"
+  ],
+  "exitCode": 0,
+  "durationMs": 7604,
+  "lines": 14,
+  "eventTypes": {
+    "system/hook_started": 1,
+    "system/hook_response": 1,
+    "system/init": 1,
+    "system/thinking_tokens": 4,
+    "assistant": 4,
+    "rate_limit_event": 1,
+    "user": 1,
+    "result/success": 1
+  },
+  "sessionId": "3f6282fb-4010-4c82-bf8c-02f9fab047a2",
+  "stderr": ""
+}
