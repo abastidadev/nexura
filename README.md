@@ -44,9 +44,8 @@ fixtures/                   stream-json reales + fake-claude.mjs para tests sin 
 npm install
 cp config/repos.example.json config/repos.json   # y ajusta rutas/checks
 
-npm run nexura -- run --repo AgsAngularComponentLib --ticket-id 1234   --ticket "Título del ticket
-
-Descripción..." --task "Subtarea 1" --profile auto
+npm run nexura -- run --repo AgsAngularComponentLib --ticket-id 1234 \
+  --ticket-file ticket.md --task "Subtarea 1" --task "Subtarea 2" --profile auto
 npm run nexura -- runs                   # lista
 npm run nexura -- show <runId>           # detalle, paso fallido y su sesión
 npm run nexura -- retry <runId> [--resume --instruction "..."] [--model opus] [--skip]
