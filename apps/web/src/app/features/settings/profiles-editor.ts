@@ -73,6 +73,18 @@ export class ProfilesEditor {
     });
   }
 
+  /** Empty = no limit. */
+  protected setBudget(text: string): void {
+    const value = Number(text);
+    this.draft.update((draft) => {
+      if (!draft) {
+        return draft;
+      }
+      const { budgetUsd: _budget, ...rest } = draft;
+      return text.trim() && Number.isFinite(value) ? { ...rest, budgetUsd: value } : rest;
+    });
+  }
+
   protected setModel(name: StepName, event: Event): void {
     this.patchStep(name, { model: this.value(event) as ModelAlias });
   }

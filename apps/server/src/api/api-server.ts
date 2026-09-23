@@ -198,6 +198,11 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
 
   route("GET", "/api/quota", () => orchestrator.getQuota() ?? null);
   route("GET", "/api/metrics/cost-by-step", () => store.costByStep());
+  route("GET", "/api/metrics", (_params, _body, url) => store.metrics(Number(url.searchParams.get("days")) || undefined));
+  route("POST", "/api/runs/:id/classify-feedback", ([id], body) => {
+    const { correct, expected } = body as { correct: boolean; expected?: string };
+    return orchestrator.rateClassify(id!, Boolean(correct), expected);
+  });
 
   const server = createServer(async (request, response) => {
     const url = new URL(request.url ?? "/", "http://localhost");

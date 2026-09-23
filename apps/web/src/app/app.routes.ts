@@ -17,6 +17,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/run-view/run-view").then((m) => m.RunView),
   },
   {
+    path: "metrics",
+    title: "Nexura · Métricas",
+    loadComponent: () => import("./features/metrics/metrics").then((m) => m.MetricsPage),
+  },
+  {
     path: "config",
     title: "Nexura · Configuración",
     loadComponent: () => import("./features/settings/settings").then((m) => m.Settings),

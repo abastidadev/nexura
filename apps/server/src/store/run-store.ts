@@ -1,7 +1,7 @@
 import { mkdirSync, appendFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
-import type { NexuraEvent, Run, StepRun } from "@nexura/shared";
+import type { Metrics, NexuraEvent, Run, StepRun } from "@nexura/shared";
 import { DB_FILE, RUNS_DIR } from "../config/paths.ts";
 
 const SCHEMA = `
@@ -145,6 +145,70 @@ export class RunStore {
          FROM step_runs GROUP BY step, model ORDER BY costUsd DESC`,
       )
       .all() as { step: string; model: string; runs: number; costUsd: number; avgTurns: number }[];
+  }
+
+  /** Aggregates for the metrics view (all from SQLite, no tokens). */
+  public metrics(days = 14): Metrics {
+    const all = <T>(sql: string, ...params: (string | number)[]): T[] => this.db.prepare(sql).all(...params) as T[];
+    const one = <T>(sql: string): T => this.db.prepare(sql).get() as T;
+    const tokens = `COALESCE(json_extract(data, '$.usage.inputTokens'), 0) + COALESCE(json_extract(data, '$.usage.outputTokens'), 0)
+      + COALESCE(json_extract(data, '$.usage.cacheReadTokens'), 0) + COALESCE(json_extract(data, '$.usage.cacheCreationTokens'), 0)`;
+
+    const totals = one<Metrics["totals"]>(
+      `SELECT COUNT(*) AS runs,
+         COALESCE(SUM(status = 'done'), 0) AS done,
+         COALESCE(SUM(status = 'failed'), 0) AS failed,
+         COALESCE(SUM(status = 'cancelled'), 0) AS cancelled,
+         COALESCE(SUM(status IN ('queued', 'running', 'paused', 'waiting-rate-limit')), 0) AS active,
+         COALESCE(SUM(total_cost_usd), 0) AS costUsd,
+         (SELECT COALESCE(SUM(${tokens}), 0) FROM step_runs) AS tokens
+       FROM runs`,
+    );
+    const byStep = all<Metrics["byStep"][number]>(
+      `SELECT step, CASE WHEN json_extract(data, '$.kind') = 'builtin' THEN 'sin LLM' ELSE model END AS model,
+         COUNT(*) AS runs, SUM(status = 'failed') AS failed, SUM(cost_usd) AS costUsd, AVG(cost_usd) AS avgCostUsd,
+         AVG(num_turns) AS avgTurns, SUM(${tokens}) AS tokens
+       FROM step_runs WHERE status != 'skipped' GROUP BY 1, 2 ORDER BY costUsd DESC, runs DESC`,
+    );
+    const byProfile = all<Metrics["byProfile"][number]>(
+      `SELECT COALESCE(profile, 'sin decidir') AS profile, COUNT(*) AS runs, SUM(status = 'done') AS done,
+         SUM(total_cost_usd) AS costUsd, AVG(total_cost_usd) AS avgCostUsd
+       FROM runs GROUP BY 1 ORDER BY runs DESC`,
+    );
+    const implementCounts = all<{ n: number }>(
+      `SELECT COUNT(*) AS n FROM step_runs WHERE step = 'implement' AND status = 'succeeded' GROUP BY run_id`,
+    );
+    const byDay = all<Metrics["byDay"][number]>(
+      `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS runs, SUM(total_cost_usd) AS costUsd
+       FROM runs WHERE created_at >= ? GROUP BY 1 ORDER BY 1`,
+      new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10),
+    );
+
+    const rated = all<{ id: string; data: string }>(
+      `SELECT id, data FROM runs WHERE json_extract(data, '$.classifyFeedback') IS NOT NULL`,
+    ).map((row) => ({ id: row.id, run: JSON.parse(row.data) as Omit<Run, "steps"> }));
+    const mistakes = rated
+      .filter(({ run }) => run.classifyFeedback?.correct === false)
+      .map(({ id, run }) => ({
+        runId: id,
+        chosen: run.resolvedProfile ?? "?",
+        expected: run.classifyFeedback?.expected,
+        reason: run.classifyReason,
+      }));
+
+    return {
+      totals,
+      byStep,
+      byProfile,
+      loops: {
+        avgImplementPerRun: implementCounts.length
+          ? implementCounts.reduce((sum, row) => sum + row.n, 0) / implementCounts.length
+          : 0,
+        runsWithLoops: implementCounts.filter((row) => row.n > 1).length,
+      },
+      byDay,
+      classify: { rated: rated.length, correct: rated.length - mistakes.length, mistakes },
+    };
   }
 
   /** Runs left "running" by a crashed server are marked failed on start-up. */

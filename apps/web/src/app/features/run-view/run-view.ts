@@ -139,6 +139,20 @@ export class RunView {
     return this.act(() => this.api.continue(this.id(), { prDrafts }));
   }
 
+  // ---- classify feedback
+  protected readonly profileNames = computed(() => (this.store.config()?.profiles ?? []).map((profile) => profile.name));
+  protected readonly correcting = signal(false);
+
+  protected rateClassify(correct: boolean, expected?: string): Promise<void> {
+    this.correcting.set(false);
+    return this.act(() => this.api.rateClassify(this.id(), correct, expected));
+  }
+
+  protected readonly qaNotes = computed(() => {
+    const step = this.run()?.steps.findLast((candidate) => candidate.step === "qaNotes" && candidate.status === "succeeded");
+    return step?.structuredOutput as { summary: string; cases: { title: string; steps: string[]; expected: string }[]; risks: string[] } | undefined;
+  });
+
   protected approveReplies(replies: ReviewReply[]): Promise<void> {
     return this.act(() => this.api.continue(this.id(), { replies }));
   }

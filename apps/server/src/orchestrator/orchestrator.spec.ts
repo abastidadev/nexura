@@ -329,3 +329,54 @@ describe("addressReview (Azure mocked)", () => {
     await orchestrator.cleanup(run.id, true);
   });
 });
+
+describe("Budgets, classify feedback, qaNotes and metrics", () => {
+  it("caps each step with the remaining profile budget and stops when it is spent", async () => {
+    const config = loadConfig();
+    config.profiles.set("tight", { ...structuredClone(config.profiles.get("minimal")!), name: "tight", budgetUsd: 0.015 });
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(config, store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "tight", ticketText: "Con presupuesto" }));
+    const run = await waitFor(orchestrator, started.id);
+
+    // enrich spends 0.01 of 0.015 -> implement gets --max-budget-usd 0.005, spends 0.01 -> nothing left.
+    expect(run.steps[0]!.args).toEqual(expect.arrayContaining(["--max-budget-usd", "0.015"]));
+    expect(run.steps[1]!.args).toEqual(expect.arrayContaining(["--max-budget-usd", "0.005"]));
+    expect(run.status).toBe("done");
+
+    const config2 = loadConfig();
+    config2.profiles.set("broke", { ...structuredClone(config2.profiles.get("minimal")!), name: "broke", budgetUsd: 0.01 });
+    const orchestrator2 = new Orchestrator(config2, store, { concurrency: 1 });
+    const started2 = orchestrator2.start(request({ profile: "broke", ticketText: "Sin presupuesto" }));
+    const failed = await waitFor(orchestrator2, started2.id);
+    expect(failed.status).toBe("failed");
+    expect(failed.error).toMatch(/Falló el paso implement: Presupuesto del perfil agotado/);
+    await orchestrator.cleanup(run.id, true);
+    await orchestrator2.cleanup(failed.id, true);
+  });
+
+  it("runs qaNotes in the full profile, rates classify and aggregates metrics", async () => {
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+
+    const full = await waitFor(orchestrator, orchestrator.start(request({ profile: "full", ticketText: "Grande" })).id);
+    expect(full.steps.map((s) => s.step)).toEqual(["enrich", "plan", "implement", "codeReview", "qaCode", "release", "qaNotes"]);
+    expect(full.steps.at(-1)!.structuredOutput).toMatchObject({ cases: [expect.objectContaining({ title: "Caso feliz" })] });
+
+    const auto = await waitFor(orchestrator, orchestrator.start(request({ profile: "auto", ticketText: "Auto" })).id);
+    expect(() => orchestrator.rateClassify(full.id, true)).toThrow(/no pasó por classify/);
+    expect(() => orchestrator.rateClassify(auto.id, false, "nope")).toThrow(/Perfil desconocido/);
+    expect(orchestrator.rateClassify(auto.id, false, "standard").classifyFeedback).toMatchObject({ correct: false, expected: "standard" });
+
+    const metrics = store.metrics();
+    expect(metrics.totals).toMatchObject({ runs: 2, done: 2, failed: 0 });
+    // full: enrich, plan, implement, codeReview, qaNotes; auto: classify, enrich, implement.
+    expect(metrics.totals.costUsd).toBeCloseTo(0.01 * 5 + 0.01 * 3);
+    expect(metrics.byStep.find((row) => row.step === "qaCode")).toMatchObject({ model: "sin LLM", runs: 2 });
+    expect(metrics.byProfile.map((row) => row.profile).sort()).toEqual(["full", "minimal"]);
+    expect(metrics.classify).toMatchObject({ rated: 1, correct: 0, mistakes: [{ runId: auto.id, chosen: "minimal", expected: "standard" }] });
+    expect(metrics.byDay).toHaveLength(1);
+    await orchestrator.cleanup(full.id, true);
+    await orchestrator.cleanup(auto.id, true);
+  });
+});

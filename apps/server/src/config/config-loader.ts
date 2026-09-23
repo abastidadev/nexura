@@ -93,6 +93,9 @@ export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void 
     }
     steps[name] = { model: step.model, effort: step.effort, enabled: Boolean(step.enabled) };
   }
+  if (profile.budgetUsd !== undefined && (!Number.isFinite(profile.budgetUsd) || profile.budgetUsd <= 0)) {
+    throw new Error("El presupuesto debe ser un número mayor que 0 (o vacío para no limitar)");
+  }
   if (!Object.values(steps).some((step) => step?.enabled)) {
     throw new Error("El perfil necesita al menos un paso activo");
   }

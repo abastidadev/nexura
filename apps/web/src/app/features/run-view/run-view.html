@@ -18,6 +18,31 @@
           <span>({{ run.classifyReason }})</span>
         }
       </p>
+      @if (run.classifyReason && run.resolvedProfile) {
+        <div class="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
+          @if (run.classifyFeedback; as feedback) {
+            <span [class]="feedback.correct ? 'text-ok' : 'text-warn'">
+              {{ feedback.correct ? "✓ Valorado: perfil correcto" : "✗ Valorado: debía ser " + (feedback.expected ?? "otro") }}
+            </span>
+            <button type="button" class="text-muted hover:text-fg hover:underline" (click)="correcting.set(true)">cambiar</button>
+          } @else {
+            <span class="text-muted">¿Acertó el perfil?</span>
+            <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="rateClassify(true)">✓ Sí</button>
+            <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="correcting.set(true)">✗ No</button>
+          }
+          @if (correcting()) {
+            <span class="text-muted">Debía ser:</span>
+            @for (name of profileNames(); track name) {
+              @if (name !== run.resolvedProfile) {
+                <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="rateClassify(false, name)">{{ name }}</button>
+              }
+            }
+            @if (run.classifyFeedback) {
+              <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="rateClassify(true)">era correcto</button>
+            }
+          }
+        </div>
+      }
     </div>
 
     <dl class="flex gap-5 text-[12px]">
@@ -193,6 +218,29 @@
                 }
               }
             </div>
+          }
+        </section>
+      }
+
+      @if (qaNotes(); as notes) {
+        <section aria-labelledby="qa-heading">
+          <h2 id="qa-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Plan de pruebas manual</h2>
+          <p class="mb-2 text-[12px] text-fg-soft">{{ notes.summary }}</p>
+          <ol class="flex flex-col gap-2">
+            @for (item of notes.cases; track $index) {
+              <li class="rounded-md bg-surface-2 p-2 text-[12px]">
+                <span class="font-medium">{{ item.title }}</span>
+                <ol class="mt-1 list-decimal pl-5 text-fg-soft">
+                  @for (stepText of item.steps; track $index) {
+                    <li>{{ stepText }}</li>
+                  }
+                </ol>
+                <span class="mt-1 block text-ok">→ {{ item.expected }}</span>
+              </li>
+            }
+          </ol>
+          @if (notes.risks.length) {
+            <p class="mt-2 text-[12px] text-warn">Riesgos: {{ notes.risks.join(" · ") }}</p>
           }
         </section>
       }

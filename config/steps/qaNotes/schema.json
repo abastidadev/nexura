@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "summary": { "type": "string", "description": "Qué cambia para el usuario, en 1-2 frases" },
+    "cases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "steps": { "type": "array", "items": { "type": "string" } },
+          "expected": { "type": "string" }
+        },
+        "required": ["title", "steps", "expected"],
+        "additionalProperties": false
+      }
+    },
+    "risks": { "type": "array", "items": { "type": "string" }, "description": "Zonas que podrían romperse y conviene revisar" }
+  },
+  "required": ["summary", "cases", "risks"],
+  "additionalProperties": false
+}

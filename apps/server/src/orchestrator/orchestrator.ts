@@ -150,6 +150,20 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
     return threads;
   }
 
+  /** Records whether classify chose the right profile (feeds the metrics to tune its heuristics). */
+  public rateClassify(runId: string, correct: boolean, expected?: string): Run {
+    const run = this.requireRun(runId);
+    if (!run.classifyReason) {
+      throw new Error("Este flujo no pasó por classify");
+    }
+    if (expected !== undefined && !this.config.profiles.has(expected)) {
+      throw new Error(`Perfil desconocido: ${expected}`);
+    }
+    run.classifyFeedback = { correct, expected: correct ? undefined : expected, ratedAt: new Date().toISOString() };
+    this.persist(run);
+    return run;
+  }
+
   /** Launches addressReview on a finished run with PRs: fix, commit, then approval to push and reply. */
   public addressReview(runId: string): Run {
     const run = this.requireRun(runId);
@@ -452,8 +466,22 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage] }> {
       prompt = options?.prompt ?? this.renderPrompt(run, stepRun.step, stepContext);
     }
 
+    // Profile budget: what is left for the whole run caps this step (--max-budget-usd).
+    const budget = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile)?.budgetUsd : undefined;
+    let maxBudgetUsd: number | undefined;
+    if (budget !== undefined) {
+      const remaining = budget - run.totalCostUsd;
+      if (remaining <= 0) {
+        throw new Error(
+          `Presupuesto del perfil agotado: $${run.totalCostUsd.toFixed(3)} de $${budget.toFixed(2)}. Súbelo en el perfil o reintenta con otro.`,
+        );
+      }
+      maxBudgetUsd = Math.round(remaining * 10_000) / 10_000;
+    }
+
     const [primary, ...others] = run.worktrees;
     const process = new ClaudeProcess({
+      maxBudgetUsd,
       cwd: primary!.path,
       prompt,
       model: stepRun.model,

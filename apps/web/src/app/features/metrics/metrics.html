@@ -1,0 +1,167 @@
+<div class="mx-auto flex max-w-6xl flex-col gap-6 px-6 py-6">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-xl font-semibold tracking-tight">Métricas</h1>
+      <p class="mt-1 text-muted">Dónde se va la cuota y dónde fallan los flujos, para recortar y corregir la pieza exacta.</p>
+    </div>
+    <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Rango de días">
+      @for (range of ranges; track range) {
+        <button
+          type="button"
+          role="radio"
+          class="px-3 py-1 text-[12px]"
+          [class]="days() === range ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+          [attr.aria-checked]="days() === range"
+          (click)="days.set(range)"
+        >
+          {{ range }} días
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (data.error()) {
+    <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">No se pudieron cargar las métricas.</p>
+  }
+
+  @if (metrics(); as m) {
+    <section class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" aria-label="Resumen">
+      @for (tile of tiles(); track tile.label) {
+        <div class="rounded-lg border border-border bg-surface p-3">
+          <div class="text-[11px] font-medium text-muted uppercase">{{ tile.label }}</div>
+          <div class="mt-1 font-mono text-[22px] leading-tight">{{ tile.value }}</div>
+          <div class="mt-0.5 text-[11px] text-muted">{{ tile.hint }}</div>
+        </div>
+      }
+    </section>
+
+    <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-step">
+      <h2 id="by-step" class="font-semibold">Por paso y modelo</h2>
+      <p class="mb-3 text-[12px] text-muted">Coste total de cada paso (barra) y cuántas ejecuciones fallaron. Los pasos sin LLM no gastan.</p>
+      <table class="w-full border-collapse text-left">
+        <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+          <tr>
+            <th class="py-2 pr-3 font-medium">Paso</th>
+            <th class="py-2 pr-3 font-medium">Modelo</th>
+            <th class="py-2 pr-3 text-right font-medium">Ejec.</th>
+            <th class="py-2 pr-3 text-right font-medium">Fallos</th>
+            <th class="py-2 pr-3 text-right font-medium">Turnos</th>
+            <th class="py-2 pr-3 text-right font-medium">Medio</th>
+            <th class="w-2/5 py-2 font-medium">Coste total</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (row of steps(); track row.step + row.model) {
+            <tr class="border-b border-border last:border-b-0">
+              <td class="py-2 pr-3 font-medium">{{ labels[row.step] ?? row.step }}</td>
+              <td class="py-2 pr-3 text-fg-soft">{{ row.model }}</td>
+              <td class="py-2 pr-3 text-right font-mono">{{ row.runs }}</td>
+              <td class="py-2 pr-3 text-right font-mono" [class.text-err]="row.failed > 0">
+                {{ row.failed }}<span class="text-muted"> · {{ percent(row.failed, row.runs) }}</span>
+              </td>
+              <td class="py-2 pr-3 text-right font-mono text-fg-soft">{{ row.avgTurns | number: "1.0-1" }}</td>
+              <td class="py-2 pr-3 text-right font-mono text-fg-soft">{{ formatCost(row.avgCostUsd) }}</td>
+              <td class="py-2">
+                <div class="flex items-center gap-2" [attr.title]="formatCost(row.costUsd) + ' · ' + formatTokens(row.tokens) + ' tokens'">
+                  <div class="h-2 flex-1">
+                    <div class="h-2 rounded-r bg-accent" [style.width.%]="row.percent"></div>
+                  </div>
+                  <span class="w-16 text-right font-mono">{{ formatCost(row.costUsd) }}</span>
+                </div>
+              </td>
+            </tr>
+          } @empty {
+            <tr><td colspan="7" class="py-6 text-center text-muted">Todavía no hay pasos ejecutados.</td></tr>
+          }
+        </tbody>
+      </table>
+    </section>
+
+    <div class="grid gap-6 lg:grid-cols-2">
+      <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-profile">
+        <h2 id="by-profile" class="mb-3 font-semibold">Por perfil</h2>
+        <table class="w-full border-collapse text-left">
+          <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+            <tr>
+              <th class="py-2 pr-3 font-medium">Perfil</th>
+              <th class="py-2 pr-3 text-right font-medium">Flujos</th>
+              <th class="py-2 pr-3 text-right font-medium">Éxito</th>
+              <th class="py-2 pr-3 text-right font-medium">Medio</th>
+              <th class="w-2/5 py-2 font-medium">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of profiles(); track row.profile) {
+              <tr class="border-b border-border last:border-b-0">
+                <td class="py-2 pr-3 font-medium">{{ row.profile }}</td>
+                <td class="py-2 pr-3 text-right font-mono">{{ row.runs }}</td>
+                <td class="py-2 pr-3 text-right font-mono text-fg-soft">{{ percent(row.done, row.runs) }}</td>
+                <td class="py-2 pr-3 text-right font-mono text-fg-soft">{{ formatCost(row.avgCostUsd) }}</td>
+                <td class="py-2">
+                  <div class="flex items-center gap-2">
+                    <div class="h-2 flex-1"><div class="h-2 rounded-r bg-accent" [style.width.%]="row.percent"></div></div>
+                    <span class="w-16 text-right font-mono">{{ formatCost(row.costUsd) }}</span>
+                  </div>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </section>
+
+      <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-day">
+        <h2 id="by-day" class="font-semibold">Coste por día</h2>
+        <p class="mb-3 text-[12px] text-muted">Últimos {{ days() }} días, solo días con flujos.</p>
+        @if (daysSeries().length === 0) {
+          <p class="py-6 text-center text-muted">Sin flujos en este rango.</p>
+        } @else {
+          <div class="flex h-40 items-end gap-1.5 border-b border-border" role="img" [attr.aria-label]="'Coste por día en los últimos ' + days() + ' días'">
+            @for (day of daysSeries(); track day.day) {
+              <div class="group flex h-full min-w-6 max-w-12 flex-1 flex-col justify-end" [attr.title]="dayLabel(day.day) + ': ' + formatCost(day.costUsd) + ' · ' + day.runs + ' flujo(s)'">
+                <span class="mb-1 text-center font-mono text-[10px] text-muted opacity-0 group-hover:opacity-100">{{ formatCost(day.costUsd) }}</span>
+                <div class="rounded-t bg-accent group-hover:opacity-80" [style.height.%]="day.percent"></div>
+              </div>
+            }
+          </div>
+          <div class="mt-1 flex gap-1.5">
+            @for (day of daysSeries(); track day.day) {
+              <span class="min-w-6 max-w-12 flex-1 truncate text-center text-[10px] text-muted">{{ dayLabel(day.day) }}</span>
+            }
+          </div>
+        }
+      </section>
+    </div>
+
+    @if (classify(); as c) {
+      <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="classify">
+        <h2 id="classify" class="font-semibold">Clasificador automático</h2>
+        <p class="mb-3 text-[12px] text-muted">
+          Valora en cada flujo automático si el perfil elegido fue el correcto. Los fallos enseñan qué heurísticas de
+          <a class="text-accent hover:underline" routerLink="/config" [queryParams]="{ tab: 'steps', step: 'classify' }">la plantilla de classify</a>
+          conviene ajustar.
+        </p>
+        @if (c.rated === 0) {
+          <p class="text-muted">Aún no has valorado ningún flujo.</p>
+        } @else {
+          <p class="mb-3">
+            <span class="font-mono text-[22px]">{{ percent(c.correct, c.rated) }}</span>
+            <span class="text-muted"> de acierto en {{ c.rated }} flujo(s) valorado(s)</span>
+          </p>
+          @for (mistake of c.mistakes; track mistake.runId) {
+            <a class="mb-1 block rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3" [routerLink]="['/runs', mistake.runId]">
+              <span class="font-mono text-muted">{{ mistake.runId }}</span> · eligió <strong>{{ mistake.chosen }}</strong>
+              @if (mistake.expected) {
+                , debía ser <strong>{{ mistake.expected }}</strong>
+              }
+              @if (mistake.reason) {
+                <span class="block text-[12px] text-muted">Motivo que dio: {{ mistake.reason }}</span>
+              }
+            </a>
+          }
+        }
+      </section>
+    }
+  } @else if (data.isLoading()) {
+    <p class="text-muted">Cargando…</p>
+  }
+</div>

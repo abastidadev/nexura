@@ -100,6 +100,13 @@ switch (step) {
     };
     break;
   }
+  case "qaNotes":
+    output = {
+      summary: "fake",
+      cases: [{ title: "Caso feliz", steps: ["Abrir la pantalla", "Pulsar el botón"], expected: "Se ve el cambio" }],
+      risks: ["Estilos globales"],
+    };
+    break;
   case "resumed":
     output = { summary: "fake", relevantFiles: [], conventions: [], risks: [], openQuestions: [] };
     break;

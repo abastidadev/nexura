@@ -3,6 +3,7 @@ import { inject, Service } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 import type {
   FlowProfile,
+  Metrics,
   NexuraEvent,
   QuotaInfo,
   RepoConfig,
@@ -125,6 +126,14 @@ export class Api {
 
   public getQuota(): Promise<QuotaInfo | null> {
     return firstValueFrom(this.http.get<QuotaInfo | null>("/api/quota"));
+  }
+
+  public metrics(days = 14): Promise<Metrics> {
+    return firstValueFrom(this.http.get<Metrics>("/api/metrics", { params: { days } }));
+  }
+
+  public rateClassify(runId: string, correct: boolean, expected?: string): Promise<Run> {
+    return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/classify-feedback`, { correct, expected }));
   }
 
   public costByStep(): Promise<CostByStep[]> {

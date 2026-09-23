@@ -14,9 +14,9 @@ IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) qu
 | 1. Núcleo backend | ✅ hecho: runner, orquestador, worktrees, SQLite, ledger, API REST/WS, CLI |
 | 2. UI base | ✅ hecho: tabs, nuevo flujo, pipeline, timeline en vivo, cuota, depuración básica |
 | 3. Depuración | ✅ hecho: terminal embebida (shell y claude --resume), editor de perfiles, pasos y repos |
-| 4. Perfiles y `classify` | ⏳ |
+| 4. Perfiles y `classify` | ✅ hecho: perfiles editables, `classify`, presupuesto por perfil, valoración del clasificador |
 | 5. Azure DevOps | ✅ hecho: cargar work item, PR con aprobación, atender comentarios de la PR |
-| 6. Métricas | ⏳ |
+| 6. Métricas | ✅ hecho: coste/tokens/fallos por paso, perfil y día; acierto de `classify`; `qaNotes` |
 
 ## Estructura
 
@@ -68,6 +68,13 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 - **Cuota**: medidor en vivo de las ventanas de 5 h y 7 días del plan.
 - **Terminal embebida** (xterm.js + PTY): botón *Terminal* abre PowerShell en el worktree del flujo; *Abrir en Claude* reanuda la sesión de un paso (`claude --resume`) para seguir hablando con él a mano. Nexura marca como confiables solo sus worktrees (`*.worktrees/nexura-*`) en `~/.claude.json` y quita la marca al borrarlos; desactívalo con `NEXURA_TRUST_WORKTREES=0`.
 - **Configuración** (⚙): editor de perfiles (pasos, modelo, esfuerzo, vueltas; duplicar/borrar), de pasos (plantilla del prompt con sus variables, `--tools`, permitidas/prohibidas, timeout, MCP) y de repos (ruta, rama base, prefijo, checks, node_modules). Todo se guarda en `config/`; desde el panel de depuración de un paso hay un enlace directo a su plantilla.
+
+## Métricas y ajuste
+
+- **Métricas** (pestaña de la cabecera): flujos, % que terminan bien, coste total y medio, tokens y vueltas review/QA→implement; tabla por paso y modelo (ejecuciones, fallos, turnos, coste medio y total), por perfil y coste por día. Todo sale de SQLite, sin tokens.
+- **Presupuesto por perfil** (`budgetUsd`, editable en Configuración): antes de cada paso con Claude se calcula lo que queda y se pasa como `--max-budget-usd`; si ya no queda, el paso falla con un mensaje claro. En plan Pro el coste es nominal, pero sirve de tope proporcional a la cuota.
+- **Clasificador**: en los flujos automáticos puedes marcar si `classify` acertó el perfil (y cuál debía ser). Las métricas muestran el % de acierto y los fallos con el motivo que dio, para ajustar su plantilla.
+- **`qaNotes`** (activo en `full`, haiku): plan de pruebas manual a partir del ticket y el diff; se ve en el panel derecho del flujo.
 
 ## Azure DevOps
 

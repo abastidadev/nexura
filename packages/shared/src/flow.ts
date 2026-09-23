@@ -180,6 +180,18 @@ export type Run = {
   pullRequests?: CreatedPr[];
   /** Epoch seconds when a rate-limited run will resume. */
   resumesAt?: number;
+  /** Whether the classify step picked the right profile, rated by the user (to tune its heuristics). */
+  classifyFeedback?: { correct: boolean; expected?: string; ratedAt: string };
+};
+
+export type Metrics = {
+  totals: { runs: number; done: number; failed: number; cancelled: number; active: number; costUsd: number; tokens: number };
+  byStep: { step: string; model: string; runs: number; failed: number; costUsd: number; avgCostUsd: number; avgTurns: number; tokens: number }[];
+  byProfile: { profile: string; runs: number; done: number; costUsd: number; avgCostUsd: number }[];
+  /** Implement executions per run: >1 means review/QA sent the work back. */
+  loops: { avgImplementPerRun: number; runsWithLoops: number };
+  byDay: { day: string; runs: number; costUsd: number }[];
+  classify: { rated: number; correct: number; mistakes: { runId: string; chosen: string; expected?: string; reason?: string }[] };
 };
 
 export type QuotaInfo = {
