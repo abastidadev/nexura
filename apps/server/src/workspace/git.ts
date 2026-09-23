@@ -3,6 +3,7 @@ import { existsSync, lstatSync, symlinkSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { promisify } from "node:util";
 import type { RepoConfig, Worktree } from "@nexura/shared";
+import { forgetWorktree, trustWorktree } from "./claude-trust.ts";
 
 const exec = promisify(execFile);
 
@@ -55,6 +56,7 @@ export async function createWorktree(repo: RepoConfig, runId: string, branchName
   } else if (mode === "install") {
     await runShell("npm ci", path, 20 * 60 * 1000);
   }
+  trustWorktree(path);
   return { repo: repo.name, repoPath: repo.path, path, branch: branchName, baseRef };
 }
 
@@ -65,6 +67,7 @@ export async function removeWorktree(worktree: Worktree, deleteBranch = false): 
     unlinkSync(link);
   }
   await git(worktree.repoPath, ["worktree", "remove", "--force", worktree.path]);
+  forgetWorktree(worktree.path);
   if (deleteBranch) {
     await git(worktree.repoPath, ["branch", "-D", worktree.branch]);
   }

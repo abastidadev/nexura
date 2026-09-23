@@ -3,7 +3,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { RunStore } from "../store/run-store.ts";
-import { resolveClaudeCommand } from "../runner/claude-process.ts";
+import { claudeEnv, resolveClaudeCommand } from "../runner/claude-process.ts";
+import { trustWorktree } from "../workspace/claude-trust.ts";
 
 type Pty = {
   onData(listener: (data: string) => void): void;
@@ -70,6 +71,8 @@ export class TerminalServer {
       return;
     }
 
+    // Worktrees created before trust existed get it on first use.
+    trustWorktree(worktree.path);
     const mode = (url.searchParams.get("mode") ?? "shell") as TerminalMode;
     let command: string;
     let args: string[];
@@ -93,7 +96,7 @@ export class TerminalServer {
         cols: Number(url.searchParams.get("cols")) || DEFAULT_COLS,
         rows: Number(url.searchParams.get("rows")) || DEFAULT_ROWS,
         cwd: worktree.path,
-        env: process.env,
+        env: claudeEnv(),
       });
     } catch (error) {
       fail(`No se pudo abrir la terminal: ${String(error)}`);

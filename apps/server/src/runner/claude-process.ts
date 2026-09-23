@@ -8,6 +8,18 @@ import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
 
 let cachedBin: string | undefined;
 
+/**
+ * Variables that tie a process to the Claude Code session that launched it (bridge,
+ * messaging socket, child-session markers). If Nexura itself was started from a Claude
+ * Code terminal they would leak into every step, e.g. turning transcript saving off.
+ * Config and auth variables (CLAUDE_CONFIG_DIR, ANTHROPIC_*) are kept.
+ */
+const SESSION_VARIABLES = /^(CLAUDECODE|CLAUDE_PID|CLAUDE_CODE_(CHILD_SESSION|ENTRYPOINT|BRIDGE_SESSION_ID|MESSAGING_.*|SESSION_.*|SSE_PORT))$/;
+
+export function claudeEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  return Object.fromEntries(Object.entries(base).filter(([name]) => !SESSION_VARIABLES.test(name)));
+}
+
 export type ClaudeCommand = { command: string; prefixArgs: string[] };
 
 /**
@@ -78,6 +90,7 @@ export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
     const child = spawn(command, [...prefixArgs, ...this.args], {
       cwd: this.options.cwd,
       stdio: ["pipe", "pipe", "pipe"],
+      env: claudeEnv(),
       windowsHide: true,
     });
     this.child = child;

@@ -13,6 +13,8 @@ process.env.NEXURA_DATA_DIR = join(root, "data");
 process.env.NEXURA_REPOS = join(root, "repos.json");
 process.env.NEXURA_CLAUDE_BIN = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "fake-claude.mjs");
 process.env.FAKE_STATE_DIR = stateDir;
+// Never touch the real ~/.claude.json from tests.
+process.env.NEXURA_TRUST_WORKTREES = "0";
 
 const { loadConfig } = await import("../config/config-loader.ts");
 const { RunStore } = await import("../store/run-store.ts");

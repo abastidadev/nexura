@@ -4,6 +4,7 @@ import { describe, expect, it } from "vitest";
 import type { NexuraEvent } from "@nexura/shared";
 import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
 import { buildClaudeArgs } from "./claude-args.ts";
+import { claudeEnv } from "./claude-process.ts";
 
 const FIXTURES = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "stream");
 
@@ -92,5 +93,20 @@ describe("buildClaudeArgs", () => {
     });
     expect(args).toEqual(expect.arrayContaining(["--resume", "abc", "--fork-session"]));
     expect(args).not.toContain("--session-id");
+  });
+});
+
+describe("claudeEnv", () => {
+  it("drops the launching session markers but keeps config and auth", () => {
+    const env = claudeEnv({
+      CLAUDECODE: "1",
+      CLAUDE_CODE_CHILD_SESSION: "1",
+      CLAUDE_CODE_MESSAGING_TOKEN: "x",
+      CLAUDE_CODE_SESSION_ID: "s",
+      CLAUDE_CONFIG_DIR: "C:/cfg",
+      ANTHROPIC_API_KEY: "k",
+      PATH: "p",
+    });
+    expect(env).toEqual({ CLAUDE_CONFIG_DIR: "C:/cfg", ANTHROPIC_API_KEY: "k", PATH: "p" });
   });
 });
