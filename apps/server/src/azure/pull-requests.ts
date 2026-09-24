@@ -1,5 +1,5 @@
 import type { CreatedPr, PrDraft, Worktree } from "@nexura/shared";
-import { git } from "../workspace/git.ts";
+import { git, stripAttribution } from "../workspace/git.ts";
 import { azureRequest } from "./azure-client.ts";
 import { azureRepoOf } from "./repo-remote.ts";
 
@@ -22,7 +22,7 @@ export async function buildPrDraft(
 ): Promise<PrDraft> {
   const subjects = (await git(worktree.path, ["log", "--format=%s", `${worktree.baseRef}..HEAD`])).split(/\r?\n/).filter(Boolean);
   const lead = subjects.at(-1) ?? worktree.branch;
-  const summaries = implementSummaries.map((item) => item.summary.trim()).filter(Boolean);
+  const summaries = implementSummaries.map((item) => stripAttribution(item.summary).trim()).filter(Boolean);
   const files = [...new Set(implementSummaries.flatMap((item) => item.filesChanged))];
   const bullets = (summaries.length > 1 ? summaries.slice(1) : subjects.slice(0, -1).reverse()).map((line) => `- ${line}`);
   const description = [
@@ -69,7 +69,7 @@ export async function pushAndCreatePr(worktree: Worktree, draft: PrDraft): Promi
         sourceRefName: `refs/heads/${worktree.branch}`,
         targetRefName: `refs/heads/${draft.target}`,
         title: draft.title,
-        description: draft.description.slice(0, PR_DESCRIPTION_MAX),
+        description: stripAttribution(draft.description).slice(0, PR_DESCRIPTION_MAX),
         isDraft: draft.isDraft,
         workItemRefs: draft.workItemId ? [{ id: String(draft.workItemId) }] : [],
       },

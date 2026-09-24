@@ -73,8 +73,24 @@ export async function removeWorktree(worktree: Worktree, deleteBranch = false): 
   }
 }
 
+const ATTRIBUTION_LINE = /^\s*(co-authored-by|claude-session)\s*:|generated with \[?claude code/i;
+
+/**
+ * Drops attribution lines (Co-Authored-By, Claude-Session, "Generated with Claude Code")
+ * that a model may add to a commit message or PR description: Nexura never signs the
+ * user's commits or PRs.
+ */
+export function stripAttribution(text: string): string {
+  return text
+    .split(/\r?\n/)
+    .filter((line) => !ATTRIBUTION_LINE.test(line))
+    .join("\n")
+    .trimEnd();
+}
+
 /** Stages everything and commits. Returns the new SHA, or undefined when there was nothing to commit. */
 export async function commitAll(worktree: Worktree, message: string): Promise<string | undefined> {
+  message = stripAttribution(message) || "chore: nexura changes";
   await git(worktree.path, ["add", "-A"]);
   // Belt and braces: never commit the node_modules junction, even if a repo does not ignore it.
   await git(worktree.path, ["rm", "-r", "-q", "--cached", "--ignore-unmatch", "node_modules"]);
