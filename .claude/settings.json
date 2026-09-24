@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json.schemastore.org/claude-code-settings.json",
+  "attribution": {
+    "commit": "",
+    "pr": ""
+  },
+  "includeCoAuthoredBy": false,
+  "permissions": {
+    "allow": [
+      "Bash(npm test*)",
+      "Bash(npm run typecheck*)",
+      "Bash(npm run build:web*)",
+      "Bash(npx tsc *)",
+      "Bash(npx vitest *)"
+    ],
+    "deny": [
+      "Edit(data/**)",
+      "Write(data/**)",
+      "Edit(package-lock.json)",
+      "Write(package-lock.json)",
+      "Edit(config/repos.json)",
+      "Write(config/repos.json)",
+      "Read(.env)",
+      "Read(.env.*)"
+    ],
+    "ask": [
+      "Bash(npm run spike*)",
+      "Bash(claude -p*)",
+      "Bash(claude --print*)",
+      "Bash(git worktree remove*)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/no-coauthor.mjs\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "node \"$CLAUDE_PROJECT_DIR/.claude/hooks/typecheck-on-stop.mjs\"",
+            "timeout": 240
+          }
+        ]
+      }
+    ]
+  },
+  "enabledPlugins": {
+    "typescript-lsp@claude-plugins-official": true
+  }
+}

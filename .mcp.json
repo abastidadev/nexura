@@ -1,0 +1,25 @@
+{
+  "mcpServers": {
+    "angular-cli": {
+      "command": "node",
+      "args": ["node_modules/@angular/cli/bin/ng.js", "mcp", "--read-only"]
+    },
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@playwright/mcp@latest"]
+    },
+    "github": {
+      "type": "http",
+      "url": "https://api.githubcopilot.com/mcp/",
+      "headersHelper": "node .claude/mcp/github-headers.mjs"
+    },
+    "context7": {
+      "type": "http",
+      "url": "https://mcp.context7.com/mcp"
+    },
+    "nexura-memory": {
+      "command": "node",
+      "args": ["--no-warnings", "apps/server/src/memory/mcp-server.ts", "--db", "data/memory.sqlite"]
+    }
+  }
+}

@@ -1,0 +1,10 @@
+#!/bin/sh
+# Project rule: commits NEVER carry attribution trailers (Co-Authored-By, Claude-Session,
+# "Generated with Claude Code"). Strips them from the message, whoever made the commit.
+# Enabled with: git config core.hooksPath .githooks
+msg="$1"
+tmp="$msg.nexura"
+grep -viE '^[[:space:]]*(co-authored-by:|claude-session:)|generated with \[?claude code' "$msg" > "$tmp"
+# Drop the trailing blank lines the removed trailers leave behind.
+sed -e ':a' -e '/^[[:space:]]*$/{$d;N;ba' -e '}' "$tmp" > "$msg"
+rm -f "$tmp"
