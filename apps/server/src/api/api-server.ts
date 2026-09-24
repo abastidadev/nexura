@@ -26,6 +26,7 @@ import {
   type StepDefinitionUpdate,
 } from "../config/config-loader.ts";
 import { NEXURA_HOME } from "../config/paths.ts";
+import { rejectReason } from "./request-guard.ts";
 import { AzureError } from "../azure/azure-client.ts";
 import { azureRepoOf } from "../azure/repo-remote.ts";
 import { getTicket, listOpenTickets, ticketToText } from "../azure/work-items.ts";
@@ -269,6 +270,11 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   });
 
   const server = createServer(async (request, response) => {
+    const rejected = rejectReason(request);
+    if (rejected) {
+      sendJson(response, 403, { error: rejected });
+      return;
+    }
     const url = new URL(request.url ?? "/", "http://localhost");
     const match = routes
       .filter((candidate) => candidate.method === request.method)
@@ -295,6 +301,10 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   const sockets = new WebSocketServer({ noServer: true });
   const terminals = new TerminalServer(store);
   server.on("upgrade", (request, socket, head) => {
+    if (rejectReason(request)) {
+      socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
+      return;
+    }
     const pathname = new URL(request.url ?? "/", "http://localhost").pathname;
     if (pathname === "/ws") {
       sockets.handleUpgrade(request, socket, head, (ws) => sockets.emit("connection", ws, request));
