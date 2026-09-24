@@ -58,13 +58,16 @@
           <li class="text-[12px] text-muted italic">↳ {{ item.text }}</li>
         }
         @case ("tool") {
-          <li>
+          <li [class.ml-6]="item.subagent">
             <details
               class="group rounded-md border bg-surface"
               [class]="item.result?.isError ? 'border-err' : 'border-border'"
             >
               <summary class="flex cursor-pointer list-none items-center gap-2 px-3 py-1.5">
                 <span class="text-muted transition-transform group-open:rotate-90" aria-hidden="true">›</span>
+                @if (item.subagent) {
+                  <span class="max-w-40 truncate rounded bg-accent-soft px-1 text-[10px] text-accent" [attr.title]="'Subagente: ' + item.subagent">↳ {{ item.subagent }}</span>
+                }
                 <span class="font-mono text-[12px] font-semibold" [class]="item.result?.isError ? 'text-err' : 'text-info'">{{ item.use.name }}</span>
                 <span class="min-w-0 flex-1 truncate font-mono text-[12px] text-fg-soft">{{ item.summary }}</span>
                 @if (!item.result) {

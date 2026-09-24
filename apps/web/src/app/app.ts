@@ -39,6 +39,11 @@ export class App implements OnInit {
       })),
   );
 
+  /** Steps running right now in any flow (subagents are counted in the Agentes view). */
+  protected readonly workingAgents = computed(() =>
+    this.store.runs().reduce((sum, run) => sum + run.steps.filter((step) => step.status === "running").length, 0),
+  );
+
   // ---- reordering the run tabs by drag & drop
   protected readonly dragging = signal<string | null>(null);
   protected readonly dropTarget = signal<{ id: string; side: "before" | "after" } | null>(null);

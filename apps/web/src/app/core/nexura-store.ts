@@ -16,7 +16,7 @@ export type Toast = { id: number; title: string; body: string; tone: Tone; runId
 
 export type Theme = "dark" | "light";
 
-function readStorage<T>(key: string, fallback: T): T {
+export function readStorage<T>(key: string, fallback: T): T {
   try {
     const value = localStorage.getItem(key);
     return value ? (JSON.parse(value) as T) : fallback;
@@ -25,7 +25,7 @@ function readStorage<T>(key: string, fallback: T): T {
   }
 }
 
-function writeStorage(key: string, value: unknown): void {
+export function writeStorage(key: string, value: unknown): void {
   try {
     localStorage.setItem(key, JSON.stringify(value));
   } catch {

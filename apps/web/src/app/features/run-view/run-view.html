@@ -134,19 +134,43 @@
 
   <div class="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px]" [class.hidden]="terminal() && terminalMaximized()">
     <aside class="overflow-y-auto border-r border-border bg-surface p-3">
-      <div class="mb-2 flex items-center justify-between">
+      <div class="mb-2 flex items-center gap-2">
         <h2 class="text-[11px] font-semibold tracking-wide text-muted uppercase">Pipeline</h2>
         @if (pinnedStepId()) {
           <button type="button" class="text-[11px] text-accent hover:underline" (click)="pinnedStepId.set(null)">Seguir en vivo</button>
         }
+        <div class="ml-auto flex rounded border border-border p-px text-[11px]" role="group" aria-label="Vista del pipeline">
+          <button
+            type="button"
+            class="rounded-sm px-1.5"
+            [class]="pipelineMode() === 'steps' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'"
+            [attr.aria-pressed]="pipelineMode() === 'steps'"
+            (click)="pipelineMode.set('steps')"
+          >
+            Pasos
+          </button>
+          <button
+            type="button"
+            class="rounded-sm px-1.5"
+            [class]="pipelineMode() === 'office' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'"
+            [attr.aria-pressed]="pipelineMode() === 'office'"
+            (click)="pipelineMode.set('office')"
+          >
+            Oficina
+          </button>
+        </div>
       </div>
-      <nx-step-pipeline
-        [steps]="run.steps"
-        [planned]="planned()"
-        [selectedId]="selectedStep()?.id"
-        [now]="store.now()"
-        (select)="selectStep($event)"
-      />
+      @if (pipelineMode() === "office") {
+        <nx-pixel-office [agents]="agents()" [selectedId]="selectedStep()?.id" label="Agentes del flujo" (select)="selectAgent($event)" />
+      } @else {
+        <nx-step-pipeline
+          [steps]="run.steps"
+          [planned]="planned()"
+          [selectedId]="selectedStep()?.id"
+          [now]="store.now()"
+          (select)="selectStep($event)"
+        />
+      }
     </aside>
 
     <section class="flex min-h-0 flex-col bg-bg">

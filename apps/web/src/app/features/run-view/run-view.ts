@@ -1,9 +1,11 @@
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import { orderSteps, type PrDraft, type ReviewReply, type ReviewThread, type StepName } from "@nexura/shared";
+import type { PrDraft, ReviewReply, ReviewThread } from "@nexura/shared";
+import { buildRunAgents, plannedSteps, type AgentEvent, type AgentNode } from "../../core/agents";
 import { Api, apiError } from "../../core/api";
 import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, stepLabel, timeOfDay } from "../../core/format";
-import { NexuraStore } from "../../core/nexura-store";
+import { NexuraStore, readStorage, writeStorage } from "../../core/nexura-store";
+import { PixelOffice } from "../../shared/pixel-office/pixel-office";
 import { StatusPill } from "../../shared/status-pill";
 import { StepInspector } from "./step-inspector";
 import { StepPipeline } from "./step-pipeline";
@@ -11,11 +13,13 @@ import { PrApproval } from "./pr-approval";
 import { ReviewApproval } from "./review-approval";
 import { TerminalPanel, type TerminalRequest } from "./terminal-panel";
 
-const CLASSIFY_DETAIL = "haiku/low";
+const PIPELINE_MODE_KEY = "nexura.pipelineMode";
+
+type PipelineMode = "steps" | "office";
 
 @Component({
   selector: "nx-run-view",
-  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval, ReviewApproval],
+  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval, ReviewApproval, PixelOffice],
   templateUrl: "./run-view.html",
   host: { class: "flex h-full flex-col" },
 })
@@ -42,23 +46,21 @@ export class RunView {
 
   protected readonly planned = computed(() => {
     const run = this.run();
-    const config = this.store.config();
-    if (!run || !config) {
+    return run ? plannedSteps(run, this.store.config()) : [];
+  });
+
+  // ---- pipeline as a list of steps or as the pixel-art office
+  protected readonly pipelineMode = signal<PipelineMode>(readStorage<PipelineMode>(PIPELINE_MODE_KEY, "steps"));
+  protected readonly agents = computed(() => {
+    const run = this.run();
+    if (!run || this.pipelineMode() !== "office") {
       return [];
     }
-    const result: { name: StepName; detail: string }[] = [];
-    if (run.request.profile === "auto") {
-      result.push({ name: "classify", detail: CLASSIFY_DETAIL });
+    const events: Record<string, AgentEvent[]> = {};
+    for (const step of run.steps.filter((candidate) => candidate.status === "running")) {
+      events[step.id] = this.store.events(run.id, step.id)();
     }
-    const profile = config.profiles.find((candidate) => candidate.name === run.resolvedProfile);
-    for (const { name } of orderSteps(config.steps)) {
-      const step = profile?.steps[name];
-      if (name !== "classify" && name !== "addressReview" && step?.enabled) {
-        const builtin = config.steps.find((definition) => definition.name === name)?.kind === "builtin";
-        result.push({ name, detail: builtin ? "sin LLM" : `${step.model}/${step.effort}` });
-      }
-    }
-    return result;
+    return buildRunAgents(run, this.planned(), events, this.store.now());
   });
 
   protected readonly summary = computed(() => {
@@ -108,6 +110,13 @@ export class RunView {
 
   public constructor() {
     effect(() => this.store.openTab(this.id()));
+    effect(() => writeStorage(PIPELINE_MODE_KEY, this.pipelineMode()));
+  }
+
+  protected selectAgent(agent: AgentNode): void {
+    if (agent.stepRunId) {
+      this.selectStep(agent.stepRunId);
+    }
   }
 
   protected value(event: Event): string {

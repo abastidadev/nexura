@@ -1,0 +1,81 @@
+<div class="mx-auto flex max-w-6xl flex-col gap-4 p-4">
+  <header class="flex flex-wrap items-center gap-3">
+    <h1 class="text-[16px] font-semibold">Agentes</h1>
+    <p class="text-[12px] text-muted" role="status">
+      {{ totals().working }} trabajando · {{ totals().waiting }} en espera · {{ activeRooms().length }} flujo(s) activo(s)
+    </p>
+    <div class="ml-auto flex rounded-md border border-border p-0.5 text-[12px]" role="group" aria-label="Qué flujos mostrar">
+      <button
+        type="button"
+        class="rounded px-2.5 py-1"
+        [class]="filter() === 'active' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'"
+        [attr.aria-pressed]="filter() === 'active'"
+        (click)="filter.set('active')"
+      >
+        Solo activos
+      </button>
+      <button
+        type="button"
+        class="rounded px-2.5 py-1"
+        [class]="filter() === 'all' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'"
+        [attr.aria-pressed]="filter() === 'all'"
+        (click)="filter.set('all')"
+      >
+        Todos
+      </button>
+    </div>
+  </header>
+
+  @for (room of activeRooms(); track room.run.id) {
+    <section class="rounded-lg border border-border bg-surface" [attr.aria-label]="'Flujo ' + room.title">
+      <header class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
+        <nx-status-pill [tone]="room.status.tone" [label]="room.status.label" [live]="room.status.live" />
+        <a class="min-w-0 flex-1 truncate font-medium hover:underline" [routerLink]="['/runs', room.run.id]" (click)="store.openTab(room.run.id)">
+          @if (room.run.request.ticketId) {
+            <span class="font-mono text-muted">#{{ room.run.request.ticketId }}</span> ·
+          }
+          {{ room.title }}
+        </a>
+        <span class="text-[12px] text-muted">{{ room.run.resolvedProfile ?? "decidiendo perfil…" }}</span>
+        <span class="text-[12px]" [class]="room.working ? 'text-info' : 'text-muted'">{{ room.working }} trabajando</span>
+        <span class="font-mono text-[12px] text-muted">{{ room.cost }}</span>
+      </header>
+      <nx-pixel-office class="p-2" [agents]="room.agents" [label]="'Agentes de ' + room.title" (select)="open($event)" />
+    </section>
+  } @empty {
+    <div class="rounded-lg border border-dashed border-border p-8 text-center text-muted">
+      Ningún flujo en marcha ahora mismo.
+      <a routerLink="/new" class="text-accent hover:underline">Lanzar uno</a>
+    </div>
+  }
+
+  @if (filter() === "all" && recentRooms().length) {
+    <section aria-labelledby="recent-heading" class="flex flex-col gap-2">
+      <h2 id="recent-heading" class="mt-2 text-[11px] font-semibold tracking-wide text-muted uppercase">Terminados en las últimas 24 h</h2>
+      @for (room of recentRooms(); track room.run.id) {
+        <div class="rounded-lg border border-border bg-surface">
+          <button
+            type="button"
+            class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-surface-2"
+            [attr.aria-expanded]="expanded().has(room.run.id)"
+            (click)="toggle(room.run.id)"
+          >
+            <span class="text-muted transition-transform" [class.rotate-90]="expanded().has(room.run.id)" aria-hidden="true">›</span>
+            <nx-status-pill [tone]="room.status.tone" [label]="room.status.label" />
+            <span class="min-w-0 flex-1 truncate">
+              @if (room.run.request.ticketId) {
+                <span class="font-mono text-muted">#{{ room.run.request.ticketId }}</span> ·
+              }
+              {{ room.title }}
+            </span>
+            <span class="text-[12px] text-muted">{{ room.agents.length }} agente(s)</span>
+            <span class="font-mono text-[12px] text-muted">{{ room.cost }}</span>
+          </button>
+          @if (expanded().has(room.run.id)) {
+            <nx-pixel-office class="border-t border-border p-2" [agents]="room.agents" [label]="'Agentes de ' + room.title" (select)="open($event)" />
+          }
+        </div>
+      }
+    </section>
+  }
+</div>

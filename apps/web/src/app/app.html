@@ -58,6 +58,16 @@
       </a>
     }
     <a
+      routerLink="/agents"
+      routerLinkActive="!text-fg border-accent"
+      class="flex items-center gap-1.5 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
+    >
+      Agentes
+      @if (workingAgents()) {
+        <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info" [attr.title]="workingAgents() + ' agente(s) trabajando'">{{ workingAgents() }}</span>
+      }
+    </a>
+    <a
       routerLink="/metrics"
       routerLinkActive="!text-fg border-accent"
       class="flex items-center border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"

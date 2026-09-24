@@ -13,7 +13,7 @@ type TimelineItem =
   | { type: "thinking"; key: number; ts: string; text: string }
   | { type: "note"; key: number; ts: string; text: string }
   | { type: "user"; key: number; ts: string; text: string }
-  | { type: "tool"; key: number; ts: string; use: ToolUse; summary: string; result?: ToolResult }
+  | { type: "tool"; key: number; ts: string; use: ToolUse; summary: string; result?: ToolResult; subagent?: string }
   | { type: "rate"; key: number; ts: string; status: string; window: string }
   | { type: "result"; key: number; ts: string; result: Extract<NexuraEvent, { kind: "result" }> };
 
@@ -49,6 +49,12 @@ function summarize(use: ToolUse): string {
       text = JSON.stringify(input);
   }
   return text.length > SUMMARY_MAX ? text.slice(0, SUMMARY_MAX - 1) + "…" : text;
+}
+
+function launcherName(use: ToolUse): string | undefined {
+  const input = (use.input ?? {}) as Record<string, unknown>;
+  const name = input["description"] ?? input["subagent_type"];
+  return typeof name === "string" ? name : undefined;
 }
 
 @Component({
@@ -96,7 +102,10 @@ export class EventTimeline {
           items.push({ type: "user", key: seq, ts, text: event.text });
           break;
         case "toolUse": {
-          const item = { type: "tool" as const, key: seq, ts, use: event, summary: summarize(event) };
+          // Tools run by a subagent carry the id of the Agent/Task call that launched it.
+          const launcher = event.parentToolUseId ? tools.get(event.parentToolUseId) : undefined;
+          const subagent = launcher ? (launcherName(launcher.use) ?? launcher.use.name) : undefined;
+          const item = { type: "tool" as const, key: seq, ts, use: event, summary: summarize(event), subagent };
           tools.set(event.id, item);
           items.push(item);
           break;
