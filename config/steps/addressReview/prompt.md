@@ -19,7 +19,7 @@ Reglas:
 ## Repos
 {{repos}}
 
-## Memoria compartida (engram)
+## Memoria compartida
 {{memory}}
 
 ## Libro de tareas

@@ -38,8 +38,6 @@ process.env.NEXURA_DATA_DIR = join(root, "data");
 process.env.NEXURA_REPOS = join(root, "repos.json");
 process.env.NEXURA_CLAUDE_BIN = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "fake-claude.mjs");
 process.env.FAKE_STATE_DIR = stateDir;
-// Shared memory goes to a fake engram (log in FAKE_STATE_DIR), never to the real ~/.engram.
-process.env.NEXURA_ENGRAM_BIN = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "fake-engram.mjs");
 // Never touch the real ~/.claude.json from tests.
 process.env.NEXURA_TRUST_WORKTREES = "0";
 
@@ -48,6 +46,7 @@ const { RunStore } = await import("../store/run-store.ts");
 const { Orchestrator } = await import("./orchestrator.ts");
 const { PrWatcher } = await import("../azure/pr-watcher.ts");
 const { readRepoNotes, saveRepoNotes } = await import("../workspace/repo-context.ts");
+const { closeMemoryStore, memoryStore } = await import("../memory/memory.ts");
 
 function git(cwd: string, ...args: string[]): string {
   return execFileSync("git", args, { cwd, encoding: "utf8" }).trim();
@@ -106,6 +105,7 @@ beforeEach(() => {
 });
 
 afterAll(() => {
+  closeMemoryStore();
   rmSync(root, { recursive: true, force: true });
 });
 
@@ -450,7 +450,8 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
     const store = new RunStore(":memory:");
     store.setSetting("quota", {
       status: "allowed",
-      fiveHour: { utilization: 0.95, resetsAt: Math.floor(Date.now() / 1000) + 1 },
+      // Margin for the worktree setup before the first claude step (it must still find the window full).
+      fiveHour: { utilization: 0.95, resetsAt: Math.floor(Date.now() / 1000) + 3 },
       updatedAt: new Date().toISOString(),
     });
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1, rateLimitMarginMs: 0 });
@@ -471,11 +472,10 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
 
   it("validates settings", () => {
     const orchestrator = new Orchestrator(loadConfig(), new RunStore(":memory:"), { concurrency: 1 });
-    expect(orchestrator.saveSettings({ quotaPausePercent: null, prPollSeconds: 0, engramBin: "  " })).toEqual({
+    expect(orchestrator.saveSettings({ quotaPausePercent: null, prPollSeconds: 0 })).toEqual({
       quotaPausePercent: null,
       prPollSeconds: 0,
       memoryEnabled: true,
-      engramBin: "",
     });
     expect(() => orchestrator.saveSettings({ quotaPausePercent: 150 })).toThrow(/umbral/);
     expect(() => orchestrator.saveSettings({ prPollSeconds: 5 })).toThrow(/al menos 30/);
@@ -500,46 +500,50 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
     await orchestrator.cleanup(second.id, true);
   });
 
-  it("shares memory through engram: MCP per memory mode, {{memory}} in the prompt, conventions and ticket summary saved", async () => {
-    type EngramCall = { cwd: string; args: string[] };
-    const engramCalls = (): EngramCall[] =>
-      existsSync(join(stateDir, "engram.jsonl"))
-        ? readFileSync(join(stateDir, "engram.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as EngramCall)
-        : [];
-    const mcpTools = (args: string[] | undefined): string =>
-      (JSON.parse(args![args!.indexOf("--mcp-config") + 1]!) as { mcpServers: { engram: { args: string[] } } }).mcpServers.engram.args.at(-1)!;
+  it("shares memory: MCP per memory mode, {{memory}} in the prompt, conventions and ticket summary saved", async () => {
+    const serverArgs = (args: string[] | undefined): string[] =>
+      (JSON.parse(args![args!.indexOf("--mcp-config") + 1]!) as { mcpServers: Record<string, { args: string[] }> }).mcpServers["nexura-memory"]!.args;
+    const flagOf = (args: string[], name: string): string | undefined => args[args.indexOf(name) + 1];
+    const memory = memoryStore();
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
 
     const first = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketId: "77", ticketText: "Filtro de fechas en pedidos" })).id);
     expect(first.status).toBe("done");
     const [enrich, implement] = first.steps;
-    // enrich only reads; implement may also save. Both get the protocol and the tools pre-approved.
-    expect(mcpTools(enrich!.args)).toBe("--tools=mem_context,mem_search,mem_get_observation");
-    expect(mcpTools(implement!.args)).toContain("mem_save");
+    // enrich only reads; implement may also save. Both are bound to the repo's project and step.
+    const enrichServer = serverArgs(enrich!.args);
+    expect(flagOf(enrichServer, "--mode")).toBe("read");
+    expect(flagOf(enrichServer, "--project")).toBe("sandbox");
+    expect(flagOf(enrichServer, "--source")).toBe("enrich");
+    expect(flagOf(enrichServer, "--run")).toBe(first.id);
+    expect(flagOf(serverArgs(implement!.args), "--mode")).toBe("readwrite");
     expect(enrich!.args).toContain("--append-system-prompt");
-    expect(enrich!.args![enrich!.args!.indexOf("--allowedTools") + 1]).toContain("mcp__engram__mem_search");
-    expect(enrich!.prompt).toContain("## Memoria compartida (engram)\n(nada)");
+    const allowed = enrich!.args![enrich!.args!.indexOf("--allowedTools") + 1]!;
+    expect(allowed).toContain("mcp__nexura-memory__mem_search");
+    expect(allowed).not.toContain("mem_save");
 
-    const saves = engramCalls().filter((call) => call.args[0] === "save");
-    const worktree = first.worktrees[0]!.path;
-    expect(saves.find((call) => call.args.includes("conventions/usa-inject-en-vez-de-constructores"))).toMatchObject({ cwd: worktree });
-    const summary = saves.find((call) => call.args.includes("tickets/77"))!;
-    expect(summary.args).toEqual(expect.arrayContaining(["session_summary", "Ticket #77: Filtro de fechas en pedidos"]));
-    expect(summary.args.at(-1)).toContain("## Accomplished");
+    // Saved by Nexura without tokens: enrich's convention and the ticket summary.
+    expect(memory.search("sandbox", "inject constructores")[0]).toMatchObject({ type: "pattern", topicKey: "conventions/usa-inject-en-vez-de-constructores", source: "enrich" });
+    const summary = memory.search("sandbox", "Filtro de fechas en pedidos").find((o) => o.topicKey === "tickets/77")!;
+    expect(summary).toMatchObject({ type: "ticket", title: "Ticket #77: Filtro de fechas en pedidos", source: "nexura", runId: first.id });
+    expect(summary.content).toContain("## Hecho");
 
     // The next ticket starts from what the first one left.
     const second = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Filtro de fechas en facturas" })).id);
-    expect(second.steps[0]!.prompt).toMatch(/## Memoria compartida \(engram\)\n### Relacionado con este ticket\n[\s\S]*Ticket #77: Filtro de fechas en pedidos/);
+    expect(second.steps[0]!.prompt).toMatch(/## Memoria compartida\n### Relacionado con este ticket\n[\s\S]*Ticket #77: Filtro de fechas en pedidos/);
+    // Re-running a ticket updates its summary instead of adding another.
+    const rerun = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketId: "77", ticketText: "Filtro de fechas en pedidos" })).id);
+    expect(memory.search("sandbox", "Filtro de fechas en pedidos").filter((o) => o.topicKey === "tickets/77")).toHaveLength(1);
 
-    // Memory off: no MCP server, no engram context, no engram calls.
+    // Memory off: no MCP server, nothing in the prompt, nothing saved.
     orchestrator.saveSettings({ memoryEnabled: false });
-    const before = engramCalls().length;
+    const before = memory.recent("sandbox", 1000).length;
     const third = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Sin memoria" })).id);
     expect(third.steps[0]!.args).not.toContain("--mcp-config");
-    expect(third.steps[0]!.prompt).toContain("## Memoria compartida (engram)\n(nada)");
-    expect(engramCalls().length).toBe(before);
-    for (const run of [first, second, third]) {
+    expect(third.steps[0]!.prompt).toContain("## Memoria compartida\n(nada)");
+    expect(memory.recent("sandbox", 1000)).toHaveLength(before);
+    for (const run of [first, second, rerun, third]) {
       await orchestrator.cleanup(run.id, true);
     }
   });

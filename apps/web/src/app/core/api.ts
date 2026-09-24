@@ -5,7 +5,7 @@ import type {
   FlowProfile,
   Metrics,
   NexuraEvent,
-  MemoryStatus,
+  MemoryObservation,
   NexuraSettings,
   QuotaInfo,
   RepoConfig,
@@ -178,13 +178,18 @@ export class Api {
     return firstValueFrom(this.http.put<void>(`/api/repos/${encodeURIComponent(repo)}/notes`, { markdown }));
   }
 
-  public getMemoryStatus(): Promise<MemoryStatus> {
-    return firstValueFrom(this.http.get<MemoryStatus>("/api/memory/status"));
+  /** Shared memory of a repo: a full-text search, or the latest when `query` is empty. */
+  public searchMemory(repo: string, query: string): Promise<{ project: string; observations: MemoryObservation[] }> {
+    return firstValueFrom(this.http.get<{ project: string; observations: MemoryObservation[] }>("/api/memory", { params: { repo, q: query } }));
   }
 
-  /** engram's text output: a search in the repo's memory, or its recent context when `query` is empty. */
-  public searchMemory(repo: string, query: string): Promise<string> {
-    return firstValueFrom(this.http.get<{ text: string }>("/api/memory", { params: { repo, q: query } })).then((r) => r.text);
+  public deleteMemory(id: number): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/memory/${id}`));
+  }
+
+  /** `claude mcp add ...` to give the interactive Claude Code the same memory. */
+  public memoryMcpCommand(): Promise<string> {
+    return firstValueFrom(this.http.get<{ command: string }>("/api/memory/mcp")).then((r) => r.command);
   }
 
   public getQuota(): Promise<QuotaInfo | null> {

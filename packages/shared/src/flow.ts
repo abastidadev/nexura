@@ -26,8 +26,8 @@ export type ModelAlias = "haiku" | "sonnet" | "opus";
 export type Effort = "low" | "medium" | "high" | "xhigh";
 
 /**
- * Shared memory (engram) of a step: `off` = none; `read` = gets {{memory}} and may search it;
- * `readwrite` = also saves what it decides, fixes or discovers (mem_save / mem_update).
+ * Shared memory of a step: `off` = none; `read` = gets {{memory}} and may search it
+ * (mem_search / mem_get / mem_context); `readwrite` = also saves what it decides, fixes or discovers (mem_save).
  */
 export type MemoryMode = "off" | "read" | "readwrite";
 
@@ -61,7 +61,7 @@ export type StepDefinition = {
   disallowedTools: string[];
   /** Keep MCP servers from user/project config. Off = `--strict-mcp-config` (cheaper context). */
   useMcp: boolean;
-  /** Shared memory through engram's MCP server (missing = off). Needs engram installed. */
+  /** Shared memory through Nexura's memory MCP server (missing = off). */
   memory?: MemoryMode;
   timeoutMs: number;
   /** Set on steps created from the UI: they can be deleted and are ordered by `after`. */
@@ -270,16 +270,29 @@ export type NexuraSettings = {
   quotaPausePercent: number | null;
   /** How often finished runs with an open PR are checked for new comments (REST, free). 0 = off. */
   prPollSeconds: number;
-  /** Shared memory with engram (github.com/Gentleman-Programming/engram). Off or not installed = repo notes only. */
+  /** Shared memory (data/memory.sqlite) for the steps with a memory mode. Off = repo notes only. */
   memoryEnabled: boolean;
-  /** Path to the engram binary; empty = look it up in PATH. */
-  engramBin: string;
 };
 
-export const DEFAULT_SETTINGS: NexuraSettings = { quotaPausePercent: 90, prPollSeconds: 120, memoryEnabled: true, engramBin: "" };
+export const DEFAULT_SETTINGS: NexuraSettings = { quotaPausePercent: 90, prPollSeconds: 120, memoryEnabled: true };
 
-/** Whether the steps can use engram right now (Configuración > General). */
-export type MemoryStatus = { enabled: boolean; available: boolean; bin?: string; version?: string; error?: string };
+/** One entry of the shared memory: a decision, a bug's root cause, a convention, a ticket summary... */
+export type MemoryObservation = {
+  id: number;
+  /** The repo it belongs to: its origin remote's name, lowercased. */
+  project: string;
+  type: string;
+  title: string;
+  content: string;
+  /** Saving again with the same topic updates this observation instead of adding one. */
+  topicKey?: string;
+  /** Who saved it: a step name, "nexura", or "claude-code" (interactive session). */
+  source?: string;
+  runId?: string;
+  createdAt: string;
+  updatedAt: string;
+  revisions: number;
+};
 
 export type Metrics = {
   totals: { runs: number; done: number; failed: number; cancelled: number; active: number; costUsd: number; tokens: number };

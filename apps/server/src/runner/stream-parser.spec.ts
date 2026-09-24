@@ -5,7 +5,7 @@ import type { NexuraEvent } from "@nexura/shared";
 import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
 import { buildClaudeArgs } from "./claude-args.ts";
 import { claudeEnv } from "./claude-process.ts";
-import { memoryProtocol, memoryRunOptions } from "../memory/engram.ts";
+import { memoryProtocol, memoryRunOptions } from "../memory/memory.ts";
 
 const FIXTURES = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "stream");
 const REAL_CONFIG = join(import.meta.dirname, "..", "..", "..", "..", "config");
@@ -114,18 +114,23 @@ describe("buildClaudeArgs", () => {
     expect(args).not.toContain("--session-id");
   });
 
-  it("adds engram as the only MCP server of a memory step, with its tools pre-approved", () => {
-    const memory = memoryRunOptions({ command: "C:/bin/engram.exe", prefixArgs: [] }, "read", ["Read"], REAL_CONFIG);
+  it("adds the memory server as the only MCP server of a memory step, with its tools pre-approved", () => {
+    const context = { project: "sandbox", step: "plan", runId: "r1", allowedTools: ["Read"] };
+    const memory = memoryRunOptions("read", context, "C:/data/memory.sqlite", REAL_CONFIG);
     const args = buildClaudeArgs({ cwd: ".", prompt: "", model: "haiku", effort: "low", tools: ["Read"], ...memory });
     expect(args).toContain("--strict-mcp-config");
-    expect(JSON.parse(args[args.indexOf("--mcp-config") + 1]!)).toEqual({
-      mcpServers: { engram: { command: "C:/bin/engram.exe", args: ["mcp", "--tools=mem_context,mem_search,mem_get_observation"] } },
-    });
-    expect(args[args.indexOf("--allowedTools") + 1]).toBe("Read,mcp__engram__mem_context,mcp__engram__mem_search,mcp__engram__mem_get_observation");
+    const server = (JSON.parse(args[args.indexOf("--mcp-config") + 1]!) as { mcpServers: Record<string, { command: string; args: string[] }> }).mcpServers[
+      "nexura-memory"
+    ]!;
+    expect(server.command).toBe(process.execPath);
+    expect(server.args.slice(2)).toEqual(["--db", "C:/data/memory.sqlite", "--mode", "read", "--project", "sandbox", "--source", "plan", "--run", "r1"]);
+    expect(server.args[1]).toMatch(/mcp-server\.ts$/);
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("Read,mcp__nexura-memory__mem_search,mcp__nexura-memory__mem_get,mcp__nexura-memory__mem_context");
     expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("mem_search");
     expect(args[args.indexOf("--append-system-prompt") + 1]).not.toContain("mem_save");
     expect(memoryProtocol("readwrite", REAL_CONFIG)).toContain("mem_save");
-    expect(memoryRunOptions({ command: "engram", prefixArgs: [] }, "off", [])).toBeUndefined();
+    expect(memoryRunOptions("readwrite", context)!.allowedTools).toContain("mcp__nexura-memory__mem_save");
+    expect(memoryRunOptions("off", context)).toBeUndefined();
   });
 });
 

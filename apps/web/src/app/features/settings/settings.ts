@@ -17,7 +17,7 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
   { id: "profiles", label: "Perfiles", help: "Qué pasos corre cada perfil y con qué modelo y esfuerzo." },
   { id: "steps", label: "Pasos", help: "Plantilla del prompt, herramientas permitidas y timeout de cada paso." },
   { id: "repos", label: "Repos", help: "Repositorios, rama base y checks de QA." },
-  { id: "memory", label: "Memoria", help: "Lo guardado en la memoria compartida (engram) de cada repo." },
+  { id: "memory", label: "Memoria", help: "Lo guardado en la memoria compartida de cada repo." },
 ];
 
 /**

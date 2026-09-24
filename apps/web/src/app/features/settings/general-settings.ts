@@ -1,5 +1,5 @@
 import { Component, inject, linkedSignal, signal } from "@angular/core";
-import { DEFAULT_SETTINGS, type MemoryStatus, type NexuraSettings } from "@nexura/shared";
+import { DEFAULT_SETTINGS, type NexuraSettings } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { NexuraStore } from "../../core/nexura-store";
 
@@ -50,47 +50,17 @@ import { NexuraStore } from "../../core/nexura-store";
       </div>
 
       <div>
-        <h2 class="font-semibold">Memoria compartida (engram)</h2>
+        <h2 class="font-semibold">Memoria compartida</h2>
         <p class="mt-1 text-[12px] text-muted">
           Los pasos con memoria (se elige en cada paso) reciben lo que se sabe del ticket y del repo, y pueden buscar y guardar decisiones,
-          causas raíz y convenciones. Al acabar cada ticket, Nexura guarda un resumen sin gastar tokens. Es la misma memoria que usa tu Claude Code
-          interactivo con el plugin de engram, y se puede compartir con el equipo con <code class="font-mono">engram sync</code>. Sin engram,
-          los pasos siguen usando las notas aprendidas del repo.
+          causas raíz y convenciones. Al acabar cada ticket, Nexura guarda un resumen sin gastar tokens. Se guarda en
+          <code class="font-mono">data/memory.sqlite</code>; en Configuración → Memoria puedes consultarla y dársela también a tu Claude Code
+          interactivo. Apagada, los pasos siguen usando las notas aprendidas del repo.
         </p>
         <label class="mt-3 flex cursor-pointer items-center gap-2">
           <input type="checkbox" class="size-4 accent-accent" [checked]="draft().memoryEnabled" (change)="patch({ memoryEnabled: !draft().memoryEnabled })" />
           Usar la memoria compartida
         </label>
-        <label class="mt-2 flex items-center gap-2">
-          Binario de engram
-          <input
-            type="text"
-            spellcheck="false"
-            placeholder="engram (en el PATH)"
-            class="w-96 max-w-full rounded-md border border-border bg-surface-2 px-2 py-1 font-mono outline-none focus:border-accent"
-            [value]="draft().engramBin"
-            (input)="patch({ engramBin: value($event) })"
-          />
-        </label>
-        <p class="mt-2 text-[12px]" role="status">
-          @if (memory(); as status) {
-            @if (status.available) {
-              <span class="text-ok">{{ status.version }}</span> <span class="font-mono text-muted">{{ status.bin }}</span>
-              @if (!status.enabled) {
-                <span class="text-muted"> · desactivada</span>
-              }
-            } @else {
-              <span class="text-err">{{ status.error }}.</span>
-              <span class="text-muted">
-                Instálalo desde
-                <a class="underline" href="https://github.com/Gentleman-Programming/engram/releases" target="_blank" rel="noopener">las releases de engram</a>
-                y guarda de nuevo.
-              </span>
-            }
-          } @else {
-            <span class="text-muted">Comprobando engram…</span>
-          }
-        </p>
       </div>
 
       <div class="flex items-center gap-2">
@@ -111,19 +81,6 @@ export class GeneralSettings {
   protected readonly draft = linkedSignal<NexuraSettings>(() => ({ ...(this.store.settings() ?? DEFAULT_SETTINGS) }));
   protected readonly busy = signal(false);
   protected readonly message = signal<{ ok: boolean; text: string } | null>(null);
-  protected readonly memory = signal<MemoryStatus | null>(null);
-
-  public constructor() {
-    void this.checkMemory();
-  }
-
-  private async checkMemory(): Promise<void> {
-    try {
-      this.memory.set(await this.api.getMemoryStatus());
-    } catch (error: unknown) {
-      this.memory.set({ enabled: false, available: false, error: apiError(error, "No se pudo comprobar engram") });
-    }
-  }
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement).value;
@@ -143,7 +100,6 @@ export class GeneralSettings {
     try {
       this.store.settings.set(await this.api.saveSettings(this.draft()));
       this.message.set({ ok: true, text: "Guardado. Se aplica al momento." });
-      void this.checkMemory();
     } catch (error: unknown) {
       this.message.set({ ok: false, text: apiError(error, "No se pudo guardar") });
     } finally {

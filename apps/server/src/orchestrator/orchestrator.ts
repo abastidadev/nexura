@@ -18,6 +18,7 @@ import {
   type StepConfig,
   type StepName,
   type StepRun,
+  type Worktree,
 } from "@nexura/shared";
 import type { LoadedStep, NexuraConfig } from "../config/config-loader.ts";
 import { Ledger } from "../ledger/ledger.ts";
@@ -26,7 +27,8 @@ import { ClaudeProcess } from "../runner/claude-process.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace/git.ts";
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
-import { activeEngram, isMemoryWrite, memoryRunOptions, readMemory, saveMemory } from "../memory/engram.ts";
+import { isMemoryWrite, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
+import { projectOf, type NewObservation } from "../memory/memory-store.ts";
 import { getActiveThreads, pushBranch, replyToThread, threadsToText } from "../azure/pr-threads.ts";
 import { buildPrDraft, pushAndCreatePr } from "../azure/pull-requests.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
@@ -102,7 +104,6 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   public saveSettings(update: Partial<NexuraSettings>): NexuraSettings {
     const next = { ...this.settings, ...update };
     next.memoryEnabled = Boolean(next.memoryEnabled);
-    next.engramBin = String(next.engramBin ?? "").trim();
     if (next.quotaPausePercent !== null && (!Number.isFinite(next.quotaPausePercent) || next.quotaPausePercent <= 0 || next.quotaPausePercent > 100)) {
       throw new Error("El umbral de cuota debe estar entre 1 y 100 (o vacío para no pausar)");
     }
@@ -598,7 +599,15 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     }
 
     const [primary, ...others] = run.worktrees;
-    const engram = definition.memory && definition.memory !== "off" ? await activeEngram(this.settings) : undefined;
+    const memory =
+      this.settings.memoryEnabled && definition.memory && definition.memory !== "off"
+        ? memoryRunOptions(definition.memory, {
+            project: await projectOf(primary!.repoPath),
+            step: stepRun.step,
+            runId: run.id,
+            allowedTools: definition.allowedTools,
+          })
+        : undefined;
     const process = new ClaudeProcess({
       maxBudgetUsd,
       cwd: primary!.path,
@@ -614,7 +623,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       timeoutMs: definition.timeoutMs,
       resume,
       forkSession: Boolean(resume),
-      ...(engram ? memoryRunOptions(engram, definition.memory!, definition.allowedTools) : {}),
+      ...memory,
     });
     stepRun.prompt = prompt;
     stepRun.args = process.args;
@@ -653,7 +662,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     context.process = undefined;
     context.send = undefined;
     if (memoriesSaved > 0) {
-      this.recordEvent(run, stepRun, { kind: "text", text: `Guardada(s) ${memoriesSaved} observación(es) en la memoria compartida (engram).` });
+      this.recordEvent(run, stepRun, { kind: "text", text: `Guardada(s) ${memoriesSaved} observación(es) en la memoria compartida.` });
     }
 
     const result = outcome.result;
@@ -758,26 +767,38 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     return { repoMap: maps.filter(Boolean).join("\n\n"), repoNotes: notes.join("\n\n"), memory: await this.memoryVar(run) };
   }
 
-  /** `{{memory}}`: what engram knows about the ticket and each repo. Empty without engram. */
+  /** `{{memory}}`: what the shared memory has about the ticket and each repo. */
   private async memoryVar(run: Run): Promise<string> {
-    const engram = await activeEngram(this.settings);
-    if (!engram) {
+    if (!this.settings.memoryEnabled) {
       return "";
     }
     const title = run.request.ticketText.split(/\r?\n/)[0] ?? "";
     const parts = await Promise.all(
       run.worktrees.map(async (worktree) => {
-        const text = await readMemory(engram, worktree.path, title);
+        const text = readMemory(memoryStore(), await projectOf(worktree.repoPath), title);
         return text && run.worktrees.length > 1 ? `**${worktree.repo}**\n${text}` : text;
       }),
     );
     return parts.filter(Boolean).join("\n\n");
   }
 
+  /** Saves to the shared memory; a failure there never fails the run. */
+  private async remember(worktree: Worktree, entry: Omit<NewObservation, "project">): Promise<boolean> {
+    if (!this.settings.memoryEnabled) {
+      return false;
+    }
+    try {
+      memoryStore().save({ ...entry, project: await projectOf(worktree.repoPath) });
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Keeps enrich's conventions for the primary repo, so the next ticket starts from them:
-   * in the repo notes and, with engram, as `pattern` observations (one topic per convention,
-   * so learning it again updates it instead of duplicating it).
+   * in the repo notes and in the shared memory as `pattern` observations (one topic per
+   * convention, so learning it again updates it instead of duplicating it).
    */
   private async learnFromEnrich(run: Run, stepRun: StepRun): Promise<void> {
     const conventions = (stepRun.structuredOutput as { conventions?: string[] } | undefined)?.conventions ?? [];
@@ -792,27 +813,26 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         text: `Aprendidas ${learned} convención(es) nueva(s) de ${primary.repo}: se darán a los próximos tickets.`,
       });
     }
-    const engram = await activeEngram(this.settings);
-    // One at a time: each save is an engram process writing the same SQLite file.
-    for (const convention of engram ? conventions : []) {
-      await saveMemory(engram!, primary.path, {
-        title: convention.length > 80 ? convention.slice(0, 77) + "…" : convention,
-        content: `**Qué**: ${convention}\n**Dónde**: ${primary.repo}\n**Aprendido**: convención detectada por Nexura (enrich) al resolver un ticket.`,
+    for (const convention of conventions) {
+      await this.remember(primary, {
         type: "pattern",
-        topic: `conventions/${slugify(convention, 60)}`,
+        title: convention.length > 80 ? convention.slice(0, 77) + "…" : convention,
+        content: `**Qué**: ${convention}\n**Dónde**: ${primary.repo}\n**Aprendido**: convención detectada por enrich al resolver un ticket.`,
+        topicKey: `conventions/${slugify(convention, 60)}`,
+        source: "enrich",
+        runId: run.id,
       });
     }
   }
 
   /**
-   * Leaves a summary of the finished ticket in engram (topic `tickets/<id>`, so a re-run of
-   * the same ticket updates it): later tickets on the same code, addressReview and the
-   * user's own sessions find what was done, where and why. No tokens: built from the outputs.
+   * Leaves a summary of the finished ticket in the shared memory (topic `tickets/<id>`, so a
+   * re-run of the same ticket updates it): later tickets on the same code, addressReview and
+   * the user's own sessions find what was done, where and why. No tokens: built from the outputs.
    */
   private async rememberRun(run: Run, stepContext: StepContext): Promise<void> {
     const primary = run.worktrees[0];
-    const engram = primary ? await activeEngram(this.settings) : undefined;
-    if (!primary || !engram) {
+    if (!primary) {
       return;
     }
     const plan = stepContext.outputs.get("plan") as { approach?: string } | undefined;
@@ -821,25 +841,27 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     const title = run.request.ticketText.split(/\r?\n/)[0]?.trim() || run.id;
     const loops = run.steps.filter((step) => step.step === "implement" && step.status === "succeeded").length - 1;
     const content = [
-      `## Goal\n${run.request.ticketId ? `#${run.request.ticketId} ` : ""}${title}`,
-      plan?.approach ? `## Approach\n${plan.approach}` : "",
-      implement?.summary ? `## Accomplished\n${implement.summary}` : "",
-      implement?.notes ? `## Discoveries\n${implement.notes}` : "",
-      review?.summary ? `## Review\n${review.verdict ?? ""}: ${review.summary}${loops > 0 ? ` (${loops} vuelta(s) a implement)` : ""}` : "",
-      implement?.filesChanged?.length ? `## Relevant Files\n${implement.filesChanged.map((file) => `- ${file}`).join("\n")}` : "",
-      `## Branches\n${run.worktrees.map((worktree) => `- ${worktree.repo}: ${worktree.branch}`).join("\n")}`,
+      `## Objetivo\n${run.request.ticketId ? `#${run.request.ticketId} ` : ""}${title}`,
+      plan?.approach ? `## Enfoque\n${plan.approach}` : "",
+      implement?.summary ? `## Hecho\n${implement.summary}` : "",
+      implement?.notes ? `## Descubrimientos\n${implement.notes}` : "",
+      review?.summary ? `## Revisión\n${review.verdict ?? ""}: ${review.summary}${loops > 0 ? ` (${loops} vuelta(s) a implement)` : ""}` : "",
+      implement?.filesChanged?.length ? `## Ficheros\n${implement.filesChanged.map((file) => `- ${file}`).join("\n")}` : "",
+      `## Ramas\n${run.worktrees.map((worktree) => `- ${worktree.repo}: ${worktree.branch}`).join("\n")}`,
     ]
       .filter(Boolean)
       .join("\n\n");
-    const topic = `tickets/${run.request.ticketId ?? run.id}`;
-    const saved = await saveMemory(engram, primary.path, {
+    const topicKey = `tickets/${run.request.ticketId ?? run.id}`;
+    const saved = await this.remember(primary, {
+      type: "ticket",
       title: (run.request.ticketId ? `Ticket #${run.request.ticketId}: ${title}` : `Ticket: ${title}`).slice(0, 120),
       content,
-      type: "session_summary",
-      topic,
+      topicKey,
+      source: "nexura",
+      runId: run.id,
     });
     if (saved) {
-      stepContext.ledger.append("memoria", `Resumen del ticket guardado en engram (\`${topic}\`).`);
+      stepContext.ledger.append("memoria", `Resumen del ticket guardado en la memoria compartida (\`${topicKey}\`).`);
     }
   }
 
@@ -1146,7 +1168,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       feedback: stepContext.feedback,
       ...stepContext.extraVars,
     };
-    // Memory "off" means off: no engram context in the prompt either.
+    // Memory "off" means off: no memory in the prompt either.
     if (!definition?.memory || definition.memory === "off") {
       vars["memory"] = undefined;
     }
