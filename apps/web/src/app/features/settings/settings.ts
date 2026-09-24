@@ -1,6 +1,7 @@
 import { Component, computed, inject, input } from "@angular/core";
 import { Router } from "@angular/router";
 import { GeneralSettings } from "./general-settings";
+import { MemoryBrowser } from "./memory-browser";
 import { ProfileForm } from "./profile-form";
 import { ProfilesList } from "./profiles-list";
 import { RepoForm } from "./repo-form";
@@ -9,13 +10,14 @@ import { ReposList } from "./repos-list";
 import { StepsEditor } from "./steps-editor";
 import { StepsList } from "./steps-list";
 
-export type SettingsTab = "general" | "profiles" | "steps" | "repos";
+export type SettingsTab = "general" | "profiles" | "steps" | "repos" | "memory";
 
 const TABS: { id: SettingsTab; label: string; help: string }[] = [
-  { id: "general", label: "General", help: "Umbral de cuota y revisión de comentarios de PR." },
+  { id: "general", label: "General", help: "Umbral de cuota, revisión de comentarios de PR y memoria compartida." },
   { id: "profiles", label: "Perfiles", help: "Qué pasos corre cada perfil y con qué modelo y esfuerzo." },
   { id: "steps", label: "Pasos", help: "Plantilla del prompt, herramientas permitidas y timeout de cada paso." },
   { id: "repos", label: "Repos", help: "Repositorios, rama base y checks de QA." },
+  { id: "memory", label: "Memoria", help: "Lo guardado en la memoria compartida (engram) de cada repo." },
 ];
 
 /**
@@ -26,7 +28,7 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
  */
 @Component({
   selector: "nx-settings",
-  imports: [GeneralSettings, ProfilesList, ProfileForm, StepsList, StepsEditor, StepCreate, ReposList, RepoForm],
+  imports: [GeneralSettings, MemoryBrowser, ProfilesList, ProfileForm, StepsList, StepsEditor, StepCreate, ReposList, RepoForm],
   template: `
     <div class="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
       @switch (screen()) {
@@ -78,6 +80,9 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
               }
               @case ("repos") {
                 <nx-repos-list />
+              }
+              @case ("memory") {
+                <nx-memory-browser />
               }
             }
           </div>

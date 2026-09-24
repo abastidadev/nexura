@@ -11,5 +11,8 @@ Devuelve `changes` únicamente por problemas `blocker` o `major` (bugs, no cumpl
 ## Plan
 {{output.plan}}
 
+## Memoria compartida (engram)
+{{memory}}
+
 ## Libro de tareas
 {{ledger}}

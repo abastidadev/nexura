@@ -10,6 +10,8 @@ export type ClaudeRunOptions = {
   allowedTools?: string[];
   disallowedTools?: string[];
   useMcp?: boolean;
+  /** Extra MCP servers (`--mcp-config`), loaded even with `useMcp` off, e.g. engram for the memory. */
+  mcpConfig?: { mcpServers: Record<string, { command: string; args: string[] }> };
   addDirs?: string[];
   /** JSON Schema object; the step's answer comes back in `result.structuredOutput`. */
   jsonSchema?: object;
@@ -57,6 +59,9 @@ export function buildClaudeArgs(options: ClaudeRunOptions): string[] {
   }
   if (!options.useMcp) {
     args.push("--strict-mcp-config");
+  }
+  if (options.mcpConfig) {
+    args.push("--mcp-config", JSON.stringify(options.mcpConfig));
   }
   for (const dir of options.addDirs ?? []) {
     args.push("--add-dir", dir);

@@ -25,5 +25,8 @@ Eres el paso **implement**. Escribe el código que resuelve el ticket en los wor
 ## Libro de tareas
 {{ledger}}
 
+## Memoria compartida (engram)
+{{memory}}
+
 ## Indicaciones del usuario
 {{userPrompt}}

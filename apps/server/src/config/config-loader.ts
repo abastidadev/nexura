@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CUSTOM_STEP_NAME, STEP_NAMES, type FlowProfile, type RepoConfig, type StepDefinition, type StepName } from "@nexura/shared";
+import { CUSTOM_STEP_NAME, MEMORY_MODES, STEP_NAMES, type FlowProfile, type RepoConfig, type StepDefinition, type StepName } from "@nexura/shared";
 import { CONFIG_DIR } from "./paths.ts";
 
 export type LoadedStep = StepDefinition & {
@@ -45,7 +45,8 @@ export function loadSteps(configDir = CONFIG_DIR): Map<StepName, LoadedStep> {
     steps.set(name, {
       ...definition,
       name,
-      promptTemplate: existsSync(promptFile) ? readFileSync(promptFile, "utf8") : undefined,
+      // CRLF from a Windows checkout (core.autocrlf) is noise in a prompt.
+      promptTemplate: existsSync(promptFile) ? readFileSync(promptFile, "utf8").replace(/\r\n/g, "\n") : undefined,
       schema: existsSync(schemaFile) ? readJson<object>(schemaFile) : undefined,
     });
   }
@@ -125,7 +126,7 @@ export function deleteProfile(name: string, configDir = CONFIG_DIR): void {
 }
 
 export type StepDefinitionUpdate = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs"> &
-  Partial<Pick<StepDefinition, "label" | "description" | "after">>;
+  Partial<Pick<StepDefinition, "memory" | "label" | "description" | "after">>;
 
 const list = (values: unknown): string[] => (Array.isArray(values) ? values.map((value) => String(value).trim()).filter(Boolean) : []);
 
@@ -156,9 +157,20 @@ export function saveStepDefinition(step: StepName, update: StepDefinitionUpdate,
     allowedTools: list(update.allowedTools),
     disallowedTools: list(update.disallowedTools),
     useMcp: Boolean(update.useMcp),
+    ...(current.kind === "claude" ? { memory: memoryMode(update.memory ?? current.memory) } : {}),
     timeoutMs: Math.round(update.timeoutMs),
   };
   writeFileSync(file, JSON.stringify(next, null, 2) + "\n");
+}
+
+function memoryMode(value: unknown): NonNullable<StepDefinition["memory"]> {
+  if (value === undefined) {
+    return "off";
+  }
+  if (!MEMORY_MODES.includes(value as NonNullable<StepDefinition["memory"]>)) {
+    throw new Error(`Modo de memoria no válido: "${String(value)}" (${MEMORY_MODES.join(", ")})`);
+  }
+  return value as NonNullable<StepDefinition["memory"]>;
 }
 
 export type NewStep = { name: string; label?: string; description?: string; after: StepName };
@@ -199,6 +211,7 @@ export function createStep(step: NewStep, configDir = CONFIG_DIR): void {
     allowedTools: [],
     disallowedTools: ["Bash(git commit*)", "Bash(git push*)", "Bash(git checkout*)", "Bash(git switch*)", "Bash(git reset*)"],
     useMcp: false,
+    memory: "off",
     timeoutMs: 600_000,
   };
   const dir = join(configDir, "steps", name);

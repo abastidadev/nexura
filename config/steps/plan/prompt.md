@@ -17,5 +17,8 @@ Si un criterio se puede verificar con un script del repo, pon el comando en `com
 ## Notas aprendidas del repo
 {{repoNotes}}
 
+## Memoria compartida (engram)
+{{memory}}
+
 ## Indicaciones del usuario
 {{userPrompt}}

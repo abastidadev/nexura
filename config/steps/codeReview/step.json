@@ -4,5 +4,6 @@
   "allowedTools": ["Bash(git diff*)", "Bash(git log*)", "Bash(git show*)"],
   "disallowedTools": [],
   "useMcp": false,
+  "memory": "readwrite",
   "timeoutMs": 900000
 }

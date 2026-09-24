@@ -5,6 +5,7 @@ import type {
   FlowProfile,
   Metrics,
   NexuraEvent,
+  MemoryStatus,
   NexuraSettings,
   QuotaInfo,
   RepoConfig,
@@ -29,6 +30,7 @@ export type NexuraConfigView = {
 };
 
 export type StepDefinitionEdit = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs"> &
+  Partial<Pick<StepDefinition, "memory">> &
   Partial<Pick<StepDefinition, "label" | "description" | "after">>;
 
 export type NewStep = { name: string; label?: string; description?: string; after: string };
@@ -174,6 +176,15 @@ export class Api {
 
   public saveRepoNotes(repo: string, markdown: string): Promise<void> {
     return firstValueFrom(this.http.put<void>(`/api/repos/${encodeURIComponent(repo)}/notes`, { markdown }));
+  }
+
+  public getMemoryStatus(): Promise<MemoryStatus> {
+    return firstValueFrom(this.http.get<MemoryStatus>("/api/memory/status"));
+  }
+
+  /** engram's text output: a search in the repo's memory, or its recent context when `query` is empty. */
+  public searchMemory(repo: string, query: string): Promise<string> {
+    return firstValueFrom(this.http.get<{ text: string }>("/api/memory", { params: { repo, q: query } })).then((r) => r.text);
   }
 
   public getQuota(): Promise<QuotaInfo | null> {

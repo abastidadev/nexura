@@ -12,5 +12,6 @@
     "Bash(rm -rf*)"
   ],
   "useMcp": false,
+  "memory": "readwrite",
   "timeoutMs": 1800000
 }

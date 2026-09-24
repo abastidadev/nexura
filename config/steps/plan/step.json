@@ -1,1 +1,1 @@
-{ "kind": "claude", "tools": ["Read", "Glob", "Grep"], "allowedTools": [], "disallowedTools": [], "useMcp": false, "timeoutMs": 600000 }
+{ "kind": "claude", "tools": ["Read", "Glob", "Grep"], "allowedTools": [], "disallowedTools": [], "useMcp": false, "memory": "read", "timeoutMs": 600000 }

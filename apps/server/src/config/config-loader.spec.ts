@@ -69,6 +69,19 @@ describe("config editing", () => {
     ).toThrow(/timeoutMs/);
   });
 
+  it("keeps the memory mode of claude steps (builtin steps have none) and rejects unknown modes", () => {
+    const plan = loadSteps(configDir).get("plan")!;
+    expect(plan.memory).toBe("read");
+    saveStepDefinition("plan", { ...plan, memory: "readwrite" }, configDir);
+    expect(loadSteps(configDir).get("plan")!.memory).toBe("readwrite");
+    // Clients that do not send it keep the current mode.
+    saveStepDefinition("plan", { ...plan, memory: undefined }, configDir);
+    expect(loadSteps(configDir).get("plan")!.memory).toBe("readwrite");
+    expect(() => saveStepDefinition("plan", { ...plan, memory: "all" as never }, configDir)).toThrow(/memoria/);
+    saveStepDefinition("qaCode", { tools: [], allowedTools: [], disallowedTools: [], useMcp: false, memory: "read", timeoutMs: 60_000 }, configDir);
+    expect(loadSteps(configDir).get("qaCode")!.memory).toBeUndefined();
+  });
+
   it("creates custom steps after another step, keeps their metadata on save and deletes them from profiles", () => {
     createStep({ name: "docs", label: "Docs", after: "implement" }, configDir);
     createStep({ name: "changelog", after: "docs" }, configDir);

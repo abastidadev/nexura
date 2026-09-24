@@ -25,6 +25,14 @@ export type ModelAlias = "haiku" | "sonnet" | "opus";
 
 export type Effort = "low" | "medium" | "high" | "xhigh";
 
+/**
+ * Shared memory (engram) of a step: `off` = none; `read` = gets {{memory}} and may search it;
+ * `readwrite` = also saves what it decides, fixes or discovers (mem_save / mem_update).
+ */
+export type MemoryMode = "off" | "read" | "readwrite";
+
+export const MEMORY_MODES: readonly MemoryMode[] = ["off", "read", "readwrite"];
+
 export type StepConfig = {
   model: ModelAlias;
   effort: Effort;
@@ -53,6 +61,8 @@ export type StepDefinition = {
   disallowedTools: string[];
   /** Keep MCP servers from user/project config. Off = `--strict-mcp-config` (cheaper context). */
   useMcp: boolean;
+  /** Shared memory through engram's MCP server (missing = off). Needs engram installed. */
+  memory?: MemoryMode;
   timeoutMs: number;
   /** Set on steps created from the UI: they can be deleted and are ordered by `after`. */
   custom?: boolean;
@@ -260,9 +270,16 @@ export type NexuraSettings = {
   quotaPausePercent: number | null;
   /** How often finished runs with an open PR are checked for new comments (REST, free). 0 = off. */
   prPollSeconds: number;
+  /** Shared memory with engram (github.com/Gentleman-Programming/engram). Off or not installed = repo notes only. */
+  memoryEnabled: boolean;
+  /** Path to the engram binary; empty = look it up in PATH. */
+  engramBin: string;
 };
 
-export const DEFAULT_SETTINGS: NexuraSettings = { quotaPausePercent: 90, prPollSeconds: 120 };
+export const DEFAULT_SETTINGS: NexuraSettings = { quotaPausePercent: 90, prPollSeconds: 120, memoryEnabled: true, engramBin: "" };
+
+/** Whether the steps can use engram right now (Configuración > General). */
+export type MemoryStatus = { enabled: boolean; available: boolean; bin?: string; version?: string; error?: string };
 
 export type Metrics = {
   totals: { runs: number; done: number; failed: number; cancelled: number; active: number; costUsd: number; tokens: number };

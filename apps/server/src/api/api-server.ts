@@ -31,6 +31,7 @@ import { azureRepoOf } from "../azure/repo-remote.ts";
 import { getTicket, listOpenTickets, ticketToText } from "../azure/work-items.ts";
 import { pickFolder } from "../system/folder-picker.ts";
 import { Ledger } from "../ledger/ledger.ts";
+import { memoryStatus, resolveEngram, searchMemory } from "../memory/engram.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { TerminalServer } from "../terminal/terminal-server.ts";
@@ -241,6 +242,23 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   route("GET", "/api/quota", () => orchestrator.getQuota() ?? null);
   route("GET", "/api/settings", () => orchestrator.getSettings());
   route("PUT", "/api/settings", (_params, body) => orchestrator.saveSettings(body as Partial<NexuraSettings>));
+  route("GET", "/api/memory/status", () => memoryStatus(orchestrator.getSettings()));
+  /** Shared memory (engram) of a repo: a search, or its recent context when `q` is empty. Zero tokens. */
+  route("GET", "/api/memory", async (_params, _body, url) => {
+    const repo = loadConfig().repos.find((candidate) => candidate.name === url.searchParams.get("repo"));
+    if (!repo) {
+      throw new HttpError(404, `Repo desconocido: ${url.searchParams.get("repo")}`);
+    }
+    const engram = await resolveEngram(orchestrator.getSettings().engramBin);
+    if (!engram) {
+      throw new HttpError(400, "engram no está instalado (o la ruta de Configuración > General no existe)");
+    }
+    try {
+      return { text: await searchMemory(engram, repo.path, url.searchParams.get("q") ?? "") };
+    } catch (error) {
+      throw new HttpError(502, String((error as Error).message));
+    }
+  });
   route("GET", "/api/metrics/cost-by-step", () => store.costByStep());
   route("GET", "/api/metrics", (_params, _body, url) => store.metrics(Number(url.searchParams.get("days")) || undefined));
   route("POST", "/api/runs/:id/classify-feedback", ([id], body) => {

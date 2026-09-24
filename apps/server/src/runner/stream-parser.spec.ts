@@ -5,8 +5,10 @@ import type { NexuraEvent } from "@nexura/shared";
 import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
 import { buildClaudeArgs } from "./claude-args.ts";
 import { claudeEnv } from "./claude-process.ts";
+import { memoryProtocol, memoryRunOptions } from "../memory/engram.ts";
 
 const FIXTURES = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "stream");
+const REAL_CONFIG = join(import.meta.dirname, "..", "..", "..", "..", "config");
 
 function load(name: string): NexuraEvent[] {
   const text = readFileSync(join(FIXTURES, `${name}.jsonl`), "utf8");
@@ -110,6 +112,20 @@ describe("buildClaudeArgs", () => {
     });
     expect(args).toEqual(expect.arrayContaining(["--resume", "abc", "--fork-session"]));
     expect(args).not.toContain("--session-id");
+  });
+
+  it("adds engram as the only MCP server of a memory step, with its tools pre-approved", () => {
+    const memory = memoryRunOptions({ command: "C:/bin/engram.exe", prefixArgs: [] }, "read", ["Read"], REAL_CONFIG);
+    const args = buildClaudeArgs({ cwd: ".", prompt: "", model: "haiku", effort: "low", tools: ["Read"], ...memory });
+    expect(args).toContain("--strict-mcp-config");
+    expect(JSON.parse(args[args.indexOf("--mcp-config") + 1]!)).toEqual({
+      mcpServers: { engram: { command: "C:/bin/engram.exe", args: ["mcp", "--tools=mem_context,mem_search,mem_get_observation"] } },
+    });
+    expect(args[args.indexOf("--allowedTools") + 1]).toBe("Read,mcp__engram__mem_context,mcp__engram__mem_search,mcp__engram__mem_get_observation");
+    expect(args[args.indexOf("--append-system-prompt") + 1]).toContain("mem_search");
+    expect(args[args.indexOf("--append-system-prompt") + 1]).not.toContain("mem_save");
+    expect(memoryProtocol("readwrite", REAL_CONFIG)).toContain("mem_save");
+    expect(memoryRunOptions({ command: "engram", prefixArgs: [] }, "off", [])).toBeUndefined();
   });
 });
 

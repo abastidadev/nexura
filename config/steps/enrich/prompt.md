@@ -22,5 +22,8 @@ El siguiente paso usará tu salida para no repetir esta investigación.
 ## Notas aprendidas del repo
 {{repoNotes}}
 
+## Memoria compartida (engram)
+{{memory}}
+
 ## Indicaciones del usuario
 {{userPrompt}}

@@ -38,6 +38,8 @@ process.env.NEXURA_DATA_DIR = join(root, "data");
 process.env.NEXURA_REPOS = join(root, "repos.json");
 process.env.NEXURA_CLAUDE_BIN = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "fake-claude.mjs");
 process.env.FAKE_STATE_DIR = stateDir;
+// Shared memory goes to a fake engram (log in FAKE_STATE_DIR), never to the real ~/.engram.
+process.env.NEXURA_ENGRAM_BIN = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "fake-engram.mjs");
 // Never touch the real ~/.claude.json from tests.
 process.env.NEXURA_TRUST_WORKTREES = "0";
 
@@ -469,7 +471,12 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
 
   it("validates settings", () => {
     const orchestrator = new Orchestrator(loadConfig(), new RunStore(":memory:"), { concurrency: 1 });
-    expect(orchestrator.saveSettings({ quotaPausePercent: null, prPollSeconds: 0 })).toEqual({ quotaPausePercent: null, prPollSeconds: 0 });
+    expect(orchestrator.saveSettings({ quotaPausePercent: null, prPollSeconds: 0, engramBin: "  " })).toEqual({
+      quotaPausePercent: null,
+      prPollSeconds: 0,
+      memoryEnabled: true,
+      engramBin: "",
+    });
     expect(() => orchestrator.saveSettings({ quotaPausePercent: 150 })).toThrow(/umbral/);
     expect(() => orchestrator.saveSettings({ prPollSeconds: 5 })).toThrow(/al menos 30/);
   });
@@ -491,6 +498,50 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
     expect(store.getEvents(second.steps[0]!.id).some((e) => e.event.kind === "text" && e.event.text.includes("Aprendidas"))).toBe(false);
     await orchestrator.cleanup(first.id, true);
     await orchestrator.cleanup(second.id, true);
+  });
+
+  it("shares memory through engram: MCP per memory mode, {{memory}} in the prompt, conventions and ticket summary saved", async () => {
+    type EngramCall = { cwd: string; args: string[] };
+    const engramCalls = (): EngramCall[] =>
+      existsSync(join(stateDir, "engram.jsonl"))
+        ? readFileSync(join(stateDir, "engram.jsonl"), "utf8").split("\n").filter(Boolean).map((line) => JSON.parse(line) as EngramCall)
+        : [];
+    const mcpTools = (args: string[] | undefined): string =>
+      (JSON.parse(args![args!.indexOf("--mcp-config") + 1]!) as { mcpServers: { engram: { args: string[] } } }).mcpServers.engram.args.at(-1)!;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+
+    const first = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketId: "77", ticketText: "Filtro de fechas en pedidos" })).id);
+    expect(first.status).toBe("done");
+    const [enrich, implement] = first.steps;
+    // enrich only reads; implement may also save. Both get the protocol and the tools pre-approved.
+    expect(mcpTools(enrich!.args)).toBe("--tools=mem_context,mem_search,mem_get_observation");
+    expect(mcpTools(implement!.args)).toContain("mem_save");
+    expect(enrich!.args).toContain("--append-system-prompt");
+    expect(enrich!.args![enrich!.args!.indexOf("--allowedTools") + 1]).toContain("mcp__engram__mem_search");
+    expect(enrich!.prompt).toContain("## Memoria compartida (engram)\n(nada)");
+
+    const saves = engramCalls().filter((call) => call.args[0] === "save");
+    const worktree = first.worktrees[0]!.path;
+    expect(saves.find((call) => call.args.includes("conventions/usa-inject-en-vez-de-constructores"))).toMatchObject({ cwd: worktree });
+    const summary = saves.find((call) => call.args.includes("tickets/77"))!;
+    expect(summary.args).toEqual(expect.arrayContaining(["session_summary", "Ticket #77: Filtro de fechas en pedidos"]));
+    expect(summary.args.at(-1)).toContain("## Accomplished");
+
+    // The next ticket starts from what the first one left.
+    const second = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Filtro de fechas en facturas" })).id);
+    expect(second.steps[0]!.prompt).toMatch(/## Memoria compartida \(engram\)\n### Relacionado con este ticket\n[\s\S]*Ticket #77: Filtro de fechas en pedidos/);
+
+    // Memory off: no MCP server, no engram context, no engram calls.
+    orchestrator.saveSettings({ memoryEnabled: false });
+    const before = engramCalls().length;
+    const third = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Sin memoria" })).id);
+    expect(third.steps[0]!.args).not.toContain("--mcp-config");
+    expect(third.steps[0]!.prompt).toContain("## Memoria compartida (engram)\n(nada)");
+    expect(engramCalls().length).toBe(before);
+    for (const run of [first, second, third]) {
+      await orchestrator.cleanup(run.id, true);
+    }
   });
 
   it("polls open PRs for free, notifies new comments and stops when the PR is closed", async () => {

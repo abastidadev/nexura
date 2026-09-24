@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, linkedSignal, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
-import { orderSteps } from "@nexura/shared";
+import { orderSteps, type MemoryMode } from "@nexura/shared";
 import { Api, apiError, type StepDefinitionView } from "../../core/api";
 import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -18,6 +18,7 @@ export const TEMPLATE_VARIABLES: { name: string; help: string }[] = [
   { name: "feedback", help: "correcciones de review/QA en las vueltas" },
   { name: "repoMap", help: "mapa del repo desde git (gratis, cacheado por commit)" },
   { name: "repoNotes", help: "convenciones aprendidas en tickets anteriores" },
+  { name: "memory", help: "memoria compartida (engram) del ticket y del repo; vacía si el paso no tiene memoria" },
   { name: "threads", help: "hilos activos de la PR (solo addressReview)" },
   { name: "output.enrich", help: "salida JSON de enrich" },
   { name: "output.plan", help: "salida JSON de plan" },
@@ -30,6 +31,7 @@ type Draft = {
   disallowedTools: string;
   timeoutMinutes: number;
   useMcp: boolean;
+  memory: MemoryMode;
   /** Custom steps only. */
   label: string;
   description: string;
@@ -44,6 +46,7 @@ function toDraft(step: StepDefinitionView | undefined): Draft {
     disallowedTools: (step?.disallowedTools ?? []).join("\n"),
     timeoutMinutes: (step?.timeoutMs ?? 0) / MS_PER_MINUTE,
     useMcp: step?.useMcp ?? false,
+    memory: step?.memory ?? "off",
     label: step?.label ?? "",
     description: step?.description ?? "",
     after: step?.after ?? "",
@@ -72,6 +75,11 @@ export class StepsEditor {
   public readonly name = input.required<string>();
 
   protected readonly variables = TEMPLATE_VARIABLES;
+  protected readonly memoryModes: { value: MemoryMode; label: string }[] = [
+    { value: "off", label: "Sin memoria" },
+    { value: "read", label: "Leer (recibe {{memory}} y puede buscar)" },
+    { value: "readwrite", label: "Leer y guardar (mem_save)" },
+  ];
   protected readonly stepLabel = stepLabel;
   protected readonly steps = computed(() => this.store.config()?.steps ?? []);
   protected readonly step = computed(() => this.steps().find((step) => step.name === this.name()));
@@ -118,6 +126,7 @@ export class StepsEditor {
         allowedTools: lines(draft.allowedTools),
         disallowedTools: lines(draft.disallowedTools),
         useMcp: draft.useMcp,
+        ...(step.kind === "claude" ? { memory: draft.memory } : {}),
         timeoutMs: Math.round(draft.timeoutMinutes * MS_PER_MINUTE),
         ...(step.custom ? { label: draft.label, description: draft.description, after: draft.after } : {}),
       });

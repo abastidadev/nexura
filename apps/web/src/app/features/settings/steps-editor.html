@@ -129,6 +129,14 @@
           <input type="checkbox" class="size-4 accent-(--nx-accent)" [checked]="draft().useMcp" (change)="patch({ useMcp: !draft().useMcp })" />
           Cargar servidores MCP <span class="text-[11px] text-muted">(más contexto = más tokens)</span>
         </label>
+        <label class="flex items-center gap-2" title="Memoria compartida con engram: la misma que usa tu Claude Code interactivo en este repo">
+          Memoria
+          <select class="rounded-md border border-border bg-surface-2 px-2 py-1 outline-none focus:border-accent" (change)="patch({ memory: $any(value($event)) })">
+            @for (option of memoryModes; track option.value) {
+              <option [value]="option.value" [selected]="option.value === draft().memory">{{ option.label }}</option>
+            }
+          </select>
+        </label>
       }
     </div>
 
