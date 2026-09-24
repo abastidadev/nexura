@@ -6,6 +6,8 @@
 //   FAKE_REVIEW_REJECTS   how many times codeReview answers "changes" before approving
 //   FAKE_FAIL_MARKER      if the prompt contains it, enrich fails (unless resumed/overridden)
 //   FAKE_WAIT_MESSAGE     enrich waits for a second stdin message and puts it in its summary
+//   FAKE_SUBAGENTS        implement launches an Explore subagent (Agent tool) before editing
+//   FAKE_DELAY_MS         pause between events, to watch a flow live in the UI (default 0)
 //
 // Like the real CLI with `--input-format stream-json`: user messages arrive as JSON lines
 // on stdin, and the process only exits once stdin is closed after the result.
@@ -31,6 +33,9 @@ function bump(step) {
   writeFileSync(file, String(count));
   return count;
 }
+
+const delayMs = Number(process.env.FAKE_DELAY_MS ?? 0);
+const pause = () => new Promise((resolve) => setTimeout(resolve, delayMs));
 
 function out(event) {
   process.stdout.write(JSON.stringify({ ...event, session_id: sessionId }) + "\n");
@@ -83,6 +88,9 @@ switch (step) {
     output = { approach: "fake", changes: [], acceptanceCriteria: [{ description: "check", command: "npm run check" }] };
     break;
   case "implement":
+    if (process.env.FAKE_SUBAGENTS) {
+      await subagent();
+    }
     writeFileSync(join(process.cwd(), `impl-${count}.txt`), `implement ${count}\n`);
     writeFileSync(join(process.cwd(), "done.txt"), "ok\n");
     output = {
@@ -136,6 +144,7 @@ switch (step) {
     }
 }
 
+await pause();
 out({ type: "assistant", message: { content: [{ type: "text", text: `fake ${step} #${count}` }] } });
 out({
   type: "result",
@@ -149,6 +158,33 @@ out({
   usage: { input_tokens: 10, output_tokens: 5, cache_read_input_tokens: 0, cache_creation_input_tokens: 0 },
   permission_denials: [],
 });
+
+/** An Agent tool use, the subagent's own tool calls (tagged with parent_tool_use_id) and its result. */
+async function subagent() {
+  const agentId = `toolu_agent_${count}`;
+  const assistant = (content, parent = null) => out({ type: "assistant", message: { content }, parent_tool_use_id: parent });
+  const user = (content, parent = null) => out({ type: "user", message: { content }, parent_tool_use_id: parent });
+  assistant([{ type: "thinking", thinking: "Delego la búsqueda" }]);
+  await pause();
+  assistant([{ type: "tool_use", id: agentId, name: "Agent", input: { description: "Buscar dónde tocar", subagent_type: "Explore", prompt: "Localiza el código" } }]);
+  const calls = [
+    ["Grep", { pattern: "badge" }],
+    ["Read", { file_path: join(process.cwd(), "package.json") }],
+    ["Bash", { command: "git log --oneline -5" }],
+  ];
+  for (const [index, [name, input]] of calls.entries()) {
+    await pause();
+    assistant([{ type: "tool_use", id: `${agentId}_${index}`, name, input }], agentId);
+    await pause();
+    user([{ type: "tool_result", tool_use_id: `${agentId}_${index}`, content: "ok" }], agentId);
+  }
+  await pause();
+  user([{ type: "tool_result", tool_use_id: agentId, content: [{ type: "text", text: "Hay que tocar package.json" }] }]);
+  await pause();
+  assistant([{ type: "tool_use", id: `toolu_edit_${count}`, name: "Edit", input: { file_path: join(process.cwd(), "done.txt") } }]);
+  await pause();
+  user([{ type: "tool_result", tool_use_id: `toolu_edit_${count}`, content: "ok" }]);
+}
 
 // Drain stdin: the runner closes it after the result.
 while (!(await lines.next()).done);

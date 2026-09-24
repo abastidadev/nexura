@@ -57,6 +57,23 @@ describe("normalize (real fixtures)", () => {
     expect(res?.kind === "toolResult" && use?.kind === "toolUse" && res.toolUseId === use.id).toBe(true);
   });
 
+  it("tags the subagent's events with the id of its Agent tool use (hand-built fixture)", () => {
+    const events = load("07-subagent");
+    const agent = events.find((event) => event.kind === "toolUse" && event.name === "Agent");
+    if (agent?.kind !== "toolUse") {
+      throw new Error("no Agent tool use");
+    }
+    expect(agent.parentToolUseId).toBeNull();
+    expect(agent.input).toMatchObject({ description: "Buscar estilos del badge", subagent_type: "Explore" });
+    const inner = events.filter((event) => (event.kind === "toolUse" || event.kind === "toolResult") && event.parentToolUseId === agent.id);
+    expect(inner.map((event) => (event.kind === "toolUse" ? event.name : "result"))).toEqual(["Grep", "result", "Read", "result"]);
+    const end = events.find((event) => event.kind === "toolResult" && event.toolUseId === agent.id);
+    expect(end?.kind === "toolResult" && end.parentToolUseId).toBeNull();
+    expect(end?.kind === "toolResult" && end.content).toContain("badge.css:1");
+    const edit = events.find((event) => event.kind === "toolUse" && event.name === "Edit");
+    expect(edit?.kind === "toolUse" && edit.parentToolUseId).toBeNull();
+  });
+
   it("with --tools Read, Bash is not even available (BOM-prefixed fixture)", () => {
     const events = load("06-hard-allowlist");
     const init = events.find((event) => event.kind === "init");
