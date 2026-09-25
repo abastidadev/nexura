@@ -45,7 +45,7 @@ export class RunsHome {
   protected async remove(event: Event, row: RunRow): Promise<void> {
     event.stopPropagation();
     const name = row.ticketId ? `#${row.ticketId} ${row.title}` : row.title;
-    if (!confirm(`¿Borrar el flujo "${name}"?\n\nSe borran su historial, sus logs y sus worktrees. Las ramas se conservan.`)) {
+    if (!confirm(`¿Borrar el flujo "${name}"?\n\nSe borran su historial, sus logs y sus worktrees. Las ramas con commits se conservan; las vacías se borran.`)) {
       return;
     }
     this.deleting.set(row.id);

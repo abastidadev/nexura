@@ -3,7 +3,8 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
-import { freeBranchName, linkNodeModules, unlinkNodeModules } from "./git.ts";
+import type { Worktree } from "@nexura/shared";
+import { freeBranchName, linkNodeModules, removeWorktree, unlinkNodeModules } from "./git.ts";
 
 const repo = mkdtempSync(join(tmpdir(), "nexura-git-"));
 const git = (...args: string[]): string => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
@@ -23,6 +24,46 @@ describe("freeBranchName", () => {
     expect(await freeBranchName(repo, "feat/2-ticket")).toBe("feat/2-ticket-2");
     git("branch", "feat/2-ticket-2");
     expect(await freeBranchName(repo, "feat/2-ticket")).toBe("feat/2-ticket-3");
+  });
+});
+
+describe("removeWorktree", () => {
+  // Folder names that are not `nexura-<id>`, so forgetWorktree never touches ~/.claude.json.
+  const addWorktree = (name: string): Worktree => {
+    const path = join(`${repo}.worktrees`, name);
+    git("worktree", "add", "-q", "-b", `feat/${name}`, path, "main");
+    return { repo: "repo", repoPath: repo, path, branch: `feat/${name}`, baseRef: "main" };
+  };
+  const branches = (): string => git("branch", "--list", "feat/*");
+  afterAll(() => rmSync(`${repo}.worktrees`, { recursive: true, force: true }));
+
+  it("drops a branch without commits of its own and keeps one with commits", async () => {
+    const empty = addWorktree("wt-empty");
+    const worked = addWorktree("wt-worked");
+    writeFileSync(join(worked.path, "b.txt"), "b\n");
+    execFileSync("git", ["add", "-A"], { cwd: worked.path });
+    execFileSync("git", ["commit", "-qm", "work"], { cwd: worked.path });
+
+    await removeWorktree(empty);
+    await removeWorktree(worked);
+
+    expect(existsSync(empty.path)).toBe(false);
+    expect(existsSync(worked.path)).toBe(false);
+    expect(git("worktree", "list")).not.toContain("wt-");
+    expect(branches()).not.toContain("feat/wt-empty");
+    expect(branches()).toContain("feat/wt-worked");
+    // The branch is free again: a new run of the same ticket gets the same name.
+    expect(await freeBranchName(repo, "feat/wt-empty")).toBe("feat/wt-empty");
+    git("branch", "-D", "feat/wt-worked");
+  });
+
+  it("tolerates a folder deleted by hand and a branch that no longer exists", async () => {
+    const gone = addWorktree("wt-gone");
+    rmSync(gone.path, { recursive: true, force: true });
+    await removeWorktree(gone, true);
+    expect(git("worktree", "list")).not.toContain("wt-gone");
+    expect(branches()).not.toContain("feat/wt-gone");
+    await expect(removeWorktree(gone, true)).resolves.toBeUndefined();
   });
 });
 

@@ -297,39 +297,47 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     context.wake?.();
   }
 
+  /** Whether the run is executing a step or waiting for the user (it cannot be cleaned or deleted). */
+  public isActive(runId: string): boolean {
+    return this.contexts.has(runId);
+  }
+
   public async cleanup(runId: string, deleteBranches = false): Promise<void> {
     const run = this.requireRun(runId);
     if (this.contexts.has(runId)) {
       throw new Error("No se puede limpiar un run activo");
     }
-    for (const worktree of run.worktrees) {
-      await removeWorktree(worktree, deleteBranches);
-    }
-    run.worktrees = [];
-    this.persist(run);
+    await this.removeWorktrees(run, deleteBranches);
   }
 
   /**
-   * Forgets a finished run: history, events and logs, plus its worktrees. The branches
-   * stay (they may hold commits or back a PR); `deleteBranches` removes them too.
+   * Forgets a finished run: history, events and logs, plus its worktrees. Branches with
+   * commits stay (they may back a PR); `deleteBranches` removes them too. When a worktree
+   * cannot be removed the run stays, so that it can be retried instead of orphaning it.
    */
   public async deleteRun(runId: string, deleteBranches = false): Promise<void> {
     const run = this.requireRun(runId);
     if (this.contexts.has(runId)) {
       throw new Error("El flujo está activo: cancélalo antes de borrarlo");
     }
-    for (const worktree of run.worktrees) {
-      try {
-        await removeWorktree(worktree, deleteBranches);
-      } catch {
-        // Already removed by hand: nothing left to clean.
-      }
-    }
+    await this.removeWorktrees(run, deleteBranches);
     for (const step of run.steps) {
       this.eventSeq.delete(step.id);
     }
     this.store.deleteRun(runId);
     this.emit("message", { type: "runDeleted", runId });
+  }
+
+  /** Removes the run's worktrees one by one, persisting the ones that are gone even if a later one fails. */
+  private async removeWorktrees(run: Run, deleteBranches: boolean): Promise<void> {
+    try {
+      for (const worktree of [...run.worktrees]) {
+        await removeWorktree(worktree, deleteBranches);
+        run.worktrees = run.worktrees.filter((candidate) => candidate !== worktree);
+      }
+    } finally {
+      this.persist(run);
+    }
   }
 
   // ---------------------------------------------------------------- scheduling

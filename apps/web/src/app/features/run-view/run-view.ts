@@ -245,7 +245,7 @@ export class RunView {
   }
 
   protected deleteRun(): Promise<void> {
-    if (!confirm("¿Borrar este flujo?\n\nSe borran su historial, sus logs y sus worktrees. Las ramas se conservan.")) {
+    if (!confirm("¿Borrar este flujo?\n\nSe borran su historial, sus logs y sus worktrees. Las ramas con commits se conservan; las vacías se borran.")) {
       return Promise.resolve();
     }
     return this.act(() => this.store.deleteRun(this.id()));
@@ -254,7 +254,7 @@ export class RunView {
   protected cleanup(deleteBranches: boolean): Promise<void> {
     const message = deleteBranches
       ? "¿Borrar los worktrees Y las ramas de este flujo? No se puede deshacer."
-      : "¿Borrar los worktrees de este flujo? Las ramas se conservan.";
+      : "¿Borrar los worktrees de este flujo? Las ramas con commits se conservan; las vacías se borran.";
     if (!confirm(message)) {
       return Promise.resolve();
     }

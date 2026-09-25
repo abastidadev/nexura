@@ -99,6 +99,7 @@ function serveStatic(url: URL, response: ServerResponse): boolean {
 
 export function createApiServer(orchestrator: Orchestrator, store: RunStore): Server {
   const routes: Route[] = [];
+  const terminals = new TerminalServer(store);
   const route = (method: string, path: string, handler: Handler): void => {
     const pattern = new RegExp("^" + path.replace(/:\w+/g, "([^/]+)") + "$");
     routes.push({ method, pattern, handler });
@@ -134,6 +135,9 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   route("POST", "/api/runs", (_params, body) => orchestrator.start(body as RunRequest));
   route("DELETE", "/api/runs/:id", async ([id], _body, url) => {
     requireRun(id!);
+    if (!orchestrator.isActive(id!)) {
+      await terminals.closeRun(id!);
+    }
     await orchestrator.deleteRun(id!, url.searchParams.get("deleteBranches") === "true");
   });
   route("POST", "/api/runs/:id/cancel", ([id]) => orchestrator.cancel(id!));
@@ -148,9 +152,13 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     }
   });
   route("POST", "/api/runs/:id/address-review", ([id]) => orchestrator.addressReview(id!));
-  route("POST", "/api/runs/:id/cleanup", ([id], body) =>
-    orchestrator.cleanup(id!, Boolean((body as { deleteBranches?: boolean }).deleteBranches)),
-  );
+  route("POST", "/api/runs/:id/cleanup", async ([id], body) => {
+    requireRun(id!);
+    if (!orchestrator.isActive(id!)) {
+      await terminals.closeRun(id!);
+    }
+    await orchestrator.cleanup(id!, Boolean((body as { deleteBranches?: boolean }).deleteBranches));
+  });
 
   route("GET", "/api/config", () => {
     const config = loadConfig();
@@ -321,7 +329,6 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
 
   // Several WebSocket servers on one HTTP server must route the upgrade themselves.
   const sockets = new WebSocketServer({ noServer: true });
-  const terminals = new TerminalServer(store);
   server.on("upgrade", (request, socket, head) => {
     if (rejectReason(request)) {
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");

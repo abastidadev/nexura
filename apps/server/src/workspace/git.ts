@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
 import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync } from "node:fs";
-import { isAbsolute, join, relative } from "node:path";
+import { isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { RepoConfig, Worktree } from "@nexura/shared";
 import { forgetWorktree, trustWorktree } from "./claude-trust.ts";
@@ -199,12 +199,69 @@ export async function freeBranchName(cwd: string, name: string): Promise<string>
   return candidate;
 }
 
+function samePath(a: string, b: string): boolean {
+  const normalize = (path: string): string => {
+    const resolved = resolve(path);
+    return process.platform === "win32" ? resolved.toLowerCase() : resolved;
+  };
+  return normalize(a) === normalize(b);
+}
+
+async function isRegisteredWorktree(worktree: Worktree): Promise<boolean> {
+  const list = await git(worktree.repoPath, ["worktree", "list", "--porcelain"]);
+  return list
+    .split(/\r?\n/)
+    .filter((line) => line.startsWith("worktree "))
+    .some((line) => samePath(line.slice("worktree ".length), worktree.path));
+}
+
+/** True when the branch has commits of its own on top of the base it was created from. */
+async function hasOwnCommits(worktree: Worktree): Promise<boolean> {
+  try {
+    return Number(await git(worktree.repoPath, ["rev-list", "--count", `${worktree.baseRef}..refs/heads/${worktree.branch}`])) > 0;
+  } catch {
+    return true; // Base gone or unknown: keep the branch to be safe.
+  }
+}
+
+/**
+ * Removes the worktree and forgets its trust entry. The branch goes too with `deleteBranch`,
+ * or when it has no commits of its own (a run started by mistake): keeping it would only make
+ * the next run of the same ticket take a `-2` name.
+ *
+ * Throws when git cannot remove it (on Windows, a process with a file or its cwd inside), so
+ * that the caller keeps the run instead of leaving an orphan worktree that holds the branch.
+ * A worktree that git no longer knows about (removed by hand) is not an error.
+ */
 export async function removeWorktree(worktree: Worktree, deleteBranch = false): Promise<void> {
+  if (!existsSync(worktree.repoPath)) {
+    forgetWorktree(worktree.path);
+    return;
+  }
   // Unlink the node_modules junctions first so nothing recurses into the main checkout.
   unlinkNodeModules(worktree.path);
-  await git(worktree.repoPath, ["worktree", "remove", "--force", worktree.path]);
+  // A folder deleted by hand leaves a stale registration that `prune` drops.
+  await git(worktree.repoPath, ["worktree", "prune"]);
+  for (let attempt = 1; existsSync(worktree.path); attempt++) {
+    try {
+      await git(worktree.repoPath, ["worktree", "remove", "--force", worktree.path]);
+      break;
+    } catch (error) {
+      if (!(await isRegisteredWorktree(worktree))) {
+        break;
+      }
+      if (attempt >= 3) {
+        const detail = String((error as { stderr?: string }).stderr ?? (error as Error).message).trim();
+        throw new Error(
+          `No se pudo borrar el worktree ${worktree.path}: ${detail}. Cierra las terminales, editores o procesos abiertos en él y vuelve a intentarlo.`,
+        );
+      }
+      // A process that was just killed (a terminal, an agent) may still hold its handles.
+      await new Promise((done) => setTimeout(done, 500 * attempt));
+    }
+  }
   forgetWorktree(worktree.path);
-  if (deleteBranch) {
+  if ((await refExists(worktree.repoPath, `refs/heads/${worktree.branch}`)) && (deleteBranch || !(await hasOwnCommits(worktree)))) {
     await git(worktree.repoPath, ["branch", "-D", worktree.branch]);
   }
 }

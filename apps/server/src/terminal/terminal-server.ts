@@ -48,17 +48,45 @@ function shellCommand(): { command: string; args: string[] } {
 export class TerminalServer {
   private readonly sockets = new WebSocketServer({ noServer: true });
   private readonly store: RunStore;
+  private readonly byRun = new Map<string, Set<Pty>>();
 
   public constructor(store: RunStore) {
     this.store = store;
-    this.sockets.on("connection", (socket: WebSocket, request: IncomingMessage) => this.open(socket, request));
+    this.sockets.on("connection", (socket: WebSocket, request: IncomingMessage) => this.connect(socket, request));
   }
 
   public handleUpgrade(request: IncomingMessage, socket: Duplex, head: Buffer): void {
     this.sockets.handleUpgrade(request, socket, head, (ws) => this.sockets.emit("connection", ws, request));
   }
 
-  private open(socket: WebSocket, request: IncomingMessage): void {
+  /**
+   * Kills the run's terminals and waits for them to exit: on Windows a shell whose cwd is the
+   * worktree keeps git from removing it.
+   */
+  public async closeRun(runId: string): Promise<void> {
+    const ptys = [...(this.byRun.get(runId) ?? [])];
+    this.byRun.delete(runId);
+    await Promise.all(
+      ptys.map(
+        (pty) =>
+          new Promise<void>((done) => {
+            const timer = setTimeout(done, 3000);
+            pty.onExit(() => {
+              clearTimeout(timer);
+              done();
+            });
+            try {
+              pty.kill();
+            } catch {
+              clearTimeout(timer);
+              done(); // Already exited.
+            }
+          }),
+      ),
+    );
+  }
+
+  private connect(socket: WebSocket, request: IncomingMessage): void {
     const url = new URL(request.url ?? "/", "http://localhost");
     const fail = (message: string): void => {
       socket.send(`\x1b[31m${message}\x1b[0m\r\n`);
@@ -112,12 +140,16 @@ export class TerminalServer {
       return;
     }
 
+    const ptys = this.byRun.get(run.id) ?? new Set<Pty>();
+    this.byRun.set(run.id, ptys.add(pty));
+
     pty.onData((data) => {
       if (socket.readyState === socket.OPEN) {
         socket.send(data);
       }
     });
     pty.onExit(({ exitCode }) => {
+      ptys.delete(pty);
       if (socket.readyState === socket.OPEN) {
         socket.send(`\r\n\x1b[90m[proceso terminado · código ${exitCode}]\x1b[0m\r\n`);
         socket.close();
