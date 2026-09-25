@@ -56,6 +56,21 @@
         />
       </label>
       <label class="flex flex-col gap-1">
+        <span
+          class="text-[11px] font-medium text-muted uppercase"
+          title="Doble ciega: dos jueces revisan sin verse y solo vuelve a implement lo que confirman ambos (duplica el coste de codeReview)"
+          >Revisión de código</span
+        >
+        <select
+          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          [value]="profile.reviewMode ?? 'single'"
+          (change)="setReviewMode($event)"
+        >
+          <option value="single">Simple</option>
+          <option value="blind">Doble ciega (2 jueces)</option>
+        </select>
+      </label>
+      <label class="flex flex-col gap-1">
         <span class="text-[11px] font-medium text-muted uppercase" title="Tope de coste por flujo; se pasa a cada paso como --max-budget-usd">Presupuesto $</span>
         <input
           type="number"

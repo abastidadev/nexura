@@ -100,6 +100,7 @@ beforeEach(() => {
   rmSync(stateDir, { recursive: true, force: true });
   mkdirSync(stateDir, { recursive: true });
   delete process.env.FAKE_REVIEW_REJECTS;
+  delete process.env.FAKE_REVIEW_SPLIT;
   delete process.env.FAKE_FAIL_MARKER;
   delete process.env.FAKE_WAIT_MESSAGE;
 });
@@ -225,6 +226,73 @@ describe("Orchestrator (fake claude)", () => {
     expect(run.steps.map((s) => s.step)).toEqual(["classify", "enrich", "implement", "qaCode", "release"]);
     expect(run.steps[0]!.model).toBe("haiku");
     await orchestrator.cleanup(run.id, true);
+  });
+
+  describe("blind double review", () => {
+    function blindOrchestrator(maxLoops = 1) {
+      const config = loadConfig();
+      const standard = config.profiles.get("standard")!;
+      config.profiles.set("blind", { ...standard, name: "blind", maxLoops, reviewMode: "blind" });
+      const store = new RunStore(":memory:");
+      return { store, orchestrator: new Orchestrator(config, store, { concurrency: 1 }) };
+    }
+
+    it("sends back only what both judges confirm, with identical prompts and per-judge attempts", async () => {
+      process.env.FAKE_REVIEW_REJECTS = "2";
+      const { orchestrator } = blindOrchestrator();
+      const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "blind" })).id);
+
+      expect(run.error).toBeUndefined();
+      expect(run.status).toBe("done");
+      expect(run.steps.map((s) => (s.judge ? `${s.step}:${s.judge}` : s.step))).toEqual([
+        "enrich",
+        "plan",
+        "implement",
+        "codeReview:A",
+        "codeReview:B",
+        "implement",
+        "codeReview:A",
+        "codeReview:B",
+        "qaCode",
+        "release",
+      ]);
+      const reviews = run.steps.filter((s) => s.step === "codeReview");
+      expect(reviews[0]!.prompt).toBe(reviews[1]!.prompt);
+      expect(reviews[2]!.prompt).toBe(reviews[3]!.prompt);
+      expect(reviews.map((s) => s.attempt)).toEqual([1, 1, 2, 2]);
+      expect(run.steps.filter((s) => s.step === "implement")[1]!.prompt).toContain("[major] x: p → f");
+      await orchestrator.cleanup(run.id, true);
+    });
+
+    it("drops what only one judge flags and keeps it visible", async () => {
+      process.env.FAKE_REVIEW_REJECTS = "2";
+      process.env.FAKE_REVIEW_SPLIT = "1";
+      const { orchestrator, store } = blindOrchestrator();
+      const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "blind" })).id);
+
+      expect(run.status).toBe("done");
+      expect(run.steps.filter((s) => s.step === "implement")).toHaveLength(1);
+      const judgeB = run.steps.find((s) => s.step === "codeReview" && s.judge === "B")!;
+      // The step run keeps judge B's own answer; the merge shows up as an event and in the ledger.
+      expect(judgeB.structuredOutput).toMatchObject({ verdict: "changes" });
+      expect(
+        store
+          .getEvents(judgeB.id)
+          .some((e) => e.event.kind === "text" && e.event.text.includes("confirmadas 0, descartadas 2") && e.event.text.includes("Descartadas (solo un juez)")),
+      ).toBe(true);
+      expect(readFileSync(join(process.env.NEXURA_DATA_DIR!, "runs", run.id, "ledger.md"), "utf8")).toContain("codeReview (doble ciega)");
+      await orchestrator.cleanup(run.id, true);
+    });
+
+    it("escalates when maxLoops runs out", async () => {
+      process.env.FAKE_REVIEW_REJECTS = "99";
+      const { orchestrator } = blindOrchestrator(0);
+      const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "blind" })).id);
+
+      expect(run.status).toBe("failed");
+      expect(run.error).toMatch(/maxLoops=0\).*escalado/);
+      await orchestrator.cleanup(run.id, true);
+    });
   });
 
   it("stops at the failing step and a retry with an edited prompt finishes the run", async () => {
@@ -424,7 +492,8 @@ describe("Budgets, classify feedback, qaNotes and metrics", () => {
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
 
     const full = await waitFor(orchestrator, orchestrator.start(request({ profile: "full", ticketText: "Grande" })).id);
-    expect(full.steps.map((s) => s.step)).toEqual(["enrich", "plan", "implement", "codeReview", "qaCode", "release", "qaNotes"]);
+    expect(full.steps.map((s) => s.step)).toEqual(["enrich", "plan", "implement", "codeReview", "codeReview", "qaCode", "release", "qaNotes"]);
+    expect(full.steps.filter((s) => s.step === "codeReview").map((s) => s.judge)).toEqual(["A", "B"]);
     expect(full.steps.at(-1)!.structuredOutput).toMatchObject({ cases: [expect.objectContaining({ title: "Caso feliz" })] });
 
     const auto = await waitFor(orchestrator, orchestrator.start(request({ profile: "auto", ticketText: "Auto" })).id);
@@ -434,8 +503,8 @@ describe("Budgets, classify feedback, qaNotes and metrics", () => {
 
     const metrics = store.metrics();
     expect(metrics.totals).toMatchObject({ runs: 2, done: 2, failed: 0 });
-    // full: enrich, plan, implement, codeReview, qaNotes; auto: classify, enrich, implement.
-    expect(metrics.totals.costUsd).toBeCloseTo(0.01 * 5 + 0.01 * 3);
+    // full: enrich, plan, implement, 2 codeReview judges, qaNotes; auto: classify, enrich, implement.
+    expect(metrics.totals.costUsd).toBeCloseTo(0.01 * 6 + 0.01 * 3);
     expect(metrics.byStep.find((row) => row.step === "qaCode")).toMatchObject({ model: "sin LLM", runs: 2 });
     expect(metrics.byProfile.map((row) => row.profile).sort()).toEqual(["full", "minimal"]);
     expect(metrics.classify).toMatchObject({ rated: 1, correct: 0, mistakes: [{ runId: auto.id, chosen: "minimal", expected: "standard" }] });

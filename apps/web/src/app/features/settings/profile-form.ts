@@ -14,6 +14,7 @@ const BLANK_PROFILE: FlowProfile = {
   name: "",
   description: "",
   maxLoops: 1,
+  reviewMode: "single",
   steps: {
     enrich: { model: "haiku", effort: "medium", enabled: true },
     plan: { model: "sonnet", effort: "medium", enabled: false },
@@ -92,6 +93,10 @@ export class ProfileForm {
       const current = draft.steps[name] ?? DEFAULT_STEP;
       return { ...draft, steps: { ...draft.steps, [name]: { ...current, ...changes } } };
     });
+  }
+
+  protected setReviewMode(event: Event): void {
+    this.patch({ reviewMode: this.value(event) === "blind" ? "blind" : "single" });
   }
 
   /** Empty = no limit. */

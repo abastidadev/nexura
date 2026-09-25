@@ -41,7 +41,7 @@ const BASE_PROFILES = new Set(["minimal", "standard", "full"]);
               <span class="rounded bg-surface-3 px-1.5 py-0.5 text-[11px]">{{ step }}</span>
             }
           </div>
-          <p class="mt-2 text-[11px] text-muted">{{ card.maxLoops }} vuelta(s) · presupuesto {{ card.budget }}</p>
+          <p class="mt-2 text-[11px] text-muted">{{ card.maxLoops }} vuelta(s) · presupuesto {{ card.budget }}{{ card.blind ? " · revisión doble ciega" : "" }}</p>
           <div class="mt-3 flex gap-1 border-t border-border pt-3">
             <a
               class="rounded-md border border-border px-2.5 py-1 text-[12px] hover:bg-surface-3"
@@ -86,6 +86,7 @@ export class ProfilesList {
       description: profile.description,
       base: BASE_PROFILES.has(profile.name),
       maxLoops: profile.maxLoops,
+      blind: profile.reviewMode === "blind",
       budget: profile.budgetUsd === undefined ? "sin límite" : `$${profile.budgetUsd.toFixed(2)}`,
       steps: this.order()
         .filter((name) => profile.steps[name]?.enabled)

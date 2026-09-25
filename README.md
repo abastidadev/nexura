@@ -104,6 +104,7 @@ Usa la sesión de **Azure CLI** (`az login`), la misma que el plugin `azure-devo
 
 - Cada paso de tipo `claude` lanza `claude -p` en el worktree con **`--tools`** (lista dura), `--permission-mode dontAsk`, `--strict-mcp-config` salvo que el paso pida MCP, y `--json-schema` para que devuelva JSON validado.
 - `implement` no hace commit: lo hace el orquestador con el `commitMessage` que devuelve (sin trailers de IA).
+- **Revisión doble ciega** (`reviewMode: "blind"` del perfil, activa en `full`): `codeReview` lo ejecutan dos jueces (A y B) en serie, con el mismo prompt y sesiones nuevas, así que ninguno ve la respuesta del otro (B solo lee la memoria). Solo vuelven a `implement` las issues `blocker`/`major` que ambos marcan en el mismo fichero; lo que marca un solo juez se descarta (queda en el libro de tareas y en un evento del paso) y las `minor` se ignoran. Duplica el coste de `codeReview`, pero evita gastar vueltas en falsos positivos. Agotar `maxLoops` equivale a un veredicto *escalado*.
 - `codeReview` → `changes` o `qaCode` → fallo devuelven el trabajo a `implement` con el feedback, hasta `maxLoops` del perfil.
 - `qaCode` y `release` son **builtin** (0 tokens): ejecutan los `checks` del repo (+ comandos `npm run ...` del plan) y registran rama/SHA. Push y PR llegan en la fase 5.
 - Si salta el límite de uso, el run pasa a `waiting-rate-limit` y se reanuda solo cuando se libera la ventana.

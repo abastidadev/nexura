@@ -89,13 +89,15 @@ export class StepPipeline {
       const loop = step.step === "implement" || step.step === "codeReview" || step.step === "qaCode";
       const priorSucceeded = seen.has(step.step);
       seen.add(step.step);
+      // Blind review: judge B of a round is not a loop, so compare only with the same judge.
+      const sameJudge = (s: StepRun) => s.step === step.step && s.judge === step.judge;
       const status = stepDisplayStatus(step);
       return {
         type: "run",
         id: step.id,
-        label: stepLabel(step.step),
+        label: stepLabel(step.step) + (step.judge ? ` · juez ${step.judge}` : ""),
         attempt: step.attempt,
-        loop: loop && priorSucceeded && steps.some((s) => s.step === step.step && s.status === "succeeded" && s.seq < step.seq),
+        loop: loop && priorSucceeded && steps.some((s) => sameJudge(s) && s.status === "succeeded" && s.seq < step.seq),
         status,
         tone: TONE_CLASSES[status.tone],
         detail: step.kind === "builtin" ? "sin LLM" : `${step.model}/${step.effort}`,

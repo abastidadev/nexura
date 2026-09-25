@@ -44,6 +44,17 @@ describe("config editing", () => {
     expect(loadProfiles(configDir).has("rapido")).toBe(false);
   });
 
+  it("keeps the blind review mode and leaves single-review profiles untouched", () => {
+    saveProfile(profile({ reviewMode: "blind" }), configDir);
+    expect(loadProfiles(configDir).get("rapido")!.reviewMode).toBe("blind");
+    saveProfile(profile({ reviewMode: "single" }), configDir);
+    expect(readFileSync(join(configDir, "profiles", "rapido.json"), "utf8")).not.toContain("reviewMode");
+    saveProfile(profile(), configDir);
+    expect(readFileSync(join(configDir, "profiles", "rapido.json"), "utf8")).not.toContain("reviewMode");
+    expect(() => saveProfile(profile({ reviewMode: "triple" as never }), configDir)).toThrow(/Modo de revisión/);
+    deleteProfile("rapido", configDir);
+  });
+
   it("rejects unsafe names, the reserved 'auto' and invalid models", () => {
     expect(() => saveProfile(profile({ name: "../x" }), configDir)).toThrow(/no válido/);
     expect(() => saveProfile(profile({ name: "auto" }), configDir)).toThrow(/reservado/);
