@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
-import type { ModelAlias, Run, RunRequest, StepName } from "@nexura/shared";
+import type { AgentKind, Run, RunRequest, StepName, StepRun } from "@nexura/shared";
 import { createApiServer } from "../api/api-server.ts";
 import { PrWatcher } from "../forge/pr-watcher.ts";
 import { loadConfig } from "../config/config-loader.ts";
@@ -17,8 +17,8 @@ const USAGE = `Nexura by abastidadev
 
   nexura serve   [--port ${DEFAULT_PORT}] [--concurrency ${DEFAULT_CONCURRENCY}]
   nexura run     --repo <name> [--repo ...] (--ticket <text> | --ticket-file <file>)
-                 [--ticket-id <id>] [--task <title> ...] [--prompt <text>] [--profile auto|minimal|standard|full]
-  nexura retry   <runId> [--resume] [--instruction <text>] [--model haiku|sonnet|opus] [--skip]
+                 [--ticket-id <id>] [--task <title> ...] [--prompt <text>] [--profile auto|minimal|standard|full|copilot-test]
+  nexura retry   <runId> [--resume] [--instruction <text>] [--agent claude|codex|copilot] [--model <modelo>] [--skip]
   nexura runs
   nexura show    <runId>
   nexura cleanup <runId> [--delete-branches]
@@ -53,7 +53,7 @@ function follow(orchestrator: Orchestrator, runId: string): Promise<Run> {
         const cost = current.costUsd ? ` · $${current.costUsd.toFixed(4)}` : "";
         const icon = { running: "▶", succeeded: "✔", failed: "✖", skipped: "⤼", pending: "·" }[current.status];
         console.log(
-          `${icon} [${current.step} #${current.attempt}] ${current.status} (${current.model}/${current.effort})${cost}${current.error ? `\n  ⚠ ${current.error}` : ""}`,
+          `${icon} [${current.step} #${current.attempt}] ${current.status} (${agentLabel(current)}${current.model}/${current.effort})${cost}${current.error ? `\n  ⚠ ${current.error}` : ""}`,
         );
       }
       if (run.status !== lastStatus) {
@@ -67,11 +67,16 @@ function follow(orchestrator: Orchestrator, runId: string): Promise<Run> {
   });
 }
 
+/** "codex · " before the model of Codex/Copilot steps; nothing for Claude (as before). */
+function agentLabel(step: StepRun): string {
+  return step.agent && step.agent !== "claude" ? `${step.agent} · ` : "";
+}
+
 function printSummary(run: Run): void {
   console.log(`\nPerfil: ${run.resolvedProfile ?? "-"}${run.classifyReason ? ` (${run.classifyReason})` : ""}`);
   for (const step of run.steps) {
     console.log(
-      `  ${step.step.padEnd(12)} #${step.attempt} ${step.status.padEnd(9)} ${step.model}/${step.effort}  $${step.costUsd.toFixed(4)}  ${step.numTurns} turnos`,
+      `  ${step.step.padEnd(12)} #${step.attempt} ${step.status.padEnd(9)} ${agentLabel(step)}${step.model}/${step.effort}  $${step.costUsd.toFixed(4)}  ${step.numTurns} turnos`,
     );
   }
   console.log(`  Total: $${run.totalCostUsd.toFixed(4)}`);
@@ -97,6 +102,7 @@ async function main(): Promise<void> {
       profile: { type: "string" },
       resume: { type: "boolean" },
       instruction: { type: "string" },
+      agent: { type: "string" },
       model: { type: "string" },
       skip: { type: "boolean" },
       "delete-branches": { type: "boolean" },
@@ -157,7 +163,8 @@ async function main(): Promise<void> {
       orchestrator.retry(runId, {
         resumeSession: values.resume,
         instruction: values.instruction,
-        model: values.model as ModelAlias | undefined,
+        agent: values.agent as AgentKind | undefined,
+        model: values.model,
         skip: values.skip,
       });
       const final = await follow(orchestrator, runId);

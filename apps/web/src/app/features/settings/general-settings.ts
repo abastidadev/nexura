@@ -1,5 +1,5 @@
-import { Component, inject, linkedSignal, signal } from "@angular/core";
-import { DEFAULT_SETTINGS, type NexuraSettings } from "@nexura/shared";
+import { Component, computed, inject, linkedSignal, resource, signal } from "@angular/core";
+import { AGENT_LABELS, DEFAULT_SETTINGS, type NexuraSettings } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { NexuraStore } from "../../core/nexura-store";
 
@@ -7,6 +7,38 @@ import { NexuraStore } from "../../core/nexura-store";
   selector: "nx-general-settings",
   template: `
     <section class="flex max-w-3xl flex-col gap-5 rounded-lg border border-border bg-surface p-4">
+      <div>
+        <div class="flex items-center gap-2">
+          <h2 class="font-semibold">Agentes</h2>
+          <button type="button" class="ml-auto rounded-md border border-border px-2 py-0.5 text-[12px] hover:bg-surface-3" (click)="refreshAgents()">
+            {{ agents.isLoading() ? "Comprobando…" : "Volver a comprobar" }}
+          </button>
+        </div>
+        <p class="mt-1 text-[12px] text-muted">
+          Cada paso de un perfil puede ir con Claude Code, Codex o GitHub Copilot, y se pueden mezclar en un mismo flujo (también los dos
+          jueces de la revisión doble ciega). Se comprueba con <code class="font-mono">--version</code>, sin gastar tokens. Codex usa tu
+          plan de ChatGPT (<code class="font-mono">codex login</code>) y Copilot el tuyo de GitHub (<code class="font-mono">copilot login</code>).
+        </p>
+        <ul class="mt-2 flex flex-col gap-1 text-[12px]">
+          @for (info of agentList(); track info.agent) {
+            <li class="flex flex-wrap items-baseline gap-2">
+              <span class="w-24 font-medium">{{ agentLabels[info.agent] }}</span>
+              @if (info.available) {
+                <span class="text-ok">✓ {{ info.version }}</span>
+              } @else {
+                <span class="text-warn" [title]="info.error ?? ''">✗ {{ info.error ?? "no instalado" }}</span>
+              }
+            </li>
+          }
+        </ul>
+        <p class="mt-2 text-[11px] text-muted">
+          Instalar: <code class="font-mono">npm install -g &#64;openai/codex</code> · <code class="font-mono">winget install GitHub.Copilot</code> (o <code class="font-mono">npm install -g &#64;github/copilot</code>).
+          Otro binario: <code class="font-mono">NEXURA_CLAUDE_BIN</code>, <code class="font-mono">NEXURA_CODEX_BIN</code>,
+          <code class="font-mono">NEXURA_COPILOT_BIN</code>. Solo los pasos con Claude miden la cuota, respetan el presupuesto y admiten mensajes a
+          mitad de paso.
+        </p>
+      </div>
+
       <div>
         <h2 class="font-semibold">Cuota del plan</h2>
         <p class="mt-1 text-[12px] text-muted">
@@ -78,7 +110,16 @@ export class GeneralSettings {
   private readonly api = inject(Api);
   private readonly store = inject(NexuraStore);
 
+  protected readonly agentLabels = AGENT_LABELS;
+  private readonly refresh = signal(0);
+  protected readonly agents = resource({ params: () => this.refresh(), loader: ({ params }) => this.api.getAgents(params > 0) });
+  protected readonly agentList = computed(() => (this.agents.hasValue() ? this.agents.value() : []));
+
   protected readonly draft = linkedSignal<NexuraSettings>(() => ({ ...(this.store.settings() ?? DEFAULT_SETTINGS) }));
+
+  protected refreshAgents(): void {
+    this.refresh.update((count) => count + 1);
+  }
   protected readonly busy = signal(false);
   protected readonly message = signal<{ ok: boolean; text: string } | null>(null);
 

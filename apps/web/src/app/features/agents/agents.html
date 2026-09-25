@@ -1,9 +1,18 @@
-<div class="mx-auto flex max-w-6xl flex-col gap-4 p-4">
-  <header class="flex flex-wrap items-center gap-3">
+<div class="flex h-full flex-col gap-3 p-4">
+  <header class="flex shrink-0 flex-wrap items-center gap-3">
     <h1 class="text-[16px] font-semibold">Agentes</h1>
     <p class="text-[12px] text-muted" role="status">
-      {{ totals().working }} trabajando · {{ totals().waiting }} en espera · {{ activeRooms().length }} flujo(s) activo(s)
+      {{ totals().working }} trabajando · {{ totals().waiting }} en espera · {{ totals().flows }} flujo(s) activo(s)
     </p>
+    <details class="relative text-[12px]">
+      <summary class="cursor-pointer text-muted hover:text-fg">¿Qué significa?</summary>
+      <p class="absolute left-0 z-30 mt-1 w-96 rounded-md border border-border bg-surface p-3 leading-relaxed text-fg-soft shadow-lg">
+        Cada flujo tiene su color: alfombra, sillas, placa y el cordón de la acreditación de sus agentes. La ropa delata el modelo (camiseta
+        Haiku, sudadera o camisa Sonnet, traje Opus), los robots son pasos sin LLM y los subagentes llevan una gorra del color de su flujo.
+        Quien no tiene trabajo se va a descansar: sofá, café, recreativas, ping-pong… Pasa el ratón por un flujo para resaltarlo y haz clic
+        en un agente para abrir su flujo.
+      </p>
+    </details>
     <div class="ml-auto flex rounded-md border border-border p-0.5 text-[12px]" role="group" aria-label="Qué flujos mostrar">
       <button
         type="button"
@@ -20,62 +29,55 @@
         [class]="filter() === 'all' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'"
         [attr.aria-pressed]="filter() === 'all'"
         (click)="filter.set('all')"
+        title="Incluye los flujos terminados en las últimas 24 h: sus agentes siguen por la oficina"
       >
         Todos
       </button>
     </div>
   </header>
 
-  @for (room of activeRooms(); track room.run.id) {
-    <section class="rounded-lg border border-border bg-surface" [attr.aria-label]="'Flujo ' + room.title">
-      <header class="flex flex-wrap items-center gap-2 border-b border-border px-3 py-2">
-        <nx-status-pill [tone]="room.status.tone" [label]="room.status.label" [live]="room.status.live" />
-        <a class="min-w-0 flex-1 truncate font-medium hover:underline" [routerLink]="['/runs', room.run.id]" (click)="store.openTab(room.run.id)">
-          @if (room.run.request.ticketId) {
-            <span class="font-mono text-muted">#{{ room.run.request.ticketId }}</span> ·
-          }
-          {{ room.title }}
-        </a>
-        <span class="text-[12px] text-muted">{{ room.run.resolvedProfile ?? "decidiendo perfil…" }}</span>
-        <span class="text-[12px]" [class]="room.working ? 'text-info' : 'text-muted'">{{ room.working }} trabajando</span>
-        <span class="font-mono text-[12px] text-muted">{{ room.cost }}</span>
-      </header>
-      <nx-pixel-office class="p-2" [agents]="room.agents" [label]="'Agentes de ' + room.title" (select)="open($event)" />
-    </section>
-  } @empty {
-    <div class="rounded-lg border border-dashed border-border p-8 text-center text-muted">
+  @if (rooms().length) {
+    <ul class="flex max-h-24 shrink-0 flex-wrap gap-2 overflow-y-auto" aria-label="Flujos en la oficina">
+      @for (room of rooms(); track room.run.id) {
+        <li class="min-w-0">
+          <a
+            class="flex max-w-96 min-w-0 items-center gap-2 rounded-md border px-2 py-1 text-[12px] hover:bg-surface-2"
+            [class]="focus() === room.run.id ? 'border-border-strong bg-surface-2' : 'border-border bg-surface'"
+            [class.opacity-70]="!room.live"
+            [routerLink]="['/runs', room.run.id]"
+            (click)="store.openTab(room.run.id)"
+            (mouseenter)="focus.set(room.run.id)"
+            (mouseleave)="focus.set(null)"
+            (focus)="focus.set(room.run.id)"
+            (blur)="focus.set(null)"
+          >
+            <span class="size-2.5 shrink-0 rounded-sm" [style.background]="room.color" aria-hidden="true"></span>
+            <nx-status-pill [tone]="room.status.tone" [label]="room.status.label" [live]="room.status.live" />
+            <span class="min-w-0 truncate">{{ room.title }}</span>
+            @if (room.live) {
+              <span class="shrink-0" [class]="room.working ? 'text-info' : 'text-muted'">{{ room.working }} trab.</span>
+            }
+            <span class="shrink-0 font-mono text-muted">{{ room.cost }}</span>
+          </a>
+        </li>
+      }
+    </ul>
+  } @else {
+    <div class="shrink-0 rounded-lg border border-dashed border-border p-3 text-center text-muted">
       Ningún flujo en marcha ahora mismo.
       <a routerLink="/new" class="text-accent hover:underline">Lanzar uno</a>
     </div>
   }
 
-  @if (filter() === "all" && recentRooms().length) {
-    <section aria-labelledby="recent-heading" class="flex flex-col gap-2">
-      <h2 id="recent-heading" class="mt-2 text-[11px] font-semibold tracking-wide text-muted uppercase">Terminados en las últimas 24 h</h2>
-      @for (room of recentRooms(); track room.run.id) {
-        <div class="rounded-lg border border-border bg-surface">
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-2 text-left hover:bg-surface-2"
-            [attr.aria-expanded]="expanded().has(room.run.id)"
-            (click)="toggle(room.run.id)"
-          >
-            <span class="text-muted transition-transform" [class.rotate-90]="expanded().has(room.run.id)" aria-hidden="true">›</span>
-            <nx-status-pill [tone]="room.status.tone" [label]="room.status.label" />
-            <span class="min-w-0 flex-1 truncate">
-              @if (room.run.request.ticketId) {
-                <span class="font-mono text-muted">#{{ room.run.request.ticketId }}</span> ·
-              }
-              {{ room.title }}
-            </span>
-            <span class="text-[12px] text-muted">{{ room.agents.length }} agente(s)</span>
-            <span class="font-mono text-[12px] text-muted">{{ room.cost }}</span>
-          </button>
-          @if (expanded().has(room.run.id)) {
-            <nx-pixel-office class="border-t border-border p-2" [agents]="room.agents" [label]="'Agentes de ' + room.title" (select)="open($event)" />
-          }
-        </div>
-      }
-    </section>
-  }
+  <section class="min-h-0 flex-1 overflow-auto rounded-lg border border-border bg-surface p-2" aria-label="Oficina">
+    <nx-pixel-office
+      class="h-full"
+      [fit]="true"
+      [teams]="teams()"
+      [focusTeam]="focus()"
+      label="Agentes de la oficina"
+      (select)="open($event)"
+      (selectTeam)="openTeam($event)"
+    />
+  </section>
 </div>

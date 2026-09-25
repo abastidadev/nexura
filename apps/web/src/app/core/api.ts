@@ -2,6 +2,7 @@ import { HttpClient } from "@angular/common/http";
 import { inject, Service } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 import type {
+  AgentInfo,
   FlowProfile,
   Metrics,
   NexuraEvent,
@@ -167,6 +168,11 @@ export class Api {
   /** Native folder dialog on the Nexura machine; "" when cancelled. */
   public pickFolder(initial = ""): Promise<string> {
     return firstValueFrom(this.http.post<{ path: string }>("/api/system/pick-folder", { initial })).then((response) => response.path);
+  }
+
+  /** Which agent CLIs are installed (the server runs their `--version`, no tokens). */
+  public getAgents(refresh = false): Promise<AgentInfo[]> {
+    return firstValueFrom(this.http.get<AgentInfo[]>(refresh ? "/api/agents?refresh=1" : "/api/agents"));
   }
 
   public getSettings(): Promise<NexuraSettings> {

@@ -1,10 +1,16 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
 import {
+  AGENT_KINDS,
+  AGENT_LABELS,
+  AGENT_MODELS,
+  agentOf,
   DEFAULT_SETTINGS,
   orderSteps,
+  type AgentKind,
   type CreatedPr,
   type FlowProfile,
+  type JudgeConfig,
   type NexuraEvent,
   type NexuraSettings,
   type PrDraft,
@@ -20,10 +26,10 @@ import {
   type StepRun,
   type Worktree,
 } from "@nexura/shared";
-import type { LoadedStep, NexuraConfig } from "../config/config-loader.ts";
+import { isValidModel, type LoadedStep, type NexuraConfig } from "../config/config-loader.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { asJsonBlock, renderTemplate } from "../prompt/render.ts";
-import { ClaudeProcess } from "../runner/claude-process.ts";
+import { AgentProcess } from "../runner/agent-process.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace/git.ts";
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
@@ -34,7 +40,7 @@ import { mergeJudgments, type CodeReviewOutput, type ReviewIssue } from "./blind
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
 
 /** Deciding the profile must be cheap. */
-const CLASSIFY_CONFIG: StepConfig = { model: "haiku", effort: "low", enabled: true };
+const CLASSIFY_CONFIG: StepConfig = { agent: "claude", model: "haiku", effort: "low", enabled: true };
 const DEFAULT_BRANCH_PREFIX = "feat";
 const RATE_LIMIT_MARGIN_MS = 60_000;
 const ERROR_TEXT_MAX = 1500;
@@ -43,10 +49,20 @@ const RESUME_DEFAULT_INSTRUCTION = "Continúa donde lo dejaste y termina el paso
 
 class CancelledError extends Error {}
 
+/** Agent/model overrides come from the API and end up as CLI arguments: validate them. */
+function checkOverrides(options: RetryOptions, fallbackAgent: AgentKind): void {
+  if (options.agent !== undefined && !AGENT_KINDS.includes(options.agent)) {
+    throw new Error(`Agente desconocido: ${String(options.agent)}`);
+  }
+  if (options.model !== undefined && !isValidModel(options.agent ?? fallbackAgent, options.model)) {
+    throw new Error(`Modelo no válido para ${AGENT_LABELS[options.agent ?? fallbackAgent]}: ${String(options.model)}`);
+  }
+}
+
 type RunContext = {
   cancelled: boolean;
-  process?: ClaudeProcess;
-  /** Delivers a user message to the running claude step; false when there is none. */
+  process?: AgentProcess;
+  /** Delivers a user message to the running agent step; false when there is none or it takes no input. */
   send?: (text: string) => boolean;
   /** Resolves a breakpoint pause, optionally with overrides for the next step. */
   release?: (options?: RetryOptions) => void;
@@ -64,7 +80,7 @@ type StepContext = {
 
 /** Steps that never run in the profile sequence: they are launched on demand. */
 const ON_DEMAND_STEPS: ReadonlySet<StepName> = new Set(["classify", "addressReview"]);
-const DEFAULT_ADDRESS_REVIEW: StepConfig = { model: "sonnet", effort: "medium", enabled: true };
+const DEFAULT_ADDRESS_REVIEW: StepConfig = { agent: "claude", model: "sonnet", effort: "medium", enabled: true };
 
 type StepOutcome = { stepRun: StepRun; rateLimitedUntil?: number };
 
@@ -180,6 +196,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       throw new Error(`El run ${runId} no está fallido ni cancelado (${run.status})`);
     }
     const last = run.steps.at(-1);
+    checkOverrides(options, agentOf(last));
     run.status = "queued";
     run.error = undefined;
     this.persist(run);
@@ -245,6 +262,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     if (!context?.release) {
       throw new Error(`El run ${runId} no está pausado`);
     }
+    if (options) {
+      const run = this.requireRun(runId);
+      const profile = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile) : undefined;
+      checkOverrides(options, agentOf(run.pendingStep ? profile?.steps[run.pendingStep.step] : undefined));
+    }
     context.release(options);
   }
 
@@ -254,8 +276,13 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     if (!message) {
       throw new Error("El mensaje está vacío");
     }
-    if (!this.contexts.get(runId)?.send?.(message)) {
-      throw new Error("Ahora mismo no hay ningún paso con Claude trabajando en este flujo");
+    const context = this.contexts.get(runId);
+    if (!context?.send?.(message)) {
+      throw new Error(
+        context?.process && !context.process.interactive
+          ? "Este paso lo ejecuta un agente que no admite mensajes a mitad de paso (solo Claude los admite)"
+          : "Ahora mismo no hay ningún paso con Claude trabajando en este flujo",
+      );
     }
   }
 
@@ -400,7 +427,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
 
         const blind = stepName === "codeReview" && profile.reviewMode === "blind";
         const stepRun = blind
-          ? await this.runBlindReview(run, context, stepConfig, stepContext, pending, ledger)
+          ? await this.runBlindReview(run, context, stepConfig, profile.judgeB, stepContext, pending, ledger)
           : await this.runWithRateLimit(run, context, stepName, stepConfig, stepContext, pending);
         pending = undefined;
         if (!stepRun) {
@@ -470,9 +497,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     options?: RetryOptions,
     judge?: StepRun["judge"],
   ): Promise<StepRun | undefined> {
-    const usesClaude = this.config.steps.get(stepName)?.kind !== "builtin";
+    const usesClaude = this.config.steps.get(stepName)?.kind !== "builtin" && (options?.agent ?? agentOf(stepConfig)) === "claude";
     for (;;) {
-      // Don't start a Claude step while the plan window is above the user's threshold.
+      // Don't start a Claude step while the plan window is above the user's threshold (it only measures Claude's plan).
       const guardedUntil = usesClaude ? this.quotaGuardUntil() : undefined;
       if (guardedUntil !== undefined) {
         await this.waitForWindow(run, context, guardedUntil);
@@ -496,13 +523,15 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   /**
    * Blind double review: two judges get the very same prompt in fresh sessions (they never see
    * each other's answer, and it is rendered once, before judge A). Only the blocking issues both
-   * confirm go back to implement. Returns judge B's step run carrying the merged output, or
-   * undefined when a judge failed (the run is already failed then).
+   * confirm go back to implement. Judge B may run on another agent/model (`judgeB` of the
+   * profile), so two different models have to agree. Returns judge B's step run carrying
+   * the merged output, or undefined when a judge failed (the run is already failed then).
    */
   private async runBlindReview(
     run: Run,
     context: RunContext,
     stepConfig: StepConfig,
+    judgeBConfig: JudgeConfig | undefined,
     stepContext: StepContext,
     pending: RetryOptions | undefined,
     ledger: Ledger,
@@ -513,7 +542,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     if (!judgeA) {
       return undefined;
     }
-    const judgeB = await this.runWithRateLimit(run, context, "codeReview", stepConfig, stepContext, options, "B");
+    const configB: StepConfig = judgeBConfig ? { ...stepConfig, ...judgeBConfig, agent: agentOf(judgeBConfig) } : stepConfig;
+    const judgeB = await this.runWithRateLimit(run, context, "codeReview", configB, stepContext, options, "B");
     if (!judgeB) {
       return undefined;
     }
@@ -570,6 +600,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     judge?: StepRun["judge"],
   ): Promise<StepOutcome> {
     const definition = this.config.steps.get(stepName);
+    const kind = definition?.kind ?? "claude";
+    const agent: AgentKind = options?.agent ?? agentOf(stepConfig);
+    // Switching agent on a retry without naming a model: that agent's default model.
+    const model = options?.model ?? (agent === agentOf(stepConfig) ? stepConfig.model : AGENT_MODELS[agent][0]!);
     const stepRun: StepRun = {
       id: randomUUID(),
       runId: run.id,
@@ -578,8 +612,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       attempt: run.steps.filter((s) => s.step === stepName && s.judge === judge).length + 1,
       seq: run.steps.length,
       status: "running",
-      kind: definition?.kind ?? "claude",
-      model: options?.model ?? stepConfig.model,
+      kind,
+      ...(kind === "claude" ? { agent } : {}),
+      model,
       effort: options?.effort ?? stepConfig.effort,
       startedAt: new Date().toISOString(),
       costUsd: 0,
@@ -598,7 +633,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         stepRun.structuredOutput = await this.runBuiltin(run, stepRun, stepContext, definition);
         stepRun.status = "succeeded";
       } else {
-        rateLimitedUntil = await this.runClaude(run, context, stepRun, stepContext, definition, options);
+        rateLimitedUntil = await this.runAgent(run, context, stepRun, stepContext, definition, options);
       }
     } catch (error) {
       stepRun.status = "failed";
@@ -615,8 +650,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     return { stepRun, rateLimitedUntil };
   }
 
-  /** Returns the reset time (epoch s) when the step failed because of the usage limit. */
-  private async runClaude(
+  /**
+   * Runs a step on its agent (claude, codex or copilot). Returns the reset time (epoch s)
+   * when a Claude step failed because of the plan's usage limit.
+   */
+  private async runAgent(
     run: Run,
     context: RunContext,
     stepRun: StepRun,
@@ -624,10 +662,12 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     definition: LoadedStep,
     options?: RetryOptions,
   ): Promise<number | undefined> {
+    const agent = agentOf(stepRun);
     let prompt: string;
     let resume: string | undefined;
+    // A session is only resumed by the agent that created it.
     const previous = options?.resumeSession
-      ? run.steps.findLast((s) => s.step === stepRun.step && s.id !== stepRun.id && s.sessionId)
+      ? run.steps.findLast((s) => s.step === stepRun.step && s.id !== stepRun.id && s.sessionId && agentOf(s) === agent)
       : undefined;
     if (previous?.sessionId) {
       resume = previous.sessionId;
@@ -637,7 +677,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     }
 
     // Profile budget: what is left for the whole run caps this step (--max-budget-usd).
-    const budget = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile)?.budgetUsd : undefined;
+    // Only Claude reports a cost; Codex and Copilot run on their plans without one.
+    const budget = run.resolvedProfile && agent === "claude" ? this.config.profiles.get(run.resolvedProfile)?.budgetUsd : undefined;
     let maxBudgetUsd: number | undefined;
     if (budget !== undefined) {
       const remaining = budget - run.totalCostUsd;
@@ -661,7 +702,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
             allowedTools: definition.allowedTools,
           })
         : undefined;
-    const process = new ClaudeProcess({
+    const process = new AgentProcess({
+      agent,
       maxBudgetUsd,
       cwd: primary!.path,
       prompt,
@@ -734,7 +776,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     } else if (outcome.timedOut) {
       error = `Timeout tras ${Math.round(definition.timeoutMs / 1000)} s`;
     } else if (!result) {
-      error = `claude terminó (exit ${outcome.exitCode}) sin evento result. ${outcome.stderr.slice(-ERROR_TEXT_MAX)}`;
+      error = `${agent} terminó (exit ${outcome.exitCode}) sin evento result. ${outcome.stderr.slice(-ERROR_TEXT_MAX)}`;
     } else if (!result.success) {
       const status = result.apiErrorStatus ? ` (HTTP ${result.apiErrorStatus})` : "";
       error = `${result.subtype}${status}: ${result.text.slice(0, ERROR_TEXT_MAX)}`;
@@ -744,8 +786,13 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
 
     if (error) {
       stepRun.status = "failed";
-      stepRun.error = error;
       const limited = rejectedUntil !== undefined || result?.apiErrorStatus === 429;
+      if (agent !== "claude") {
+        // Their plans' windows are unknown to Nexura: no automatic wait, the user retries.
+        stepRun.error = limited ? `Límite de uso de ${AGENT_LABELS[agent]}: reintenta más tarde o cambia de agente. ${error}` : error;
+        return undefined;
+      }
+      stepRun.error = error;
       return limited ? (rejectedUntil ?? this.quota?.fiveHour?.resetsAt ?? Date.now() / 1000 + 300) : undefined;
     }
     stepRun.status = "succeeded";
@@ -1265,6 +1312,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       seq: run.steps.length,
       status: "skipped",
       kind: this.config.steps.get(stepName)?.kind ?? "claude",
+      ...(this.config.steps.get(stepName)?.kind === "builtin" ? {} : { agent: agentOf(config) }),
       model: config?.model ?? "haiku",
       effort: config?.effort ?? "low",
       costUsd: 0,

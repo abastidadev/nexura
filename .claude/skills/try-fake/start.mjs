@@ -1,4 +1,4 @@
-// Starts Nexura against the fake claude and a throwaway sandbox repo. No tokens, and it
+// Starts Nexura against the fake agents (claude, codex, copilot) and a throwaway sandbox repo. No tokens, and it
 // never touches data/, config/repos.json or ~/.claude.json.
 //
 //   node .claude/skills/try-fake/start.mjs [--port 4320] [--delay 2000]
@@ -35,7 +35,7 @@ writeFileSync(
   JSON.stringify({ repos: [{ name: "sandbox", path: repoPath, baseBranch: "main", checks: ["npm run check"], nodeModules: "none" }] }, null, 2),
 );
 
-console.log(`Nexura (fake claude) at http://localhost:${values.port} · temp dir: ${root}`);
+console.log(`Nexura (fake claude/codex/copilot) at http://localhost:${values.port} · temp dir: ${root}`);
 const server = spawn(process.execPath, [join(home, "apps", "server", "src", "cli", "cli.ts"), "serve", "--port", values.port], {
   cwd: home,
   stdio: "inherit",
@@ -44,6 +44,8 @@ const server = spawn(process.execPath, [join(home, "apps", "server", "src", "cli
     NEXURA_DATA_DIR: join(root, "data"),
     NEXURA_REPOS: reposFile,
     NEXURA_CLAUDE_BIN: join(home, "fixtures", "fake-claude.mjs"),
+    NEXURA_CODEX_BIN: join(home, "fixtures", "fake-codex.mjs"),
+    NEXURA_COPILOT_BIN: join(home, "fixtures", "fake-copilot.mjs"),
     NEXURA_TRUST_WORKTREES: "0",
     FAKE_STATE_DIR: stateDir,
     FAKE_SUBAGENTS: "1",

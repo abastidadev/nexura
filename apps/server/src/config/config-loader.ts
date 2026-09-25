@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readdirSync, readFileSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { CUSTOM_STEP_NAME, MEMORY_MODES, STEP_NAMES, type FlowProfile, type RepoConfig, type StepDefinition, type StepName } from "@nexura/shared";
+import { AGENT_KINDS, agentOf, CUSTOM_STEP_NAME, MEMORY_MODES, STEP_NAMES, type AgentKind, type FlowProfile, type JudgeConfig, type RepoConfig, type StepDefinition, type StepName } from "@nexura/shared";
 import { CONFIG_DIR } from "./paths.ts";
 
 export type LoadedStep = StepDefinition & {
@@ -71,8 +71,27 @@ export function saveStepPrompt(step: StepName, template: string, configDir = CON
 }
 
 const PROFILE_NAME = /^[a-z0-9-]+$/;
-const MODELS = new Set(["haiku", "sonnet", "opus"]);
+const CLAUDE_MODELS = new Set(["haiku", "sonnet", "opus"]);
 const EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+/** A model id goes to the CLI as an argument: no leading dash, no spaces or quotes. */
+const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,79}$/;
+
+/** Whether a model id is acceptable for the agent (Claude: an alias or a full `claude-*` id). */
+export function isValidModel(agent: AgentKind, model: unknown): model is string {
+  return typeof model === "string" && MODEL_ID.test(model) && (agent !== "claude" || CLAUDE_MODELS.has(model) || model.startsWith("claude-"));
+}
+
+/** Validates the agent/model/effort of a step or judge; returns the agent (missing = claude). */
+function checkAgentModel(config: { agent?: AgentKind; model: string; effort: string }, where: string): AgentKind {
+  const agent = agentOf(config);
+  if (!AGENT_KINDS.includes(agent)) {
+    throw new Error(`Agente no válido en ${where}: ${agent}`);
+  }
+  if (!isValidModel(agent, config.model) || !EFFORTS.has(config.effort)) {
+    throw new Error(`Modelo o esfuerzo no válido en ${where}`);
+  }
+  return agent;
+}
 const MIN_TIMEOUT_MS = 10_000;
 
 function profileFile(name: string, configDir: string): string {
@@ -93,10 +112,13 @@ export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void 
     if (!step) {
       continue;
     }
-    if (!MODELS.has(step.model) || !EFFORTS.has(step.effort)) {
-      throw new Error(`Modelo o esfuerzo no válido en el paso ${name}`);
-    }
-    steps[name] = { model: step.model, effort: step.effort, enabled: Boolean(step.enabled) };
+    const agent = checkAgentModel(step, `el paso ${name}`);
+    steps[name] = { ...(agent !== "claude" ? { agent } : {}), model: step.model, effort: step.effort, enabled: Boolean(step.enabled) };
+  }
+  let judgeB: JudgeConfig | undefined;
+  if (profile.judgeB) {
+    const agent = checkAgentModel(profile.judgeB, "el juez B");
+    judgeB = { agent, model: profile.judgeB.model, effort: profile.judgeB.effort };
   }
   if (profile.budgetUsd !== undefined && (!Number.isFinite(profile.budgetUsd) || profile.budgetUsd <= 0)) {
     throw new Error("El presupuesto debe ser un número mayor que 0 (o vacío para no limitar)");
@@ -114,6 +136,7 @@ export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void 
     steps,
     ...(profile.budgetUsd !== undefined ? { budgetUsd: profile.budgetUsd } : {}),
     ...(profile.reviewMode === "blind" ? { reviewMode: "blind" as const } : {}),
+    ...(judgeB ? { judgeB } : {}),
   };
   writeFileSync(file, JSON.stringify(clean, null, 2) + "\n");
 }

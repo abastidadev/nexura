@@ -5,6 +5,7 @@ import { WebSocketServer, type WebSocket } from "ws";
 import {
   STEP_NAMES,
   TICKET_SOURCES,
+  type AgentInfo,
   type FlowProfile,
   type NexuraSettings,
   type RepoConfig,
@@ -36,6 +37,7 @@ import { GithubError } from "../github/github-client.ts";
 import { pickFolder } from "../system/folder-picker.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { mcpAddCommand, memoryStore } from "../memory/memory.ts";
+import { detectAgents } from "../runner/agents.ts";
 import { projectOf } from "../memory/memory-store.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
@@ -43,6 +45,7 @@ import { TerminalServer } from "../terminal/terminal-server.ts";
 import { readRepoNotes, saveRepoNotes } from "../workspace/repo-context.ts";
 
 const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
+const AGENTS_TTL_MS = 60_000;
 const MIME: Record<string, string> = {
   ".html": "text/html; charset=utf-8",
   ".js": "text/javascript",
@@ -254,6 +257,14 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   }));
   route("GET", "/api/quota", () => orchestrator.getQuota() ?? null);
   route("GET", "/api/settings", () => orchestrator.getSettings());
+  // Which agent CLIs are installed (`--version`, free). Cached: it spawns three processes.
+  let agents: { at: number; list: Promise<AgentInfo[]> } | undefined;
+  route("GET", "/api/agents", (_params, _body, url) => {
+    if (!agents || url.searchParams.has("refresh") || Date.now() - agents.at > AGENTS_TTL_MS) {
+      agents = { at: Date.now(), list: detectAgents() };
+    }
+    return agents.list;
+  });
   route("PUT", "/api/settings", (_params, body) => orchestrator.saveSettings(body as Partial<NexuraSettings>));
   /** Shared memory of a repo: a full-text search, or the latest when `q` is empty. Zero tokens. */
   route("GET", "/api/memory", async (_params, _body, url) => {

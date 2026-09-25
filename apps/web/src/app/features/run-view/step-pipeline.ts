@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from "@angular/core";
 import type { StepName, StepRun } from "@nexura/shared";
-import { elapsedMs, formatCost, formatDuration, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, modelDetail, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
 
 type PipelineItem =
   | {
@@ -100,7 +100,7 @@ export class StepPipeline {
         loop: loop && priorSucceeded && steps.some((s) => sameJudge(s) && s.status === "succeeded" && s.seq < step.seq),
         status,
         tone: TONE_CLASSES[status.tone],
-        detail: step.kind === "builtin" ? "sin LLM" : `${step.model}/${step.effort}`,
+        detail: step.kind === "builtin" ? "sin LLM" : modelDetail(step),
         cost: step.kind === "builtin" ? "" : formatCost(step.costUsd),
         duration: step.startedAt ? formatDuration(elapsedMs(step.startedAt, step.finishedAt, this.now())) : "",
         turns: step.numTurns,

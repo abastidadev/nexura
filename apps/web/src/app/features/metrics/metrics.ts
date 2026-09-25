@@ -1,7 +1,7 @@
 import { Component, computed, inject, resource, signal } from "@angular/core";
 import { DecimalPipe } from "@angular/common";
 import { RouterLink } from "@angular/router";
-import type { Metrics } from "@nexura/shared";
+import { AGENT_LABELS, type Metrics } from "@nexura/shared";
 import { Api } from "../../core/api";
 import { formatCost, formatTokens, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -37,6 +37,7 @@ export class MetricsPage {
   protected readonly ranges = RANGES;
   protected readonly days = signal<number>(14);
   protected readonly stepLabel = stepLabel;
+  protected readonly agentLabels = AGENT_LABELS;
   protected readonly formatCost = formatCost;
   protected readonly formatTokens = formatTokens;
   protected readonly percent = percent;

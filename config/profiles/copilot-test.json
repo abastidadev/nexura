@@ -1,0 +1,13 @@
+{
+  "name": "copilot-test",
+  "description": "Pruebas a coste cero: todo con Copilot y gpt-5-mini (modelo incluido, no gasta premium requests).",
+  "maxLoops": 1,
+  "steps": {
+    "enrich": { "agent": "copilot", "model": "gpt-5-mini", "effort": "low", "enabled": true },
+    "plan": { "agent": "copilot", "model": "gpt-5-mini", "effort": "low", "enabled": true },
+    "implement": { "agent": "copilot", "model": "gpt-5-mini", "effort": "medium", "enabled": true },
+    "codeReview": { "agent": "copilot", "model": "gpt-5-mini", "effort": "low", "enabled": true },
+    "qaCode": { "agent": "copilot", "model": "gpt-5-mini", "effort": "low", "enabled": true },
+    "release": { "agent": "copilot", "model": "gpt-5-mini", "effort": "low", "enabled": true }
+  }
+}

@@ -3,7 +3,8 @@ import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
 import type { RunStore } from "../store/run-store.ts";
-import { claudeEnv, resolveClaudeCommand } from "../runner/claude-process.ts";
+import { adapterFor } from "../runner/agents.ts";
+import { claudeEnv } from "../runner/claude-process.ts";
 import { trustWorktree } from "../workspace/claude-trust.ts";
 
 type Pty = {
@@ -79,12 +80,20 @@ export class TerminalServer {
     if (mode === "resume") {
       const step = run.steps.find((candidate) => candidate.id === url.searchParams.get("stepRunId"));
       if (!step?.sessionId) {
-        fail("Ese paso no tiene sesión de Claude que reanudar.");
+        fail("Ese paso no tiene sesión que reanudar.");
         return;
       }
-      const claude = resolveClaudeCommand();
-      command = claude.command;
-      args = [...claude.prefixArgs, "--resume", step.sessionId];
+      // Reopens the session with the CLI of the agent that ran the step (claude, codex or copilot).
+      const adapter = adapterFor(step.agent);
+      let agent: ReturnType<typeof adapter.command>;
+      try {
+        agent = adapter.command();
+      } catch (error) {
+        fail(error instanceof Error ? error.message : String(error));
+        return;
+      }
+      command = agent.command;
+      args = [...agent.prefixArgs, ...adapter.resumeArgs(step.sessionId)];
     } else {
       ({ command, args } = shellCommand());
     }

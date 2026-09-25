@@ -3,7 +3,7 @@
     <h2 class="text-[15px] font-semibold">{{ label() }}</h2>
     <span class="rounded bg-surface-3 px-1.5 text-[11px] text-muted">intento {{ step().attempt }}</span>
     <span class="rounded-full px-2 py-0.5 text-[11px] font-medium" [class]="tone().bg + ' ' + tone().text">{{ status().label }}</span>
-    <span class="text-[12px] text-fg-soft">{{ isClaude() ? step().model + " / " + step().effort : "builtin · sin LLM" }}</span>
+    <span class="text-[12px] text-fg-soft">{{ isAgent() ? detail() : "builtin · sin LLM" }}</span>
     <span class="ml-auto flex items-center gap-4 text-[12px]">
       <span class="flex gap-1"><span class="text-muted">Coste</span><span class="font-mono">{{ metrics().cost }}</span></span>
       <span class="flex gap-1"><span class="text-muted">Turnos</span><span class="font-mono">{{ step().numTurns }}</span></span>
@@ -18,7 +18,7 @@
       </button>
       @if (hasWorktree() && step().status !== "running") {
         <button type="button" class="rounded bg-accent-soft px-2 py-0.5 text-accent hover:underline" (click)="openSession.emit()">
-          ▸ Abrir en Claude (terminal)
+          ▸ Abrir en {{ agentLabel() }} (terminal)
         </button>
       }
     }
@@ -66,14 +66,18 @@
           </button>
         }
       </div>
-      @if (mode() !== "skip" && isClaude()) {
+      @if (mode() !== "skip" && isAgent()) {
         <label class="flex items-center gap-1.5 text-[12px]">
-          Modelo
-          <select class="rounded border border-border bg-surface px-1.5 py-0.5" (change)="model.set($any(value($event)))">
-            @for (option of models; track option) {
-              <option [value]="option" [selected]="option === model()">{{ option }}</option>
+          Agente
+          <select class="rounded border border-border bg-surface px-1.5 py-0.5" (change)="agent.set($any(value($event)))">
+            @for (option of agents; track option) {
+              <option [value]="option" [selected]="option === agent()">{{ agentLabels[option] }}</option>
             }
           </select>
+        </label>
+        <label class="flex items-center gap-1.5 text-[12px]">
+          Modelo
+          <nx-model-picker dense [models]="modelSuggestions()" [value]="model()" (valueChange)="model.set($event)" />
         </label>
         <label class="flex items-center gap-1.5 text-[12px]">
           Esfuerzo
@@ -88,7 +92,7 @@
 
     @switch (mode()) {
       @case ("retry") {
-        @if (isClaude()) {
+        @if (isAgent()) {
           <label class="mt-2 flex flex-col gap-1">
             <span class="text-[12px] text-muted">
               Prompt del reintento (editable). Si el cambio sirve para todos los tickets, llévalo a
@@ -110,7 +114,13 @@
       @case ("resume") {
         <label class="mt-2 flex flex-col gap-1">
           <span class="text-[12px] text-muted">
-            Continúa la sesión {{ step().sessionId?.slice(0, 8) }} (se bifurca con --fork-session, la original no se toca). Claude conserva todo su contexto.
+            @if (agent() !== stepAgent()) {
+              Con otro agente no hay sesión que continuar: el paso empieza de cero con su prompt.
+            } @else if (stepAgent() === "claude") {
+              Continúa la sesión {{ step().sessionId?.slice(0, 8) }} (se bifurca con --fork-session, la original no se toca). Claude conserva todo su contexto.
+            } @else {
+              Continúa la sesión {{ step().sessionId?.slice(0, 8) }} de {{ agentLabel() }}, que conserva todo su contexto.
+            }
           </span>
           <textarea
             rows="3"
@@ -145,7 +155,7 @@
 <div class="min-h-0 flex-1" role="tabpanel">
   @switch (tab()) {
     @case ("events") {
-      <nx-event-timeline class="h-full" [events]="events()" [live]="step().status === 'running'" />
+      <nx-event-timeline class="h-full" [events]="events()" [live]="step().status === 'running'" [speaker]="agentLabel()" />
     }
     @case ("prompt") {
       <pre class="h-full overflow-auto p-4 font-mono text-[12px] leading-relaxed whitespace-pre-wrap">{{
@@ -162,8 +172,10 @@
     }
     @case ("command") {
       <div class="h-full overflow-auto p-4">
-        <p class="mb-2 text-[12px] text-muted">Comando exacto lanzado (el prompt va por stdin):</p>
-        <pre class="rounded-md bg-surface-2 p-3 font-mono text-[12px] whitespace-pre-wrap">{{ command() || "Paso builtin: sin comando claude." }}</pre>
+        <p class="mb-2 text-[12px] text-muted">
+          Comando exacto lanzado{{ stepAgent() === "copilot" ? "" : " (el prompt va por stdin)" }}:
+        </p>
+        <pre class="rounded-md bg-surface-2 p-3 font-mono text-[12px] whitespace-pre-wrap">{{ command() || "Paso builtin: sin comando de agente." }}</pre>
       </div>
     }
   }

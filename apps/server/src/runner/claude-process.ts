@@ -1,10 +1,7 @@
-import { spawn, execFileSync, type ChildProcess } from "node:child_process";
 import { existsSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { EventEmitter } from "node:events";
-import type { NexuraEvent } from "@nexura/shared";
-import { buildClaudeArgs, type ClaudeRunOptions } from "./claude-args.ts";
-import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
+import { overrideCommand, whereFirst } from "./agent-bin.ts";
+import type { AgentCommand } from "./agent-adapter.ts";
 
 let cachedBin: string | undefined;
 
@@ -20,7 +17,7 @@ export function claudeEnv(base: NodeJS.ProcessEnv = process.env): NodeJS.Process
   return Object.fromEntries(Object.entries(base).filter(([name]) => !SESSION_VARIABLES.test(name)));
 }
 
-export type ClaudeCommand = { command: string; prefixArgs: string[] };
+export type ClaudeCommand = AgentCommand;
 
 /**
  * On Windows the npm shim is a .cmd/.ps1; spawning the real exe avoids cmd.exe quoting.
@@ -30,7 +27,7 @@ export type ClaudeCommand = { command: string; prefixArgs: string[] };
 export function resolveClaudeCommand(): ClaudeCommand {
   const override = process.env.NEXURA_CLAUDE_BIN;
   if (override && /\.m?js$/.test(override)) {
-    return { command: process.execPath, prefixArgs: [override] };
+    return overrideCommand(override);
   }
   return { command: resolveClaudeBin(), prefixArgs: [] };
 }
@@ -56,138 +53,4 @@ export function resolveClaudeBin(): string {
     cachedBin = exe;
   }
   return cachedBin;
-}
-
-/** First match of `where.exe`, or undefined when there is none. */
-function whereFirst(name: string): string | undefined {
-  try {
-    return execFileSync("where.exe", [name], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/)[0]!.trim() || undefined;
-  } catch {
-    return undefined;
-  }
-}
-
-export type ClaudeOutcome = {
-  exitCode: number | null;
-  timedOut: boolean;
-  killed: boolean;
-  stderr: string;
-  result?: Extract<NexuraEvent, { kind: "result" }>;
-  sessionId?: string;
-};
-
-type ClaudeProcessEvents = {
-  raw: [line: string];
-  event: [event: NexuraEvent];
-  exit: [outcome: ClaudeOutcome];
-};
-
-function userMessage(text: string): string {
-  return JSON.stringify({ type: "user", message: { role: "user", content: text } }) + "\n";
-}
-
-/** One `claude -p` execution. Emits every raw line and every normalised event. */
-export class ClaudeProcess extends EventEmitter<ClaudeProcessEvents> {
-  private child?: ChildProcess;
-  private killed = false;
-  /** stdin stays open until the first `result`, so `send` can reach the running turn. */
-  private accepting = false;
-  private readonly options: ClaudeRunOptions;
-
-  public constructor(options: ClaudeRunOptions) {
-    super();
-    this.options = options;
-  }
-
-  public get args(): string[] {
-    return buildClaudeArgs(this.options);
-  }
-
-  public run(): Promise<ClaudeOutcome> {
-    const { command, prefixArgs } = resolveClaudeCommand();
-    const child = spawn(command, [...prefixArgs, ...this.args], {
-      cwd: this.options.cwd,
-      stdio: ["pipe", "pipe", "pipe"],
-      env: claudeEnv(),
-      windowsHide: true,
-    });
-    this.child = child;
-    child.stdin.on("error", () => undefined);
-    child.stdin.write(userMessage(this.options.prompt));
-    this.accepting = true;
-
-    const splitter = new LineSplitter();
-    const outcome: ClaudeOutcome = { exitCode: null, timedOut: false, killed: false, stderr: "" };
-
-    const handleLine = (line: string): void => {
-      this.emit("raw", line);
-      const raw = parseLine(line);
-      if (!raw) {
-        return;
-      }
-      for (const event of normalize(raw)) {
-        if (event.kind === "init") {
-          outcome.sessionId = event.sessionId;
-        }
-        if (event.kind === "result") {
-          outcome.result = event;
-          // The turn is over: closing stdin lets claude exit instead of waiting for more input.
-          this.accepting = false;
-          child.stdin.end();
-        }
-        this.emit("event", event);
-      }
-    };
-
-    child.stdout.setEncoding("utf8").on("data", (chunk: string) => splitter.push(chunk).forEach(handleLine));
-    child.stderr.setEncoding("utf8").on("data", (chunk: string) => (outcome.stderr += chunk));
-
-    const timer = this.options.timeoutMs
-      ? setTimeout(() => {
-          outcome.timedOut = true;
-          this.kill();
-        }, this.options.timeoutMs)
-      : undefined;
-
-    return new Promise((resolve) => {
-      child.on("close", (code) => {
-        clearTimeout(timer);
-        this.accepting = false;
-        splitter.flush().forEach(handleLine);
-        outcome.exitCode = code;
-        outcome.killed = this.killed;
-        this.emit("exit", outcome);
-        resolve(outcome);
-      });
-      child.on("error", (error) => {
-        outcome.stderr += String(error);
-      });
-    });
-  }
-
-  /**
-   * Sends another user message to the running step. Claude folds it into the current
-   * turn (verified with claude 2.1: a single `result` comes out). False once the turn ended.
-   */
-  public send(text: string): boolean {
-    const stdin = this.child?.stdin;
-    if (!this.accepting || !stdin?.writable) {
-      return false;
-    }
-    stdin.write(userMessage(text));
-    return true;
-  }
-
-  public kill(): void {
-    if (!this.child || this.child.exitCode !== null) {
-      return;
-    }
-    this.killed = true;
-    if (process.platform === "win32" && this.child.pid) {
-      // Kill the whole tree: claude may have spawned shells, MCP servers, subagents.
-      spawn("taskkill", ["/pid", String(this.child.pid), "/T", "/F"], { windowsHide: true });
-    } else {
-      this.child.kill("SIGTERM");
-    }
-  }
 }

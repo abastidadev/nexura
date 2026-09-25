@@ -1,9 +1,10 @@
-import type { Effort, ModelAlias } from "@nexura/shared";
+import type { Effort } from "@nexura/shared";
 
 export type ClaudeRunOptions = {
   cwd: string;
   prompt: string;
-  model: ModelAlias;
+  /** A Claude alias or any model id the agent accepts. */
+  model: string;
   effort: Effort;
   /** Hard allowlist of built-in tools. Empty array = no tools at all. */
   tools: string[];

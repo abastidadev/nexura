@@ -21,7 +21,40 @@ export type StepName = BuiltinStepName | (string & {});
 /** Names a custom step may take: a letter first, then letters, digits or dashes. */
 export const CUSTOM_STEP_NAME = /^[a-zA-Z][a-zA-Z0-9-]{1,39}$/;
 
-export type ModelAlias = "haiku" | "sonnet" | "opus";
+/** Claude Code model aliases (the suggestions for `claude` steps); the CLI resolves each to its latest model. */
+export type ModelAlias = "haiku" | "sonnet" | "opus" | "fable";
+
+/**
+ * The headless coding agent that runs a step: `claude -p`, `codex exec` (OpenAI Codex CLI)
+ * or `copilot -p` (GitHub Copilot CLI). The steps of one flow may mix them.
+ */
+export type AgentKind = "claude" | "codex" | "copilot";
+
+export const AGENT_KINDS: readonly AgentKind[] = ["claude", "codex", "copilot"];
+
+export const AGENT_LABELS: Record<AgentKind, string> = { claude: "Claude Code", codex: "Codex", copilot: "Copilot" };
+
+/**
+ * Model suggestions per agent; the model stays free text (any id the CLI accepts works). The first is the default.
+ * Claude uses aliases, so they never go stale. Copilot's list is only a fallback: the server reads the real one
+ * from the installed CLI (`AgentInfo.models`, see `modelsFor`).
+ */
+export const AGENT_MODELS: Record<AgentKind, readonly string[]> = {
+  claude: ["sonnet", "haiku", "opus", "fable"],
+  codex: ["gpt-5.3-codex", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"],
+  copilot: ["claude-sonnet-5", "claude-haiku-4.5", "claude-opus-5", "gpt-5.5", "gpt-5.4-mini", "auto"],
+};
+
+/** Models to offer for an agent: what its installed CLI reports, else the built-in suggestions. */
+export function modelsFor(agent: AgentKind, agents?: readonly AgentInfo[]): readonly string[] {
+  const reported = agents?.find((info) => info.agent === agent)?.models;
+  return reported?.length ? reported : AGENT_MODELS[agent];
+}
+
+/** Missing agent = claude (profiles and runs from before agents existed). */
+export function agentOf(config: { agent?: AgentKind } | undefined): AgentKind {
+  return config?.agent ?? "claude";
+}
 
 export type Effort = "low" | "medium" | "high" | "xhigh";
 
@@ -34,7 +67,10 @@ export type MemoryMode = "off" | "read" | "readwrite";
 export const MEMORY_MODES: readonly MemoryMode[] = ["off", "read", "readwrite"];
 
 export type StepConfig = {
-  model: ModelAlias;
+  /** Missing = claude. */
+  agent?: AgentKind;
+  /** A Claude alias (haiku/sonnet/opus) or any model id the agent's CLI accepts. */
+  model: string;
   effort: Effort;
   enabled: boolean;
 };
@@ -54,12 +90,16 @@ export type FlowProfile = {
   budgetUsd?: number;
   /** Missing = `single`. */
   reviewMode?: ReviewMode;
+  /** Blind review: judge B's agent/model/effort, when it should differ from codeReview's (judge A). */
+  judgeB?: JudgeConfig;
 };
+
+export type JudgeConfig = { agent?: AgentKind; model: string; effort: Effort };
 
 /** Static definition of a step, from config/steps/<step>/step.json. */
 export type StepDefinition = {
   name: StepName;
-  /** `claude` runs `claude -p`; `builtin` is plain code in the orchestrator (no tokens). */
+  /** `claude` runs a coding agent (claude, codex or copilot, set per profile); `builtin` is plain code in the orchestrator (no tokens). */
   kind: "claude" | "builtin";
   /** Hard allowlist of built-in tools (`--tools`). Empty array disables all tools. */
   tools: string[];
@@ -255,7 +295,9 @@ export type StepRun = {
   seq: number;
   status: StepStatus;
   kind: "claude" | "builtin";
-  model: ModelAlias;
+  /** Missing on runs from before agents existed = claude. */
+  agent?: AgentKind;
+  model: string;
   effort: Effort;
   prompt?: string;
   args?: string[];
@@ -334,12 +376,24 @@ export type MemoryObservation = {
 
 export type Metrics = {
   totals: { runs: number; done: number; failed: number; cancelled: number; active: number; costUsd: number; tokens: number };
-  byStep: { step: string; model: string; runs: number; failed: number; costUsd: number; avgCostUsd: number; avgTurns: number; tokens: number }[];
+  /** `agent` is null for builtin steps (no LLM). */
+  byStep: { step: string; agent: AgentKind | null; model: string; runs: number; failed: number; costUsd: number; avgCostUsd: number; avgTurns: number; tokens: number }[];
   byProfile: { profile: string; runs: number; done: number; costUsd: number; avgCostUsd: number }[];
   /** Implement executions per run: >1 means review/QA sent the work back. */
   loops: { avgImplementPerRun: number; runsWithLoops: number };
   byDay: { day: string; runs: number; costUsd: number }[];
   classify: { rated: number; correct: number; mistakes: { runId: string; chosen: string; expected?: string; reason?: string }[] };
+};
+
+/** Whether an agent's CLI is installed (shown in Configuración and the profile editor). */
+export type AgentInfo = {
+  agent: AgentKind;
+  available: boolean;
+  version?: string;
+  bin?: string;
+  error?: string;
+  /** Models the installed CLI accepts, when it can list them for free (copilot); missing = use AGENT_MODELS. */
+  models?: string[];
 };
 
 export type QuotaInfo = {
@@ -352,7 +406,9 @@ export type QuotaInfo = {
 /** Overrides applied when retrying a failed step from the UI/CLI. */
 export type RetryOptions = {
   prompt?: string;
-  model?: ModelAlias;
+  /** Run the step with another agent (a session is never resumed by a different agent). */
+  agent?: AgentKind;
+  model?: string;
   effort?: Effort;
   /** Continue the failed step's session instead of starting fresh. */
   resumeSession?: boolean;

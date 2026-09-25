@@ -39,7 +39,7 @@
         @case ("text") {
           <li class="rounded-md bg-surface-2 px-3 py-2">
             <div class="mb-1 flex items-center gap-2 text-[11px] text-muted">
-              <span class="font-medium text-accent">Claude</span>
+              <span class="font-medium text-accent">{{ speaker() }}</span>
               <span class="font-mono">{{ timeOfDay(item.ts) }}</span>
             </div>
             <div class="leading-relaxed whitespace-pre-wrap">{{ item.text }}</div>

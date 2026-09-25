@@ -2,22 +2,38 @@ import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject,
 import { ACTIVITY_LABELS, type AgentNode } from "../../core/agents";
 import { elapsedMs, formatCost, formatDuration } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
-import { layoutOffice, OfficeRenderer, readTheme, type Spot } from "./office-renderer";
+import { modelFamily, type ModelFamily } from "./looks";
+import { officeMembers, planOffice, type Member, type OfficeTeam } from "./office-plan";
+import { OfficeRenderer, readTheme, type Hit } from "./office-renderer";
 
-/** Below this width the art is drawn at 2× instead of 3×. */
-const WIDE_PX = 560;
+/** From this width the art is drawn at 3× instead of 2× (unless it has to fit a height). */
+const WIDE_PX = 1000;
+/** CSS pixels per art pixel tried when fitting a height, largest first. */
+const MAX_UNIT = 4;
+const MIN_UNIT = 2;
+
+const CLOTHES: Record<ModelFamily, string> = {
+  haiku: "camiseta",
+  sonnet: "sudadera o camisa",
+  opus: "traje",
+  gpt: "camisa verde",
+  gemini: "sudadera azul",
+  other: "ropa de calle",
+};
 
 /**
- * Pixel-art office with one character per agent: waiting room for the planned steps,
- * desks for the ones working (subagents at small tables next to them) and a "done" area.
+ * Pixel-art office shared by every flow: each live flow gets a pod of desks (rug, chairs and
+ * name plate in its colour) and its agents work there; whoever has nothing to do wanders
+ * around the lounge, the kitchen and the games room.
  */
 @Component({
   selector: "nx-pixel-office",
   template: `
-    <div class="relative" [style.height.px]="view().height">
+    <div class="relative mx-auto" [style.width.px]="view().width" [style.height.px]="view().height">
       <canvas
         #canvas
-        class="absolute top-0 left-0 block cursor-pointer"
+        class="absolute top-0 left-0 block"
+        [class.cursor-pointer]="hovered()"
         [style.width.px]="view().width"
         [style.height.px]="view().height"
         aria-hidden="true"
@@ -25,48 +41,18 @@ const WIDE_PX = 560;
         (mouseleave)="hovered.set(null)"
         (click)="click($event)"
       ></canvas>
-      @for (zone of view().zones; track zone.key) {
-        <span
-          class="pointer-events-none absolute truncate text-[10px] font-semibold tracking-wide text-muted uppercase"
-          [style.left.px]="zone.x + 4"
-          [style.top.px]="zone.y + 2"
-          [style.max-width.px]="zone.w - 8"
-          aria-hidden="true"
-          >{{ zone.title }} · {{ zone.count }}</span
-        >
-      }
-      @for (item of view().labels; track item.id) {
-        <span
-          class="pointer-events-none absolute truncate text-center text-[10px] leading-3"
-          [class]="item.working ? 'text-fg' : 'text-muted'"
-          [class.font-semibold]="item.selected"
-          [class.text-accent]="item.selected"
-          [style.left.px]="item.x"
-          [style.top.px]="item.y"
-          [style.width.px]="item.w"
-          aria-hidden="true"
-          >{{ item.text }}</span
-        >
-      }
-      @for (bubble of view().bubbles; track bubble.id) {
-        <span
-          class="pointer-events-none absolute z-10 -translate-y-full truncate rounded border px-1.5 py-px font-mono text-[10px] shadow-sm"
-          [class]="bubble.tone"
-          [style.left.px]="bubble.x"
-          [style.top.px]="bubble.y"
-          [style.max-width.px]="bubble.maxWidth"
-          aria-hidden="true"
-          >{{ bubble.text }}</span
-        >
-      }
       @if (tooltip(); as tip) {
         <div
-          class="pointer-events-none absolute z-20 w-52 rounded-md border border-border bg-surface p-2 text-[11px] shadow-lg"
+          class="pointer-events-none absolute z-20 w-56 rounded-md border border-border bg-surface p-2 text-[11px] shadow-lg"
           [style.left.px]="tip.x"
           [style.top.px]="tip.y"
           role="tooltip"
         >
-          <div class="font-semibold">{{ tip.label }}</div>
+          <div class="flex items-center gap-1.5 font-semibold">
+            <span class="inline-block size-2 shrink-0 rounded-full" [style.background]="tip.color"></span>
+            <span class="truncate">{{ tip.label }}</span>
+          </div>
+          <div class="truncate text-muted">{{ tip.team }}</div>
           <div class="text-muted">{{ tip.kind }}{{ tip.model ? " · " + tip.model : "" }}</div>
           <div class="mt-1">{{ tip.activity }}</div>
           @if (tip.bubble) {
@@ -87,10 +73,10 @@ const WIDE_PX = 560;
       }
     </div>
     <ul class="sr-only" [attr.aria-label]="label()">
-      @for (item of flat(); track item.node.id) {
+      @for (member of members(); track member.key) {
         <li>
-          <button type="button" (click)="select.emit(item.node)" (focus)="focused.set(item.node.id)" (blur)="focused.set(null)">
-            {{ item.child ? "Subagente " : "" }}{{ item.node.label }}: {{ activityLabel(item.node) }}{{ item.node.bubble ? " · " + item.node.bubble : "" }}
+          <button type="button" (click)="select.emit(member.node)" (focus)="focused.set(member.key)" (blur)="focused.set(null)">
+            {{ member.sub ? "Subagente " : "" }}{{ member.node.label }} ({{ teamTitle(member) }}): {{ activityLabel(member.node) }}{{ member.node.bubble ? " · " + member.node.bubble : "" }}
           </button>
         </li>
       }
@@ -104,78 +90,73 @@ export class PixelOffice {
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>("canvas");
   private renderer?: OfficeRenderer;
 
-  public readonly agents = input.required<AgentNode[]>();
+  public readonly teams = input.required<readonly OfficeTeam[]>();
+  /** Step run or agent to mark with an arrow. */
   public readonly selectedId = input<string | undefined>();
+  /** Flow to highlight (the others are dimmed). */
+  public readonly focusTeam = input<string | null>(null);
   public readonly label = input("Agentes");
+  /** Pick the largest zoom whose office fits the host's height (the host must get its height from outside). */
+  public readonly fit = input(false);
   public readonly select = output<AgentNode>();
+  public readonly selectTeam = output<string>();
 
-  protected readonly hovered = signal<Spot | null>(null);
+  protected readonly hovered = signal<Hit | null>(null);
   protected readonly focused = signal<string | null>(null);
   private readonly containerWidth = signal(0);
+  private readonly containerHeight = signal(0);
   private readonly dpr = signal(window.devicePixelRatio || 1);
 
   /** Device pixels per art pixel (integer, so the art stays crisp) and CSS px per art pixel. */
-  private readonly scale = computed(() => {
-    const css = this.containerWidth() >= WIDE_PX ? 3 : 2;
-    const pixel = Math.max(1, Math.round(css * this.dpr()));
-    return { pixel, unit: pixel / this.dpr() };
+  private readonly layout = computed(() => {
+    const dpr = this.dpr();
+    const width = this.containerWidth();
+    const height = this.containerHeight();
+    const plan = (pixel: number) => ({ pixel, unit: pixel / dpr, plan: planOffice(this.teams(), this.members(), Math.floor(width / (pixel / dpr))) });
+    if (this.fit() && height > 0) {
+      // A smaller zoom also means a wider (and so shorter) office: try from the largest down.
+      const min = Math.max(1, Math.round(MIN_UNIT * dpr));
+      for (let pixel = Math.round(MAX_UNIT * dpr); pixel > min; pixel--) {
+        const candidate = plan(pixel);
+        if (candidate.plan.height * candidate.unit <= height) {
+          return candidate;
+        }
+      }
+      return plan(min);
+    }
+    return plan(Math.max(1, Math.round((width >= WIDE_PX ? 3 : 2) * dpr)));
   });
 
-  protected readonly layout = computed(() => {
-    const { unit } = this.scale();
-    return layoutOffice(this.agents(), Math.max(60, Math.floor(this.containerWidth() / unit)));
-  });
+  private readonly scale = computed(() => ({ pixel: this.layout().pixel, unit: this.layout().unit }));
+
+  protected readonly members = computed(() => officeMembers(this.teams()));
+
+  private readonly plan = computed(() => this.layout().plan);
 
   protected readonly view = computed(() => {
-    const layout = this.layout();
     const { unit } = this.scale();
-    const selected = this.selectedId();
-    const px = (value: number): number => Math.round(value * unit);
-    return {
-      width: px(layout.width),
-      height: px(layout.height),
-      zones: layout.zones.map((zone) => ({ ...zone, x: px(zone.x), y: px(zone.y), w: px(zone.w) })),
-      labels: layout.spots.map((spot) => ({
-        id: spot.node.id,
-        text: spot.node.label,
-        working: spot.zone === "office",
-        selected: spot.node.id === selected || (spot.node.stepRunId === selected && spot.node.kind !== "subagent"),
-        x: px(spot.label.x),
-        y: px(spot.label.y),
-        w: px(spot.label.w),
-      })),
-      bubbles: layout.spots
-        .filter((spot) => spot.node.bubble && (spot.zone === "office" || spot.node.activity === "blocked"))
-        .map((spot) => ({
-          id: spot.node.id,
-          text: spot.node.bubble!,
-          tone:
-            spot.node.activity === "blocked"
-              ? "border-warn bg-warn-soft text-warn backdrop-blur"
-              : spot.node.activity === "failed"
-                ? "border-err bg-surface text-err"
-                : "border-border bg-surface text-fg-soft",
-          x: Math.max(0, px(spot.x) - 4),
-          y: px(spot.y - 2),
-          maxWidth: Math.min(176, px(layout.width) - Math.max(0, px(spot.x) - 4)),
-        })),
-    };
+    const plan = this.plan();
+    return { width: Math.round(plan.width * unit), height: Math.round(plan.height * unit) };
   });
 
   protected readonly tooltip = computed(() => {
-    const spot = this.hovered();
-    if (!spot) {
+    const hit = this.hovered();
+    if (hit?.kind !== "agent") {
       return null;
     }
-    const node = spot.node;
+    const member = this.members().find((candidate) => candidate.key === hit.member.key) ?? hit.member;
+    const node = member.node;
     const { unit } = this.scale();
     const width = this.view().width;
-    const x = Math.min(Math.max(0, Math.round((spot.x + 20) * unit)), Math.max(0, width - 212));
+    const x = Math.min(Math.max(0, Math.round((hit.x + 10) * unit)), Math.max(0, width - 228));
+    const family = modelFamily(node.model);
     return {
       x,
-      y: Math.round((spot.y + 4) * unit),
+      y: Math.round((hit.y + 4) * unit),
       label: node.label,
-      kind: { step: "Paso", planned: "Paso pendiente", subagent: "Subagente", builtin: "Paso sin LLM" }[node.kind],
+      team: this.teamTitle(member),
+      color: member.color,
+      kind: node.builtin ? "Robot · paso sin LLM" : member.sub ? "Subagente" : node.kind === "planned" ? "Paso pendiente" : `Paso · va de ${CLOTHES[family]}`,
       model: node.model,
       activity: this.activityLabel(node),
       bubble: node.bubble,
@@ -185,14 +166,16 @@ export class PixelOffice {
     };
   });
 
-  protected readonly flat = computed(() =>
-    this.agents().flatMap((node) => [{ node, child: false }, ...node.children.map((child) => ({ node: child, child: true }))]),
-  );
-
   public constructor() {
     const destroyRef = inject(DestroyRef);
-    const observer = new ResizeObserver(([entry]) => this.containerWidth.set(Math.floor(entry!.contentRect.width)));
-    observer.observe(this.host.nativeElement);
+    const element = this.host.nativeElement;
+    const resize = new ResizeObserver(([entry]) => {
+      this.containerWidth.set(Math.floor(entry!.contentRect.width));
+      this.containerHeight.set(Math.floor(entry!.contentRect.height));
+    });
+    resize.observe(element);
+    const visibility = new IntersectionObserver(([entry]) => this.renderer?.setVisible(entry!.isIntersecting));
+    visibility.observe(element);
     const motion = matchMedia("(prefers-reduced-motion: reduce)");
     const reduced = signal(motion.matches);
     const onMotion = (): void => reduced.set(motion.matches);
@@ -207,7 +190,8 @@ export class PixelOffice {
     };
     dprMedia.addEventListener("change", onDpr);
     destroyRef.onDestroy(() => {
-      observer.disconnect();
+      resize.disconnect();
+      visibility.disconnect();
       motion.removeEventListener("change", onMotion);
       dprMedia.removeEventListener("change", onDpr);
       this.renderer?.stop();
@@ -215,7 +199,7 @@ export class PixelOffice {
 
     afterRenderEffect(() => {
       const renderer = this.ensureRenderer();
-      renderer.setScene(this.layout(), this.scale().pixel);
+      renderer.setScene(this.plan(), this.members(), this.scale().pixel, this.dpr());
     });
     afterRenderEffect(() => {
       const renderer = this.ensureRenderer();
@@ -225,34 +209,46 @@ export class PixelOffice {
       this.store.theme();
       const renderer = this.ensureRenderer();
       // The theme class is toggled by another effect: read the variables once it is applied.
-      requestAnimationFrame(() => renderer.setTheme(readTheme(this.host.nativeElement)));
+      requestAnimationFrame(() => renderer.setTheme(readTheme(element)));
     });
     afterRenderEffect(() => {
       const renderer = this.ensureRenderer();
-      const hovered = this.hovered()?.node.id;
-      renderer.highlight(this.focused() ?? hovered ?? null);
+      const hovered = this.hovered();
+      renderer.highlight(this.focused() ?? (hovered?.kind === "agent" ? hovered.member.key : null));
     });
+    afterRenderEffect(() => this.ensureRenderer().select(this.selectedId()));
+    afterRenderEffect(() => this.ensureRenderer().focus(this.focusTeam()));
   }
 
   protected activityLabel(node: AgentNode): string {
     return node.kind === "planned" && node.activity === "waiting" ? "Pendiente" : ACTIVITY_LABELS[node.activity];
   }
 
+  protected teamTitle(member: Member): string {
+    return this.teams().find((team) => team.id === member.teamId)?.title ?? "";
+  }
+
   protected hover(event: MouseEvent): void {
-    const spot = this.spotAt(event);
-    if (spot?.node.id !== this.hovered()?.node.id) {
-      this.hovered.set(spot ?? null);
+    const hit = this.hitAt(event) ?? null;
+    const current = this.hovered();
+    const same =
+      hit?.kind === current?.kind &&
+      (hit?.kind === "agent" ? hit.member.key === (current as typeof hit).member.key : hit?.kind === "team" ? hit.teamId === (current as typeof hit).teamId : true);
+    if (!same) {
+      this.hovered.set(hit);
     }
   }
 
   protected click(event: MouseEvent): void {
-    const spot = this.spotAt(event);
-    if (spot) {
-      this.select.emit(spot.node);
+    const hit = this.hitAt(event);
+    if (hit?.kind === "agent") {
+      this.select.emit(hit.member.node);
+    } else if (hit?.kind === "team") {
+      this.selectTeam.emit(hit.teamId);
     }
   }
 
-  private spotAt(event: MouseEvent): Spot | undefined {
+  private hitAt(event: MouseEvent): Hit | undefined {
     const { unit } = this.scale();
     return this.renderer?.hitTest(event.offsetX / unit, event.offsetY / unit);
   }

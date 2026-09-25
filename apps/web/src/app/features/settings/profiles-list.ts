@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import { orderSteps } from "@nexura/shared";
+import { AGENT_LABELS, agentOf, orderSteps, type FlowProfile } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -41,7 +41,7 @@ const BASE_PROFILES = new Set(["minimal", "standard", "full"]);
               <span class="rounded bg-surface-3 px-1.5 py-0.5 text-[11px]">{{ step }}</span>
             }
           </div>
-          <p class="mt-2 text-[11px] text-muted">{{ card.maxLoops }} vuelta(s) · presupuesto {{ card.budget }}{{ card.blind ? " · revisión doble ciega" : "" }}</p>
+          <p class="mt-2 text-[11px] text-muted">{{ card.maxLoops }} vuelta(s) · presupuesto {{ card.budget }}{{ card.blind ? " · revisión doble ciega" : "" }}{{ card.agents ? " · " + card.agents : "" }}</p>
           <div class="mt-3 flex gap-1 border-t border-border pt-3">
             <a
               class="rounded-md border border-border px-2.5 py-1 text-[12px] hover:bg-surface-3"
@@ -87,6 +87,7 @@ export class ProfilesList {
       base: BASE_PROFILES.has(profile.name),
       maxLoops: profile.maxLoops,
       blind: profile.reviewMode === "blind",
+      agents: agentsOf(profile, this.store.config()?.steps ?? []),
       budget: profile.budgetUsd === undefined ? "sin límite" : `$${profile.budgetUsd.toFixed(2)}`,
       steps: this.order()
         .filter((name) => profile.steps[name]?.enabled)
@@ -110,4 +111,17 @@ export class ProfilesList {
       this.busy.set(false);
     }
   }
+}
+
+/** "Claude Code + Codex" when a profile mixes agents (judge B included); empty when it is all Claude. */
+function agentsOf(profile: FlowProfile, steps: { name: string; kind: string }[]): string {
+  const used = new Set(
+    Object.entries(profile.steps)
+      .filter(([name, step]) => step?.enabled && steps.find((definition) => definition.name === name)?.kind !== "builtin")
+      .map(([, step]) => agentOf(step)),
+  );
+  if (profile.reviewMode === "blind" && profile.judgeB) {
+    used.add(agentOf(profile.judgeB));
+  }
+  return [...used].some((agent) => agent !== "claude") ? [...used].map((agent) => AGENT_LABELS[agent]).join(" + ") : "";
 }

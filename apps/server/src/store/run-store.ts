@@ -171,10 +171,11 @@ export class RunStore {
        FROM runs`,
     );
     const byStep = all<Metrics["byStep"][number]>(
-      `SELECT step, CASE WHEN json_extract(data, '$.kind') = 'builtin' THEN 'sin LLM' ELSE model END AS model,
+      `SELECT step, CASE WHEN json_extract(data, '$.kind') = 'builtin' THEN NULL ELSE COALESCE(json_extract(data, '$.agent'), 'claude') END AS agent,
+         CASE WHEN json_extract(data, '$.kind') = 'builtin' THEN 'sin LLM' ELSE model END AS model,
          COUNT(*) AS runs, SUM(status = 'failed') AS failed, SUM(cost_usd) AS costUsd, AVG(cost_usd) AS avgCostUsd,
          AVG(num_turns) AS avgTurns, SUM(${tokens}) AS tokens
-       FROM step_runs WHERE status != 'skipped' GROUP BY 1, 2 ORDER BY costUsd DESC, runs DESC`,
+       FROM step_runs WHERE status != 'skipped' GROUP BY 1, 2, 3 ORDER BY costUsd DESC, runs DESC`,
     );
     const byProfile = all<Metrics["byProfile"][number]>(
       `SELECT COALESCE(profile, 'sin decidir') AS profile, COUNT(*) AS runs, SUM(status = 'done') AS done,

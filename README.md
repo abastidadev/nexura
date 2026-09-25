@@ -23,7 +23,7 @@ IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) qu
 ```
 packages/shared/            tipos: eventos normalizados, perfiles, Run/StepRun, mensajes WS
 apps/server/src/
-  runner/                   ClaudeProcess (spawn claude.exe, prompt por stdin) + parser stream-json
+  runner/                   AgentProcess + un adaptador por CLI (claude -p, codex exec, copilot -p) + parser stream-json
   orchestrator/             secuencia de pasos, vuelta a implement, reintentos, breakpoints, rate limit
                             builtin-steps: qaCode (checks del repo) y release local, sin tokens
   workspace/                git worktree por run y repo, junction de node_modules, commits
@@ -35,10 +35,10 @@ apps/server/src/
   terminal/                 PTY (@lydell/node-pty, binarios precompilados) para la terminal embebida
   cli/                      comando nexura
 apps/web/                   UI Angular 22 + Tailwind v4 (tabs, nuevo flujo, vista del flujo)
-config/profiles/*.json      minimal / standard / full
+config/profiles/*.json      minimal / standard / full / copilot-test
 config/steps/<paso>/        step.json (tools, allowlist, timeout) · prompt.md · schema.json
 config/repos.json           tus repos (local, gitignored; ver repos.example.json)
-fixtures/                   stream-json reales + fake-claude.mjs para tests sin tokens
+fixtures/                   stream-json reales + fake-claude/codex/copilot.mjs para tests sin tokens
 ```
 
 ## Uso
@@ -68,7 +68,7 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 - **Pestañas**: cada flujo abierto es una pestaña con su estado y coste; puedes tener varios corriendo a la vez.
 - **Nuevo flujo**: ticket, tareas con checkbox (se extraen de las viñetas del ticket), repos con checkbox, prompt adicional, perfil (automático o uno concreto) y modo *paso a paso*.
 - **Vista del flujo**: pipeline de pasos (con reintentos y vueltas), timeline en vivo de cada paso (texto, herramientas con entrada/resultado, errores en rojo, resultado con coste/tokens/turnos), prompt renderizado, salida JSON, log crudo y el comando exacto. A la derecha: tareas que se van marcando, ramas/worktrees y el libro de tareas.
-- **Agentes** (pestaña de la cabecera): oficina pixel-art con todos los agentes de los flujos activos, una sala por flujo. Los pasos del perfil que aún no han empezado duermen en la sala de espera; el que trabaja camina a su mesa y se anima según lo que hace (teclea al editar, lee al buscar, ejecuta comandos, piensa…) con un bocadillo con la herramienta actual; los subagentes que lance un paso (herramienta `Agent`/`Task`) aparecen en mesas pequeñas a su lado; los terminados pasan a «Hecho». Los pasos sin LLM (QA, release) son robots y el color de la camiseta indica el modelo (haiku, sonnet, opus). Debajo, plegados, los flujos terminados en las últimas 24 h. Dentro de cada flujo, el conmutador **Pasos | Oficina** del pipeline muestra la misma oficina solo con ese flujo. Para verla moverse sin gastar tokens: `NEXURA_CLAUDE_BIN=fixtures/fake-claude.mjs FAKE_SUBAGENTS=1 FAKE_DELAY_MS=2000` (más `FAKE_STATE_DIR`).
+- **Agentes** (pestaña de la cabecera): una única oficina pixel-art con los agentes de todos los flujos. Cada flujo activo tiene su isla de mesas con alfombra, sillas y placa de su color, y sus agentes llevan el cordón de la acreditación de ese color; la ropa delata el modelo (camiseta Haiku, sudadera o camisa Sonnet, traje Opus, camisa verde GPT, sudadera azul Gemini), cada rol lleva su accesorio (auriculares quien implementa, gafas quien revisa…) y los pasos sin LLM son robots. Quien trabaja se sienta en su mesa y su monitor muestra lo que hace (código, terminal, documento, spinner, aviso si espera aprobación), con la herramienta actual bajo la silla; los subagentes entran por la puerta, ocupan las mesas libres con portátil de su flujo y se van al terminar. Los que no tienen trabajo (pasos pendientes, terminados o fallidos) se buscan la vida: sofá (y se duermen), café, fuente, máquina de snacks, recreativas, ping-pong, charlas con bocadillos, siesta en su mesa o acariciar al gato de la oficina; a quien ha fallado le sigue una nubecita. La ventana y el reloj siguen la hora real. La oficina ocupa todo el alto de la página y elige el zoom más grande con el que cabe sin scroll; en pantallas anchas pone la sala y la cocina lado a lado sobre la sala de juegos. Al pasar el ratón por un flujo de la leyenda se resalta su equipo; con «Todos» se quedan también los agentes de los últimos flujos terminados. Dentro de cada flujo, el conmutador **Pasos | Oficina** del pipeline muestra la misma oficina solo con ese flujo; ese panel se ensancha arrastrando su borde derecho (doble clic lo restablece) y, a partir de unos 540 px, la oficina coloca las salas al lado de las mesas. Para verla moverse sin gastar tokens, la skill `/try-fake` (o `NEXURA_CLAUDE_BIN=fixtures/fake-claude.mjs FAKE_SUBAGENTS=1 FAKE_DELAY_MS=2000` más `FAKE_STATE_DIR`).
 - **Depuración**: en el paso que falló, reintentar (editando prompt, modelo o esfuerzo), continuar su sesión de Claude con una instrucción, o saltarlo. En modo paso a paso, se para antes de cada paso para revisar o editar el prompt.
 - **Cuota**: medidor en vivo de las ventanas de 5 h y 7 días del plan.
 - **Terminal embebida** (xterm.js + PTY): botón *Terminal* abre PowerShell en el worktree del flujo; *Abrir en Claude* reanuda la sesión de un paso (`claude --resume`) para seguir hablando con él a mano. Nexura marca como confiables solo sus worktrees (`*.worktrees/nexura-*`) en `~/.claude.json` y quita la marca al borrarlos; desactívalo con `NEXURA_TRUST_WORKTREES=0`.
@@ -108,9 +108,28 @@ Lo que se puede hacer:
 - **Comentarios de la PR**: *Comprobar comentarios* lee los hilos activos (gratis): en Azure los hilos activos; en GitHub los hilos de revisión sin resolver (los comentarios generales de la conversación no tienen estado de resuelto y no se siguen). *Atender comentarios* lanza `addressReview` (Claude): corrige, hace commit en local y redacta una respuesta por hilo (`fixed` / `answered` / `wontFix`). Se pausa para aprobar: al aprobar hace push, publica las respuestas marcadas y resuelve los hilos arreglados (en GitHub, `wontFix` también resuelve el hilo). Las respuestas a hilos que no existen se descartan.
 - **Vigilancia**: la de PRs funciona igual en los dos; en GitHub una PR mergeada cuenta como completada y una cerrada sin merge como abandonada.
 
+## Agentes: Claude Code, Codex y Copilot
+
+Cada paso con LLM de un perfil elige **agente** y **modelo** (Configuración → Perfiles), y un mismo flujo puede mezclarlos: por ejemplo plan con Claude opus, implement con Codex `gpt-5-codex` y codeReview con Claude. En la revisión doble ciega, el **juez B** puede ir con otro agente o modelo que el juez A, así que lo que vuelve a implement lo confirman dos modelos distintos. El modelo es texto libre (cualquier id que acepte ese CLI). La lista solo sugiere. Al reintentar un paso fallido también se puede cambiar de agente; como las sesiones de un agente no sirven a otro, el paso empieza de cero.
+
+- **Claude Code**: `claude -p` (ver abajo).
+- **Codex**: `codex exec --json` con tu plan de ChatGPT (`npm install -g @openai/codex` y `codex login`). El prompt va por stdin y la respuesta estructurada llega con `--output-schema`: Nexura pasa el schema del paso en modo estricto, con los campos opcionales como nullable. Codex no tiene lista de herramientas: los pasos que editan corren con `--sandbox workspace-write` (solo el worktree y sin red, así que tampoco puede hacer push ni commits en el `.git` del repo) y el resto con `read-only`.
+- **Copilot**: `copilot -p --output-format json` con tu plan de GitHub Copilot (`winget install GitHub.Copilot` o `npm install -g @github/copilot`, y `copilot login`), que da acceso a modelos de Claude, GPT y Gemini (con `gpt-5-mini` no gasta peticiones premium). Los permisos del paso se traducen a `--allow-tool` / `--deny-tool` (`Bash(git diff*)` → `shell(git diff:*)`, `Edit` → `write`…), el esfuerzo a `--reasoning-effort`, y sin MCP en el paso se desactiva el MCP de GitHub que trae de serie. Copilot no admite schema, así que el prompt pide terminar con un bloque ```json y Nexura lo valida contra el schema del paso. Los tokens salen de `--usage-output-file` y las peticiones premium se anotan en el paso. Los prompts largos van en un fichero temporal.
+
+| | Claude Code | Codex | Copilot |
+|---|---|---|---|
+| Salida estructurada | `--json-schema` | `--output-schema` (estricto) | bloque JSON validado por Nexura |
+| Permisos | `--tools` + allow/deny | sandbox read-only / workspace-write | `--allow-tool` / `--deny-tool` |
+| Memoria compartida (MCP) | ✅ | ✅ (`-c mcp_servers…`) | ✅ (`--additional-mcp-config`) |
+| Coste en USD, presupuesto y pausa por cuota | ✅ | — (solo tokens) | — (solo tokens) |
+| Mensajes a mitad de paso | ✅ | — | — |
+| Reanudar sesión (reintento y terminal) | ✅ | ✅ | ✅ |
+
+En Configuración → General se ve qué CLIs están instalados (con `--version`, sin gastar tokens). Para usar otro binario están `NEXURA_CLAUDE_BIN`, `NEXURA_CODEX_BIN` y `NEXURA_COPILOT_BIN`. Si Codex o Copilot devuelven un límite de uso, el paso falla con ese aviso y sin espera automática: Nexura no conoce sus ventanas. El adaptador de Copilot está comprobado con el CLI real (1.0.88; grabaciones en `fixtures/stream/0[89]-copilot-*`); el de Codex está escrito a partir de su documentación y probado con un CLI falso (`fixtures/fake-codex.mjs`). Si un CLI real cambia su formato de salida, lo desconocido queda como evento `unknown` y la línea cruda se conserva en el log.
+
 ## Cómo funciona cada paso
 
-- Cada paso de tipo `claude` lanza `claude -p` en el worktree con **`--tools`** (lista dura), `--permission-mode dontAsk`, `--strict-mcp-config` salvo que el paso pida MCP, y `--json-schema` para que devuelva JSON validado.
+- Cada paso de tipo `claude` con el agente Claude lanza `claude -p` en el worktree con **`--tools`** (lista dura), `--permission-mode dontAsk`, `--strict-mcp-config` salvo que el paso pida MCP, y `--json-schema` para que devuelva JSON validado.
 - `implement` no hace commit: lo hace el orquestador con el `commitMessage` que devuelve (sin trailers de IA).
 - **Revisión doble ciega** (`reviewMode: "blind"` del perfil, activa en `full`): `codeReview` lo ejecutan dos jueces (A y B) en serie, con el mismo prompt y sesiones nuevas, así que ninguno ve la respuesta del otro (B solo lee la memoria). Solo vuelven a `implement` las issues `blocker`/`major` que ambos marcan en el mismo fichero; lo que marca un solo juez se descarta (queda en el libro de tareas y en un evento del paso) y las `minor` se ignoran. Duplica el coste de `codeReview`, pero evita gastar vueltas en falsos positivos. Agotar `maxLoops` equivale a un veredicto *escalado*.
 - `codeReview` → `changes` o `qaCode` → fallo devuelven el trabajo a `implement` con el feedback, hasta `maxLoops` del perfil.

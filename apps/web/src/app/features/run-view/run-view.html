@@ -132,7 +132,28 @@
     </section>
   }
 
-  <div class="grid min-h-0 flex-1 grid-cols-[260px_minmax(0,1fr)_300px]" [class.hidden]="terminal() && terminalMaximized()">
+  <div
+    class="relative grid min-h-0 flex-1"
+    [style.grid-template-columns]="pipelineWidth() + 'px minmax(0, 1fr) 300px'"
+    [class.hidden]="terminal() && terminalMaximized()"
+  >
+    <div
+      class="absolute inset-y-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-accent/40 focus-visible:bg-accent/60 focus-visible:outline-none"
+      [class.bg-accent/40]="resizing()"
+      [style.left.px]="pipelineWidth() - 3"
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Ancho del panel del pipeline"
+      [attr.aria-valuenow]="pipelineWidth()"
+      [attr.aria-valuemin]="pipelineMin"
+      [attr.aria-valuemax]="pipelineMax"
+      tabindex="0"
+      title="Arrastra para cambiar el ancho · doble clic para restablecerlo"
+      (pointerdown)="startResize($event)"
+      (dblclick)="setPipelineWidth(pipelineDefault)"
+      (keydown.arrowleft)="setPipelineWidth(pipelineWidth() - 20); $event.preventDefault()"
+      (keydown.arrowright)="setPipelineWidth(pipelineWidth() + 20); $event.preventDefault()"
+    ></div>
     <aside class="overflow-y-auto border-r border-border bg-surface p-3">
       <div class="mb-2 flex items-center gap-2">
         <h2 class="text-[11px] font-semibold tracking-wide text-muted uppercase">Pipeline</h2>
@@ -161,7 +182,7 @@
         </div>
       </div>
       @if (pipelineMode() === "office") {
-        <nx-pixel-office [agents]="agents()" [selectedId]="selectedStep()?.id" label="Agentes del flujo" (select)="selectAgent($event)" />
+        <nx-pixel-office [teams]="officeTeams()" [selectedId]="selectedStep()?.id" label="Agentes del flujo" (select)="selectAgent($event)" />
       } @else {
         <nx-step-pipeline
           [steps]="run.steps"

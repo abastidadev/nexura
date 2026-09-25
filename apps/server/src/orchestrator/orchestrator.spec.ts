@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { PrDraft, ReviewReply, ReviewThread, Run, RunRequest, Worktree } from "@nexura/shared";
+import { AGENT_MODELS, type PrDraft, type ReviewReply, type ReviewThread, type Run, type RunRequest, type Worktree } from "@nexura/shared";
 import type { RepoRemote } from "../forge/remote.ts";
 
 // Never push or call Azure DevOps / GitHub from tests: record what would have been created.
@@ -40,7 +40,10 @@ const repoPath = join(root, "sandbox");
 const stateDir = join(root, "state");
 process.env.NEXURA_DATA_DIR = join(root, "data");
 process.env.NEXURA_REPOS = join(root, "repos.json");
-process.env.NEXURA_CLAUDE_BIN = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "fake-claude.mjs");
+const FIXTURES = join(import.meta.dirname, "..", "..", "..", "..", "fixtures");
+process.env.NEXURA_CLAUDE_BIN = join(FIXTURES, "fake-claude.mjs");
+process.env.NEXURA_CODEX_BIN = join(FIXTURES, "fake-codex.mjs");
+process.env.NEXURA_COPILOT_BIN = join(FIXTURES, "fake-copilot.mjs");
 process.env.FAKE_STATE_DIR = stateDir;
 // Never touch the real ~/.claude.json from tests.
 process.env.NEXURA_TRUST_WORKTREES = "0";
@@ -694,5 +697,130 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
     await watcher.tick();
     expect(store.getRun(started.id)!.reviewWatch!.checkedAt).toBe(checkedAt);
     await orchestrator.cleanup(started.id, true);
+  });
+});
+
+describe("Mixed agents (fake codex and copilot)", () => {
+  type Call = { args: string[]; prompt: string };
+  const callOf = (agent: string, step: string, count = 1): Call => JSON.parse(readFileSync(join(stateDir, `${agent}-${step}-${count}.json`), "utf8")) as Call;
+  const flagValues = (args: string[], flag: string): string[] => args.flatMap((arg, index) => (arg === flag ? [args[index + 1]!] : []));
+
+  it("runs one flow on three agents, with a blind review whose judges use different agents", async () => {
+    process.env.FAKE_REVIEW_REJECTS = "2";
+    const config = loadConfig();
+    const standard = config.profiles.get("standard")!;
+    config.profiles.set("mixed", {
+      ...standard,
+      name: "mixed",
+      maxLoops: 1,
+      reviewMode: "blind",
+      judgeB: { agent: "copilot", model: "gpt-5", effort: "high" },
+      steps: {
+        ...standard.steps,
+        enrich: { agent: "copilot", model: "claude-haiku-4.5", effort: "low", enabled: true },
+        plan: { agent: "claude", model: "opus", effort: "high", enabled: true },
+        implement: { agent: "codex", model: "gpt-5-codex", effort: "high", enabled: true },
+        codeReview: { model: "sonnet", effort: "medium", enabled: true },
+      },
+    });
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(config, store, { concurrency: 1 });
+    const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "mixed" })).id);
+
+    expect(run.error).toBeUndefined();
+    expect(run.status).toBe("done");
+    expect(run.steps.map((s) => `${s.step}${s.judge ? `:${s.judge}` : ""}@${s.agent ?? "-"}/${s.model}`)).toEqual([
+      "enrich@copilot/claude-haiku-4.5",
+      "plan@claude/opus",
+      "implement@codex/gpt-5-codex",
+      "codeReview:A@claude/sonnet",
+      "codeReview:B@copilot/gpt-5",
+      "implement@codex/gpt-5-codex",
+      "codeReview:A@claude/sonnet",
+      "codeReview:B@copilot/gpt-5",
+      "qaCode@-/haiku",
+      "release@-/haiku",
+    ]);
+    // Both judges agreed on the same file, so the work went back to implement.
+    expect(run.steps.filter((s) => s.step === "implement")[1]!.prompt).toContain("[major] x: p → f");
+
+    // Codex: writable sandbox, strict schema file, the memory server as -c overrides and its protocol before the prompt.
+    const implement = callOf("codex", "implement");
+    expect(flagValues(implement.args, "--sandbox")).toEqual(["workspace-write"]);
+    expect(implement.args).toContain("--output-schema");
+    expect(implement.args.join(" ")).toContain("mcp_servers.nexura-memory.args=");
+    expect(implement.prompt.indexOf("Eres el paso **implement**")).toBeGreaterThan(0);
+    const implementRun = run.steps.find((s) => s.step === "implement")!;
+    expect(implementRun).toMatchObject({ costUsd: 0, usage: { inputTokens: 100, cacheReadTokens: 40, thinkingTokens: 5 } });
+    expect(implementRun.sessionId).toBeTruthy();
+    expect(git(run.worktrees[0]!.path, "log", "--format=%s", "-3")).toContain("feat(fake): implement 1");
+    // Its commands and file changes show up as Bash/Edit tool calls.
+    const tools = store.getEvents(implementRun.id).flatMap((e) => (e.event.kind === "toolUse" ? [e.event.name] : []));
+    expect(tools).toEqual(["Bash", "Edit"]);
+
+    // Copilot: read-only enrich (no write, no shell), the answer format in the prompt, validated JSON back.
+    const enrich = callOf("copilot", "enrich");
+    expect(flagValues(enrich.args, "--deny-tool")).toEqual(expect.arrayContaining(["write", "shell"]));
+    expect(flagValues(enrich.args, "--model")).toEqual(["claude-haiku-4.5"]);
+    expect(JSON.parse(flagValues(enrich.args, "--additional-mcp-config")[0]!)).toMatchObject({ mcpServers: { "nexura-memory": { type: "local" } } });
+    expect(enrich.prompt).toContain("## Formato de la respuesta final");
+    expect(run.steps[0]!.structuredOutput).toMatchObject({ conventions: ["Usa inject() en vez de constructores"] });
+    // Judge B only reads the memory and runs on its own agent with the very same prompt as judge A.
+    const judgeB = callOf("copilot", "codeReview", 2);
+    expect(flagValues(judgeB.args, "--allow-tool")).toContain("shell(git diff:*)");
+    expect(flagValues(judgeB.args, "--deny-tool")).toContain("write");
+    const reviews = run.steps.filter((s) => s.step === "codeReview");
+    expect(reviews[0]!.prompt).toBe(reviews[1]!.prompt);
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("does not hold Codex or Copilot steps for Claude's quota", async () => {
+    const store = new RunStore(":memory:");
+    store.setSetting("quota", {
+      status: "allowed",
+      fiveHour: { utilization: 0.99, resetsAt: Math.floor(Date.now() / 1000) + 3600 },
+      updatedAt: new Date().toISOString(),
+    });
+    const config = loadConfig();
+    const minimal = config.profiles.get("minimal")!;
+    config.profiles.set("no-claude", {
+      ...minimal,
+      name: "no-claude",
+      budgetUsd: 0.000001,
+      steps: {
+        ...minimal.steps,
+        enrich: { agent: "copilot", model: "gpt-5-mini", effort: "low", enabled: true },
+        implement: { agent: "codex", model: "gpt-5-codex", effort: "medium", enabled: true },
+      },
+    });
+    const orchestrator = new Orchestrator(config, store, { concurrency: 1 });
+    const statuses = new Set<string>();
+    orchestrator.on("message", (message) => message.type === "run" && statuses.add(message.run.status));
+    const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "no-claude" })).id);
+
+    expect(run.error).toBeUndefined();
+    expect(run.status).toBe("done");
+    expect(statuses.has("waiting-rate-limit")).toBe(false);
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("retries a failed step on another agent without resuming the old agent's session", async () => {
+    process.env.FAKE_FAIL_MARKER = "ROMPER";
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Ticket ROMPER" }));
+    const failed = await waitFor(orchestrator, started.id);
+    expect(failed.steps.at(-1)).toMatchObject({ step: "enrich", status: "failed", agent: "claude" });
+
+    const retried = waitFor(orchestrator, started.id);
+    orchestrator.retry(started.id, { agent: "codex", resumeSession: true, prompt: "Eres el paso **enrich**. Versión corregida." });
+    const run = await retried;
+
+    expect(run.status).toBe("done");
+    expect(run.steps[1]).toMatchObject({ step: "enrich", status: "succeeded", agent: "codex", model: AGENT_MODELS.codex[0] });
+    // Call counters are shared by the fakes: the failed claude enrich was call 1.
+    expect(callOf("codex", "enrich", 2).args).not.toContain("resume");
+    expect(callOf("codex", "enrich", 2).args).toEqual(expect.arrayContaining(["--sandbox", "read-only"]));
+    await orchestrator.cleanup(run.id, true);
   });
 });

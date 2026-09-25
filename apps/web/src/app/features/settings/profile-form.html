@@ -71,7 +71,7 @@
         </select>
       </label>
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-muted uppercase" title="Tope de coste por flujo; se pasa a cada paso como --max-budget-usd">Presupuesto $</span>
+        <span class="text-[11px] font-medium text-muted uppercase" title="Tope de coste por flujo; se pasa a cada paso con Claude como --max-budget-usd (Codex y Copilot no informan de coste)">Presupuesto $</span>
         <input
           type="number"
           min="0"
@@ -89,6 +89,7 @@
         <tr>
           <th class="py-2 pr-3 font-medium">Activo</th>
           <th class="py-2 pr-3 font-medium">Paso</th>
+          <th class="py-2 pr-3 font-medium" title="Claude Code, Codex o Copilot: se pueden mezclar en un mismo flujo">Agente</th>
           <th class="py-2 pr-3 font-medium">Modelo</th>
           <th class="py-2 font-medium">Esfuerzo</th>
         </tr>
@@ -116,14 +117,21 @@
               }
             </td>
             @if (row.builtin) {
-              <td class="py-2 text-muted" colspan="2">sin LLM (código del orquestador, 0 tokens)</td>
+              <td class="py-2 text-muted" colspan="3">sin LLM (código del orquestador, 0 tokens)</td>
             } @else {
+              @let agent = agentOf(row.config);
               <td class="py-2 pr-3">
-                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" [attr.aria-label]="'Modelo de ' + row.label" (change)="setModel(row.name, $event)">
-                  @for (model of models; track model) {
-                    <option [value]="model" [selected]="model === row.config.model">{{ model }}</option>
+                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" [attr.aria-label]="'Agente de ' + row.label" (change)="setAgent(row.name, $event)">
+                  @for (kind of agentKinds; track kind) {
+                    <option [value]="kind" [selected]="kind === agent">{{ agentLabels[kind] }}</option>
                   }
                 </select>
+                @if (missingAgents().get(agent); as problem) {
+                  <span class="ml-1 text-[11px] text-warn" [title]="problem">⚠ no instalado</span>
+                }
+              </td>
+              <td class="py-2 pr-3">
+                <nx-model-picker [models]="agentModels()[agent]" [value]="row.config.model" [label]="'Modelo de ' + row.label" (valueChange)="setModel(row.name, $event)" />
               </td>
               <td class="py-2">
                 <select class="rounded border border-border bg-surface-2 px-1.5 py-1" [attr.aria-label]="'Esfuerzo de ' + row.label" (change)="setEffort(row.name, $event)">
@@ -134,9 +142,47 @@
               </td>
             }
           </tr>
+          @if (row.name === "codeReview" && profile.reviewMode === "blind") {
+            @let judge = profile.judgeB;
+            <tr class="border-b border-border last:border-b-0" [class.opacity-50]="!row.config.enabled">
+              <td></td>
+              <td class="py-2 pr-3 pl-4 text-fg-soft" title="El juez A es el propio paso codeReview. Con otro agente o modelo, lo que vuelve a implement lo confirman dos modelos distintos.">
+                ↳ Juez B
+              </td>
+              <td class="py-2 pr-3">
+                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" aria-label="Agente del juez B" (change)="setJudgeBAgent($event)">
+                  <option value="same" [selected]="!judge">Igual que el juez A</option>
+                  @for (kind of agentKinds; track kind) {
+                    <option [value]="kind" [selected]="judge && kind === agentOf(judge)">{{ agentLabels[kind] }}</option>
+                  }
+                </select>
+                @if (judge && missingAgents().get(agentOf(judge)); as problem) {
+                  <span class="ml-1 text-[11px] text-warn" [title]="problem">⚠ no instalado</span>
+                }
+              </td>
+              @if (judge) {
+                <td class="py-2 pr-3">
+                  <nx-model-picker [models]="agentModels()[agentOf(judge)]" [value]="judge.model" label="Modelo del juez B" (valueChange)="patchJudgeB({ model: $event })" />
+                </td>
+                <td class="py-2">
+                  <select class="rounded border border-border bg-surface-2 px-1.5 py-1" aria-label="Esfuerzo del juez B" (change)="patchJudgeB({ effort: $any(value($event)) })">
+                    @for (effort of efforts; track effort) {
+                      <option [value]="effort" [selected]="effort === judge.effort">{{ effort }}</option>
+                    }
+                  </select>
+                </td>
+              } @else {
+                <td class="py-2 text-[12px] text-muted" colspan="2">mismo agente, modelo y esfuerzo que codeReview</td>
+              }
+            </tr>
+          }
         }
       </tbody>
     </table>
+    <p class="mt-2 text-[11px] text-muted">
+      La lista de Copilot la da el CLI instalado; en Claude, sonnet/opus/haiku/fable apuntan siempre al último modelo. Con «Otro…» vale cualquier id que acepte ese CLI. Codex y Copilot no informan de coste: el presupuesto y la pausa por cuota
+      solo se aplican a los pasos con Claude, y solo Claude admite mensajes a mitad de paso.
+    </p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
       <button type="submit" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy() || !dirty()">

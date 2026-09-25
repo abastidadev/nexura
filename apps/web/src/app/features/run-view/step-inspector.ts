@@ -1,20 +1,22 @@
 import { Component, computed, inject, input, linkedSignal, output, resource, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
-import type { Effort, ModelAlias, Run, StepRun } from "@nexura/shared";
+import { AGENT_KINDS, AGENT_LABELS, agentOf, modelsFor, type AgentKind, type Effort, type Run, type StepRun } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { elapsedMs, formatCost, formatDuration, formatTokens, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
+import { elapsedMs, formatCost, formatDuration, formatTokens, modelDetail, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
+import { ModelPicker } from "../../shared/model-picker";
 import { EventTimeline } from "./event-timeline";
 
 type Tab = "events" | "prompt" | "output" | "raw" | "command";
 type DebugMode = "retry" | "resume" | "skip";
 
-export const MODELS: ModelAlias[] = ["haiku", "sonnet", "opus"];
+/** How to reopen a session of each agent by hand, and the binary shown in "Comando". */
+const RESUME_COMMAND: Record<AgentKind, string> = { claude: "claude --resume", codex: "codex resume", copilot: "copilot --resume" };
 export const EFFORTS: Effort[] = ["low", "medium", "high", "xhigh"];
 
 @Component({
   selector: "nx-step-inspector",
-  imports: [EventTimeline, RouterLink],
+  imports: [EventTimeline, RouterLink, ModelPicker],
   templateUrl: "./step-inspector.html",
   host: { class: "flex min-h-0 flex-col" },
 })
@@ -40,7 +42,8 @@ export class StepInspector {
     { id: "resume", label: "Continuar sesión" },
     { id: "skip", label: "Saltar" },
   ];
-  protected readonly models = MODELS;
+  protected readonly agents = AGENT_KINDS;
+  protected readonly agentLabels = AGENT_LABELS;
   protected readonly efforts = EFFORTS;
   protected readonly tab = signal<Tab>("events");
   protected readonly copied = signal(false);
@@ -66,7 +69,7 @@ export class StepInspector {
   });
   protected readonly command = computed(() => {
     const args = this.step().args;
-    return args ? `claude ${args.map((arg) => (/[\s"{}]/.test(arg) ? JSON.stringify(arg) : arg)).join(" ")}` : "";
+    return args ? `${agentOf(this.step())} ${args.map((arg) => (/[\s"{}]/.test(arg) ? JSON.stringify(arg) : arg)).join(" ")}` : "";
   });
 
   protected readonly raw = resource({
@@ -82,15 +85,25 @@ export class StepInspector {
   });
   protected readonly mode = signal<DebugMode>("retry");
   protected readonly editedPrompt = linkedSignal(() => this.step().prompt ?? "");
-  protected readonly model = linkedSignal<ModelAlias>(() => this.step().model);
+  protected readonly stepAgent = computed(() => agentOf(this.step()));
+  protected readonly agent = linkedSignal<AgentKind>(() => this.stepAgent());
+  /** Models the installed CLIs report; only asked for when the step can be retried. */
+  private readonly agentInfo = resource({ params: () => this.canDebug() || undefined, loader: () => this.api.getAgents() });
+  protected readonly modelSuggestions = computed(() => modelsFor(this.agent(), this.agentInfo.hasValue() ? this.agentInfo.value() : undefined));
+  /** Back to the step's model on its own agent; the agent's default model on another one. */
+  protected readonly model = linkedSignal<string>(() => (this.agent() === this.stepAgent() ? this.step().model : this.modelSuggestions()[0]!));
+  protected readonly detail = computed(() => modelDetail(this.step()));
+  protected readonly agentLabel = computed(() => AGENT_LABELS[this.stepAgent()]);
   protected readonly effort = linkedSignal<Effort>(() => this.step().effort);
   protected readonly instruction = signal("");
   protected readonly busy = signal(false);
   protected readonly debugError = signal<string | null>(null);
-  protected readonly isClaude = computed(() => this.step().kind === "claude");
+  /** Runs on a coding agent (claude, codex or copilot), not builtin code. */
+  protected readonly isAgent = computed(() => this.step().kind === "claude");
 
   // ---- talking to the running step
-  protected readonly canMessage = computed(() => this.isClaude() && this.step().status === "running");
+  /** Only Claude takes messages mid-step. */
+  protected readonly canMessage = computed(() => this.isAgent() && this.stepAgent() === "claude" && this.step().status === "running");
   protected readonly draftMessage = signal("");
   protected readonly sending = signal(false);
   protected readonly messageError = signal<string | null>(null);
@@ -130,7 +143,7 @@ export class StepInspector {
     if (!id) {
       return;
     }
-    await navigator.clipboard.writeText(`claude --resume ${id}`);
+    await navigator.clipboard.writeText(`${RESUME_COMMAND[this.stepAgent()]} ${id}`);
     this.copied.set(true);
     setTimeout(() => this.copied.set(false), 1500);
   }
@@ -145,7 +158,9 @@ export class StepInspector {
         skip: mode === "skip" || undefined,
         resumeSession: mode === "resume" || undefined,
         instruction: mode === "resume" ? this.instruction().trim() || undefined : undefined,
-        prompt: mode === "retry" && this.isClaude() && prompt !== this.step().prompt ? prompt : undefined,
+        prompt: mode === "retry" && this.isAgent() && prompt !== this.step().prompt ? prompt : undefined,
+        // Another agent starts fresh: its sessions are not interchangeable.
+        agent: mode !== "skip" && this.agent() !== this.stepAgent() ? this.agent() : undefined,
         model: mode === "skip" ? undefined : this.model(),
         effort: mode === "skip" ? undefined : this.effort(),
       });

@@ -36,12 +36,13 @@
     </section>
 
     <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-step">
-      <h2 id="by-step" class="font-semibold">Por paso y modelo</h2>
+      <h2 id="by-step" class="font-semibold">Por paso, agente y modelo</h2>
       <p class="mb-3 text-[12px] text-muted">Coste total de cada paso (barra) y cuántas ejecuciones fallaron. Los pasos sin LLM no gastan.</p>
       <table class="w-full border-collapse text-left">
         <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
           <tr>
             <th class="py-2 pr-3 font-medium">Paso</th>
+            <th class="py-2 pr-3 font-medium">Agente</th>
             <th class="py-2 pr-3 font-medium">Modelo</th>
             <th class="py-2 pr-3 text-right font-medium">Ejec.</th>
             <th class="py-2 pr-3 text-right font-medium">Fallos</th>
@@ -51,9 +52,10 @@
           </tr>
         </thead>
         <tbody>
-          @for (row of steps(); track row.step + row.model) {
+          @for (row of steps(); track row.step + row.agent + row.model) {
             <tr class="border-b border-border last:border-b-0">
               <td class="py-2 pr-3 font-medium">{{ stepLabel(row.step) }}</td>
+              <td class="py-2 pr-3 text-fg-soft">{{ row.agent ? agentLabels[row.agent] : "—" }}</td>
               <td class="py-2 pr-3 text-fg-soft">{{ row.model }}</td>
               <td class="py-2 pr-3 text-right font-mono">{{ row.runs }}</td>
               <td class="py-2 pr-3 text-right font-mono" [class.text-err]="row.failed > 0">

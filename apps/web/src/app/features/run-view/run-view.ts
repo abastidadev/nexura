@@ -1,10 +1,12 @@
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import type { PrDraft, ReviewReply, ReviewThread } from "@nexura/shared";
-import { buildRunAgents, plannedSteps, type AgentEvent, type AgentNode } from "../../core/agents";
+import { ACTIVE_RUN_STATUSES, buildRunAgents, plannedSteps, type AgentEvent, type AgentNode } from "../../core/agents";
 import { Api, apiError } from "../../core/api";
 import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, stepLabel, timeOfDay } from "../../core/format";
 import { NexuraStore, readStorage, writeStorage } from "../../core/nexura-store";
+import { teamColors } from "../../shared/pixel-office/looks";
+import type { OfficeTeam } from "../../shared/pixel-office/office-plan";
 import { PixelOffice } from "../../shared/pixel-office/pixel-office";
 import { StatusPill } from "../../shared/status-pill";
 import { StepInspector } from "./step-inspector";
@@ -14,6 +16,12 @@ import { ReviewApproval } from "./review-approval";
 import { TerminalPanel, type TerminalRequest } from "./terminal-panel";
 
 const PIPELINE_MODE_KEY = "nexura.pipelineMode";
+const PIPELINE_WIDTH_KEY = "nexura.pipelineWidth";
+const PIPELINE_DEFAULT = 400;
+const PIPELINE_MIN = 240;
+const PIPELINE_MAX = 900;
+
+const clampWidth = (width: number): number => Math.round(Math.min(PIPELINE_MAX, Math.max(PIPELINE_MIN, Number(width) || PIPELINE_DEFAULT)));
 
 type PipelineMode = "steps" | "office";
 
@@ -51,7 +59,13 @@ export class RunView {
 
   // ---- pipeline as a list of steps or as the pixel-art office
   protected readonly pipelineMode = signal<PipelineMode>(readStorage<PipelineMode>(PIPELINE_MODE_KEY, "steps"));
-  protected readonly agents = computed(() => {
+  /** Width of the steps / office panel, dragged from its right edge. */
+  protected readonly pipelineWidth = signal(clampWidth(readStorage<number>(PIPELINE_WIDTH_KEY, PIPELINE_DEFAULT)));
+  protected readonly resizing = signal(false);
+  protected readonly pipelineMin = PIPELINE_MIN;
+  protected readonly pipelineMax = PIPELINE_MAX;
+  protected readonly pipelineDefault = PIPELINE_DEFAULT;
+  protected readonly officeTeams = computed<OfficeTeam[]>(() => {
     const run = this.run();
     if (!run || this.pipelineMode() !== "office") {
       return [];
@@ -60,7 +74,15 @@ export class RunView {
     for (const step of run.steps.filter((candidate) => candidate.status === "running")) {
       events[step.id] = this.store.events(run.id, step.id)();
     }
-    return buildRunAgents(run, this.planned(), events, this.store.now());
+    return [
+      {
+        id: run.id,
+        title: run.request.ticketText.split("\n")[0] ?? run.id,
+        color: teamColors([run.id]).get(run.id)!,
+        live: ACTIVE_RUN_STATUSES.includes(run.status),
+        agents: buildRunAgents(run, this.planned(), events, this.store.now()),
+      },
+    ];
   });
 
   protected readonly summary = computed(() => {
@@ -111,6 +133,30 @@ export class RunView {
   public constructor() {
     effect(() => this.store.openTab(this.id()));
     effect(() => writeStorage(PIPELINE_MODE_KEY, this.pipelineMode()));
+    effect(() => writeStorage(PIPELINE_WIDTH_KEY, this.pipelineWidth()));
+  }
+
+  protected setPipelineWidth(width: number): void {
+    this.pipelineWidth.set(clampWidth(width));
+  }
+
+  protected startResize(event: PointerEvent): void {
+    const handle = event.currentTarget as HTMLElement;
+    const startX = event.clientX;
+    const startWidth = this.pipelineWidth();
+    handle.setPointerCapture(event.pointerId);
+    this.resizing.set(true);
+    const move = (moveEvent: PointerEvent): void => this.setPipelineWidth(startWidth + moveEvent.clientX - startX);
+    const end = (): void => {
+      this.resizing.set(false);
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", end);
+      handle.removeEventListener("pointercancel", end);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+    event.preventDefault();
   }
 
   protected selectAgent(agent: AgentNode): void {

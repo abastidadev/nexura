@@ -1,5 +1,5 @@
-import { orderSteps, type FlowProfile, type ModelAlias, type NexuraEvent, type Run, type StepDefinition, type StepName, type StepRun } from "@nexura/shared";
-import { stepLabel } from "./format";
+import { agentOf, orderSteps, type AgentKind, type FlowProfile, type NexuraEvent, type Run, type StepDefinition, type StepName, type StepRun } from "@nexura/shared";
+import { modelDetail, stepLabel } from "./format";
 
 export type AgentActivity =
   | "waiting"
@@ -25,6 +25,8 @@ export type AgentNode = {
   /** Step run to open when the agent is clicked (none for planned steps). */
   stepRunId?: string;
   label: string;
+  /** Agent CLI that runs it (missing for robots). */
+  agent?: AgentKind;
   model?: string;
   activity: AgentActivity;
   currentTool?: string;
@@ -37,7 +39,7 @@ export type AgentNode = {
   children: AgentNode[];
 };
 
-export type PlannedStep = { name: StepName; detail: string; model?: ModelAlias; builtin: boolean };
+export type PlannedStep = { name: StepName; detail: string; agent?: AgentKind; model?: string; builtin: boolean };
 
 /** Anything shaped like the store's StoredEvent. */
 export type AgentEvent = { ts?: string; event: NexuraEvent };
@@ -75,14 +77,14 @@ export function plannedSteps(run: Run, config: AgentConfig | null): PlannedStep[
   }
   const result: PlannedStep[] = [];
   if (run.request.profile === "auto") {
-    result.push({ name: "classify", detail: CLASSIFY_DETAIL, model: "haiku", builtin: false });
+    result.push({ name: "classify", detail: CLASSIFY_DETAIL, agent: "claude", model: "haiku", builtin: false });
   }
   const profile = config.profiles.find((candidate) => candidate.name === run.resolvedProfile);
   for (const { name } of orderSteps(config.steps)) {
     const step = profile?.steps[name];
     if (name !== "classify" && name !== "addressReview" && step?.enabled) {
       const builtin = config.steps.find((definition) => definition.name === name)?.kind === "builtin";
-      result.push({ name, detail: builtin ? "sin LLM" : `${step.model}/${step.effort}`, model: builtin ? undefined : step.model, builtin });
+      result.push({ name, detail: builtin ? "sin LLM" : modelDetail(step), agent: builtin ? undefined : agentOf(step), model: builtin ? undefined : step.model, builtin });
     }
   }
   return result;
@@ -226,6 +228,7 @@ function stepNode(run: Run, step: StepRun, events: readonly AgentEvent[] | undef
     step: step.step,
     stepRunId: step.id,
     label: step.attempt > 1 ? `${stepLabel(step.step)} #${step.attempt}` : stepLabel(step.step),
+    agent: builtin ? undefined : agentOf(step),
     model: builtin ? undefined : step.model,
     activity: "waiting",
     costUsd: step.costUsd,
@@ -297,6 +300,7 @@ export function buildRunAgents(
           kind: "planned",
           step: plan.name,
           label: stepLabel(plan.name),
+          agent: plan.agent,
           model: plan.model,
           builtin: plan.builtin || undefined,
           activity: "waiting",

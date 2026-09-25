@@ -65,6 +65,8 @@ function launcherName(use: ToolUse): string | undefined {
 export class EventTimeline {
   public readonly events = input.required<StoredEvent[]>();
   public readonly live = input(false);
+  /** Who speaks in the text messages: the agent that runs the step. */
+  public readonly speaker = input("Claude");
 
   private readonly scroller = viewChild.required<ElementRef<HTMLElement>>("scroller");
   protected readonly follow = signal(true);

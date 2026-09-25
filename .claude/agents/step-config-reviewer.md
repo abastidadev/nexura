@@ -13,8 +13,8 @@ You check that the configuration of Nexura's steps matches the code. You only re
 2. **Schemas against consumers.** The fields the orchestrator reads from `output` (`output.profile`, `output.commitMessage`, `output.tasksDone`, `output.replies`…) must be in the step's `schema.json` and be `required`. Also flag schema fields nobody reads, and schemas without `additionalProperties: false`.
 3. **Prompt against schema.** The prompt must ask for exactly the schema's fields, with the same names and `enum` values.
 4. **Permissions.** `tools`, `allowedTools` and `disallowedTools` must fit what the prompt asks the step to do (no asking to edit without `Edit`, no `Bash` for a read-only step). Flag rules that are too broad and denials that are easy to bypass. Also compare `useMcp` and `memory` with what the prompt expects.
-5. **Profiles.** Every step in `config/profiles/*.json` exists. Models and efforts are valid (`ModelAlias`, `Effort`). The order makes sense (for example, no `codeReview` without `implement`). `maxLoops` and `budgetUsd` are reasonable.
-6. **Fake claude.** `fixtures/fake-claude.mjs` recognizes every built-in step and returns output that is valid for its current schema.
+5. **Profiles.** Every step in `config/profiles/*.json` exists. Agents are valid (`AgentKind`: claude, codex, copilot; missing = claude), models fit their agent (`isValidModel` in `config-loader.ts`; suggestions in `AGENT_MODELS`) and efforts are valid (`Effort`). `judgeB` only makes sense with `reviewMode: "blind"`. The order makes sense (for example, no `codeReview` without `implement`). `maxLoops` and `budgetUsd` are reasonable.
+6. **Fake agents.** `fixtures/fake-steps.mjs` (shared by `fake-claude.mjs`, `fake-codex.mjs` and `fake-copilot.mjs`) recognizes every built-in step and returns output that is valid for its current schema. Codex gets it through a strict version of the schema (`toStrictSchema`): optional fields become nullable.
 
 ## Report
 

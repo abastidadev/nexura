@@ -2,7 +2,7 @@ import { Component, computed, inject, linkedSignal, resource, signal } from "@an
 import { Router } from "@angular/router";
 import { orderSteps, type FlowProfile, type TaskItem, type TicketDetails, type TicketSource } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { stepLabel } from "../../core/format";
+import { modelDetail, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { SOURCE_LABELS, TicketPicker } from "./ticket-picker";
 
@@ -220,7 +220,7 @@ export class NewRun {
         .map((name) => {
         const step = profile.steps[name]!;
         const builtin = this.store.config()?.steps.find((definition) => definition.name === name)?.kind === "builtin";
-        return { label: stepLabel(name), detail: builtin ? "sin LLM" : `${step.model}/${step.effort}` };
+        return { label: stepLabel(name), detail: builtin ? "sin LLM" : modelDetail(step) };
       }),
     };
   }

@@ -1,6 +1,6 @@
 # Nexura
 
-Local IDE that orchestrates headless `claude -p` flows to resolve Azure DevOps work items or GitHub issues step by step. Overview, structure and usage in [README.md](README.md); plan in [docs/plan.md](docs/plan.md).
+Local IDE that orchestrates headless coding-agent flows (`claude -p`, and also `codex exec` and `copilot -p`, mixable per step) to resolve Azure DevOps work items or GitHub issues step by step. Overview, structure and usage in [README.md](README.md); plan in [docs/plan.md](docs/plan.md).
 
 ## Commits — ABSOLUTE RULE
 
@@ -25,8 +25,8 @@ To see the UI or a flow without spending quota, use the `/try-fake` skill.
 
 ## Quota: never spend tokens without permission
 
-- **Never** run `npm run spike`, `claude -p ...`, or start Nexura with the real `claude` unless asked: they consume the user's Pro plan quota.
-- Tests and manual checks use `fixtures/fake-claude.mjs` (`NEXURA_CLAUDE_BIN`). If you change a step's output format, update the fake claude too.
+- **Never** run `npm run spike`, `claude -p ...`, `codex exec ...`, `copilot -p ...`, or start Nexura with the real agents unless asked: they consume the user's Claude, ChatGPT or Copilot plan quota. `--version` is free.
+- Tests and manual checks use `fixtures/fake-claude.mjs`, `fake-codex.mjs` and `fake-copilot.mjs` (`NEXURA_CLAUDE_BIN`, `NEXURA_CODEX_BIN`, `NEXURA_COPILOT_BIN`); what they answer per step lives in `fixtures/fake-steps.mjs`. If you change a step's output format, update it there. The Copilot adapter is checked against the real CLI 1.0.88 (recordings `fixtures/stream/0[89]-copilot-*`); the Codex one was written from its docs, not recorded output: adjust it if a real run disagrees.
 - Tests must never touch `~/.claude.json` (`NEXURA_TRUST_WORKTREES=0`) or the user's real shared memory: they use a temporary `NEXURA_DATA_DIR`.
 
 ## Code conventions
@@ -36,7 +36,7 @@ To see the UI or a flow without spending quota, use the `/try-fake` skill.
 - **Double quotes** in all TS code. Note: `apps/web/.prettierrc` says `singleQuote: true` but the code does not follow it; **do not run Prettier** over existing files.
 - Types shared between server and web (events, Run, StepRun, WS messages) live in `packages/shared/src`; change them there and update both sides.
 - UI text and user-facing error messages are in **Spanish**; identifiers and code comments in English.
-- `*.spec.ts` tests sit next to the code. `vitest.config.ts` only picks up `apps/server`, `packages/*` and `apps/web/src/app/core`.
+- `*.spec.ts` tests sit next to the code. `vitest.config.ts` only picks up `apps/server`, `packages/*`, `apps/web/src/app/core` and `apps/web/src/app/shared/pixel-office` (plan and simulation are DOM-free on purpose; painting lives in `characters.ts`, `furniture.ts` and `office-renderer.ts`).
 
 ## Pipeline steps
 

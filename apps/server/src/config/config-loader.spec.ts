@@ -66,6 +66,34 @@ describe("config editing", () => {
     ).toThrow(/al menos un paso/);
   });
 
+  it("saves the agent of each step and judge B, validating models per agent", () => {
+    saveProfile(
+      profile({
+        reviewMode: "blind",
+        judgeB: { agent: "copilot", model: "gpt-5", effort: "high" },
+        steps: {
+          implement: { agent: "codex", model: "gpt-5-codex", effort: "high", enabled: true },
+          codeReview: { agent: "claude", model: "claude-opus-4-1", effort: "high", enabled: true },
+        },
+      }),
+      configDir,
+    );
+    const saved = loadProfiles(configDir).get("rapido")!;
+    expect(saved.steps.implement).toEqual({ agent: "codex", model: "gpt-5-codex", effort: "high", enabled: true });
+    // Claude is the default: not written, so the file stays as before agents existed.
+    expect(saved.steps.codeReview).toEqual({ model: "claude-opus-4-1", effort: "high", enabled: true });
+    expect(saved.judgeB).toEqual({ agent: "copilot", model: "gpt-5", effort: "high" });
+
+    const withImplement = (step: object) => profile({ steps: { implement: { effort: "low", enabled: true, ...step } as never } });
+    expect(() => saveProfile(withImplement({ agent: "gemini", model: "x" }), configDir)).toThrow(/Agente no válido/);
+    expect(() => saveProfile(withImplement({ agent: "claude", model: "gpt-5" }), configDir)).toThrow(/Modelo/);
+    // The model is a CLI argument: nothing that could pass for a flag or break the quoting.
+    expect(() => saveProfile(withImplement({ agent: "codex", model: "--yolo" }), configDir)).toThrow(/Modelo/);
+    expect(() => saveProfile(withImplement({ agent: "codex", model: "gpt 5" }), configDir)).toThrow(/Modelo/);
+    expect(() => saveProfile(profile({ judgeB: { agent: "codex", model: "", effort: "low" } }), configDir)).toThrow(/juez B/);
+    deleteProfile("rapido", configDir);
+  });
+
   it("updates step.json allowlists but never its kind", () => {
     saveStepDefinition(
       "qaCode",

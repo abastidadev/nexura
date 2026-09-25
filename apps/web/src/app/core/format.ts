@@ -1,4 +1,4 @@
-import type { RunStatus, StepRun, StepStatus } from "@nexura/shared";
+import { AGENT_LABELS, agentOf, type AgentKind, type RunStatus, type StepRun, type StepStatus } from "@nexura/shared";
 
 export type Tone = "ok" | "err" | "warn" | "info" | "accent" | "muted";
 
@@ -116,4 +116,10 @@ export function relativeReset(epochSeconds: number, now: number): string {
   }
   const hours = Math.floor(minutes / 60);
   return hours < 24 ? `${hours} h ${minutes % 60} min` : `${Math.floor(hours / 24)} d ${hours % 24} h`;
+}
+
+/** "sonnet/medium" for Claude (as always); "Codex · gpt-5-codex/high" for the other agents. */
+export function modelDetail(config: { agent?: AgentKind; model: string; effort: string }): string {
+  const agent = agentOf(config);
+  return `${agent === "claude" ? "" : `${AGENT_LABELS[agent]} · `}${config.model}/${config.effort}`;
 }
