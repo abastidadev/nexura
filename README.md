@@ -1,6 +1,6 @@
 # Nexura <sub>by abastidadev</sub>
 
-IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) que resuelven tickets de Azure DevOps paso a paso: enrich → plan → implement → review → qa → release. Muestra en qué paso va cada flujo, lo que consume y los errores, y permite depurar y corregir el paso exacto que falló.
+IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) que resuelven tickets de Azure DevOps o issues de GitHub paso a paso: enrich → plan → implement → review → qa → release. Muestra en qué paso va cada flujo, lo que consume y los errores, y permite depurar y corregir el paso exacto que falló.
 
 - Plan completo: [docs/plan.md](docs/plan.md)
 - Idea original: [docs/idea-original.md](docs/idea-original.md)
@@ -15,7 +15,7 @@ IDE local para orquestar flujos de Claude Code (`claude -p` en modo headless) qu
 | 2. UI base | ✅ hecho: tabs, nuevo flujo, pipeline, timeline en vivo, cuota, depuración básica |
 | 3. Depuración | ✅ hecho: terminal embebida (shell y claude --resume), editor de perfiles, pasos y repos |
 | 4. Perfiles y `classify` | ✅ hecho: perfiles editables, `classify`, presupuesto por perfil, valoración del clasificador |
-| 5. Azure DevOps | ✅ hecho: cargar work item, PR con aprobación, atender comentarios de la PR |
+| 5. Azure DevOps y GitHub | ✅ hecho: cargar work item o issue, PR con aprobación, atender comentarios de la PR |
 | 6. Métricas | ✅ hecho: coste/tokens/fallos por paso, perfil y día; acierto de `classify`; `qaNotes` |
 
 ## Estructura
@@ -29,6 +29,8 @@ apps/server/src/
   workspace/                git worktree por run y repo, junction de node_modules, commits
   store/                    SQLite (node:sqlite) + JSONL crudo por paso en data/runs/<id>/steps
   ledger/                   libro de tareas por run (data/runs/<id>/ledger.md)
+  azure/ · github/          clientes REST (y GraphQL) de Azure DevOps y GitHub: tickets, PRs, hilos de revisión
+  forge/                    elige Azure DevOps o GitHub según el remote origin; vigilancia de PRs
   api/                      REST + WebSocket (/ws eventos, /pty terminales) en :4310
   terminal/                 PTY (@lydell/node-pty, binarios precompilados) para la terminal embebida
   cli/                      comando nexura
@@ -92,13 +94,19 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 - **Vigilancia de PRs**: cada `prPollSeconds` (por defecto 120 s) se revisan por REST, gratis, las PRs abiertas de los flujos terminados. Si llegan comentarios avisa y marca la pestaña con 💬N; nunca lanza Claude solo. Deja de vigilar cuando la PR se completa o se abandona.
 - **Avisos**: toasts dentro de la app cuando un flujo termina, falla, se pausa o espera tu aprobación, y notificaciones del sistema (🔔 en la cabecera) cuando la pestaña no está delante. El título de la pestaña muestra `(n)` con los flujos que te esperan.
 
-## Azure DevOps
+## Azure DevOps y GitHub
 
-Usa la sesión de **Azure CLI** (`az login`), la misma que el plugin `azure-devops`: Nexura pide un token con `az account get-access-token` y llama a la API REST. Sin PAT y sin gastar tokens de Claude. La organización y el proyecto salen del remote `origin` de cada repo (`NEXURA_AZURE_ORG` como alternativa).
+Los tickets pueden ser **work items de Azure DevOps** o **issues de GitHub**, y las PRs se abren donde esté el remote `origin` de cada repo (`dev.azure.com` o `github.com`). Todo va por REST (y GraphQL en GitHub), sin PAT y sin gastar tokens de Claude:
 
-- **Cargar work item**: en *Nuevo flujo*, el ID + *Cargar* trae título, descripción, criterios de aceptación (o pasos de reproducción de un bug), últimos comentarios y tareas hijas como checkboxes.
-- **PR**: con *Crear PR en Azure DevOps*, `release` prepara el borrador (título del commit principal, descripción a partir de lo que hizo implement, work item enlazado al crear, nunca en el cuerpo) y **se pausa**. Nada se sube hasta *Aprobar: push + crear PR*; *Dejar en local* termina sin push.
-- **Comentarios de la PR**: *Comprobar comentarios* lee los hilos activos (gratis). *Atender comentarios* lanza `addressReview` (Claude): corrige, hace commit en local y redacta una respuesta por hilo (`fixed` / `answered` / `wontFix`). Se pausa para aprobar: al aprobar hace push, publica las respuestas marcadas y resuelve los hilos arreglados. Las respuestas a hilos que no existen se descartan.
+- **Azure DevOps**: sesión de **Azure CLI** (`az login`), la misma que el plugin `azure-devops`: Nexura pide un token con `az account get-access-token`. La organización y el proyecto salen del remote (`NEXURA_AZURE_ORG` / `NEXURA_AZURE_PROJECT` como alternativa).
+- **GitHub**: sesión de **GitHub CLI** (`gh auth login`), la misma que el servidor MCP `github`: Nexura usa `gh auth token` (o `GH_TOKEN` / `GITHUB_TOKEN` si están definidas). El `owner/repo` sale del remote (`NEXURA_GITHUB_REPO=owner/repo` como alternativa, p. ej. código en Azure e issues en GitHub).
+
+Lo que se puede hacer:
+
+- **Cargar ticket**: en *Nuevo flujo*, elige el origen (**Azure DevOps | GitHub**; por defecto el del remote del primer repo marcado), escribe el ID o *Elegir de la lista* y *Cargar*. Un work item trae título, descripción, criterios de aceptación (o pasos de reproducción de un bug), últimos comentarios y tareas hijas como checkboxes. Un issue trae título, cuerpo, etiquetas, últimos comentarios y sub-issues como checkboxes. La lista de GitHub muestra los issues abiertos del repo (*Asignados a mí* o *Todo el repo*), sin las PRs.
+- **PR**: con *Crear PR*, `release` prepara el borrador (título del commit principal, descripción a partir de lo que hizo implement) y **se pausa**. Nada se sube hasta *Aprobar: push + crear PR*; *Dejar en local* termina sin push. El ticket se enlaza al crear la PR, nunca en el cuerpo editable, y solo si es del mismo proveedor que la PR: en Azure como work item enlazado; en GitHub añadiendo `Closes #n` (o `Closes owner/repo#n` si el issue es de otro repo), así que el issue se cierra al hacer merge.
+- **Comentarios de la PR**: *Comprobar comentarios* lee los hilos activos (gratis): en Azure los hilos activos; en GitHub los hilos de revisión sin resolver (los comentarios generales de la conversación no tienen estado de resuelto y no se siguen). *Atender comentarios* lanza `addressReview` (Claude): corrige, hace commit en local y redacta una respuesta por hilo (`fixed` / `answered` / `wontFix`). Se pausa para aprobar: al aprobar hace push, publica las respuestas marcadas y resuelve los hilos arreglados (en GitHub, `wontFix` también resuelve el hilo). Las respuestas a hilos que no existen se descartan.
+- **Vigilancia**: la de PRs funciona igual en los dos; en GitHub una PR mergeada cuenta como completada y una cerrada sin merge como abandonada.
 
 ## Cómo funciona cada paso
 

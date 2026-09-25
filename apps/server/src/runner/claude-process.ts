@@ -45,14 +45,26 @@ export function resolveClaudeBin(): string {
   if (process.platform !== "win32") {
     cachedBin = "claude";
   } else {
-    const shim = execFileSync("where.exe", ["claude.cmd"], { encoding: "utf8" }).split(/\r?\n/)[0]!.trim();
-    const exe = join(dirname(shim), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe");
-    if (!existsSync(exe)) {
-      throw new Error(`claude.exe not found next to ${shim}; set NEXURA_CLAUDE_BIN`);
+    // npm install: a claude.cmd shim with the real exe in its node_modules.
+    const shim = whereFirst("claude.cmd");
+    const npmExe = shim ? join(dirname(shim), "node_modules", "@anthropic-ai", "claude-code", "bin", "claude.exe") : undefined;
+    // Native installer: claude.exe straight on the PATH (~/.local/bin).
+    const exe = npmExe && existsSync(npmExe) ? npmExe : whereFirst("claude.exe");
+    if (!exe) {
+      throw new Error("No se encuentra Claude Code (ni claude.cmd de npm ni claude.exe en el PATH); instálalo o define NEXURA_CLAUDE_BIN");
     }
     cachedBin = exe;
   }
   return cachedBin;
+}
+
+/** First match of `where.exe`, or undefined when there is none. */
+function whereFirst(name: string): string | undefined {
+  try {
+    return execFileSync("where.exe", [name], { encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).split(/\r?\n/)[0]!.trim() || undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export type ClaudeOutcome = {

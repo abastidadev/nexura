@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, lstatSync, symlinkSync, unlinkSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { isAbsolute, join, relative } from "node:path";
 import { promisify } from "node:util";
 import type { RepoConfig, Worktree } from "@nexura/shared";
 import { forgetWorktree, trustWorktree } from "./claude-trust.ts";
@@ -46,26 +46,162 @@ export async function createWorktree(repo: RepoConfig, runId: string, branchName
   }
   const baseRef = (await refExists(repo.path, `origin/${repo.baseBranch}`)) ? `origin/${repo.baseBranch}` : repo.baseBranch;
   const path = join(`${repo.path}.worktrees`, `nexura-${runId}`);
-  await git(repo.path, ["worktree", "add", "-b", branchName, path, baseRef]);
+  const branch = await freeBranchName(repo.path, branchName);
+  await git(repo.path, ["worktree", "add", "-b", branch, path, baseRef]);
 
   const mode = repo.nodeModules ?? "link";
-  const source = join(repo.path, "node_modules");
-  if (mode === "link" && existsSync(source)) {
-    // A junction needs no admin rights on Windows and is ignored by git (node_modules is gitignored).
-    symlinkSync(source, join(path, "node_modules"), "junction");
+  if (mode === "link" && existsSync(join(repo.path, "node_modules"))) {
+    linkNodeModules(repo.path, path);
   } else if (mode === "install") {
     await runShell("npm ci", path, 20 * 60 * 1000);
   }
   trustWorktree(path);
-  return { repo: repo.name, repoPath: repo.path, path, branch: branchName, baseRef };
+  return { repo: repo.name, repoPath: repo.path, path, branch, baseRef };
+}
+
+function isInside(parent: string, child: string): boolean {
+  const rel = relative(parent, child);
+  return rel !== "" && !rel.startsWith("..") && !isAbsolute(rel);
+}
+
+/**
+ * Reuses the main checkout's installed dependencies without an install. node_modules is a
+ * real directory of junctions (junctions need no admin rights on Windows and node_modules is
+ * gitignored) rather than one junction to the whole folder, so that npm workspace packages
+ * (`node_modules/@scope/web` → `apps/web`) point at the worktree's own copy instead of the
+ * main checkout's. Each workspace's own node_modules (dependencies npm did not hoist) is
+ * linked as well.
+ */
+export function linkNodeModules(repoPath: string, worktreePath: string): void {
+  const repoReal = realpathSync(repoPath);
+  const source = join(repoPath, "node_modules");
+  const target = join(worktreePath, "node_modules");
+  const workspaces = new Set<string>();
+
+  const linkEntry = (from: string, to: string): void => {
+    if (!lstatSync(from).isSymbolicLink()) {
+      symlinkSync(from, to, "junction");
+      return;
+    }
+    let real: string;
+    try {
+      real = realpathSync(from);
+    } catch {
+      return; // Dangling link in the main checkout.
+    }
+    if (!statSync(real).isDirectory()) {
+      return; // Junctions only point at directories.
+    }
+    if (!isInside(repoReal, real)) {
+      symlinkSync(real, to, "junction");
+      return;
+    }
+    // A workspace package: use the worktree's copy, or skip it when the branch does not have it.
+    const workspace = relative(repoReal, real);
+    if (existsSync(join(worktreePath, workspace))) {
+      workspaces.add(workspace);
+      symlinkSync(join(worktreePath, workspace), to, "junction");
+    }
+  };
+
+  mkdirSync(target);
+  for (const entry of readdirSync(source, { withFileTypes: true })) {
+    const from = join(source, entry.name);
+    if (entry.name.startsWith("@") && entry.isDirectory()) {
+      mkdirSync(join(target, entry.name));
+      for (const child of readdirSync(from)) {
+        linkEntry(join(from, child), join(target, entry.name, child));
+      }
+    } else if (entry.isDirectory() || entry.isSymbolicLink()) {
+      linkEntry(from, join(target, entry.name));
+    }
+  }
+  for (const workspace of workspaces) {
+    const nested = join(repoReal, workspace, "node_modules");
+    const dest = join(worktreePath, workspace, "node_modules");
+    if (existsSync(nested) && !existsSync(dest)) {
+      symlinkSync(nested, dest, "junction");
+    }
+  }
+}
+
+function unlinkIfLink(path: string): void {
+  try {
+    if (lstatSync(path).isSymbolicLink()) {
+      unlinkSync(path);
+    }
+  } catch {
+    // Missing: nothing to unlink.
+  }
+}
+
+/**
+ * Undoes linkNodeModules (or the older single junction) so that removing the worktree never
+ * recurses into the main checkout's node_modules.
+ */
+export function unlinkNodeModules(worktreePath: string): void {
+  const root = join(worktreePath, "node_modules");
+  let stat;
+  try {
+    stat = lstatSync(root);
+  } catch {
+    return;
+  }
+  if (stat.isSymbolicLink()) {
+    unlinkSync(root);
+    return;
+  }
+  if (!stat.isDirectory()) {
+    return;
+  }
+  const worktreeReal = realpathSync(worktreePath);
+  const unlinkEntry = (path: string): void => {
+    if (!lstatSync(path).isSymbolicLink()) {
+      return;
+    }
+    try {
+      const real = realpathSync(path);
+      if (isInside(worktreeReal, real)) {
+        unlinkIfLink(join(real, "node_modules"));
+      }
+    } catch {
+      // Dangling link: just drop it.
+    }
+    unlinkSync(path);
+  };
+  for (const entry of readdirSync(root, { withFileTypes: true })) {
+    const path = join(root, entry.name);
+    if (entry.name.startsWith("@") && entry.isDirectory()) {
+      for (const child of readdirSync(path)) {
+        unlinkEntry(join(path, child));
+      }
+      if (readdirSync(path).length === 0) {
+        rmdirSync(path);
+      }
+    } else {
+      unlinkEntry(path);
+    }
+  }
+  if (readdirSync(root).length === 0) {
+    rmdirSync(root);
+  }
+}
+
+/**
+ * `name`, or `name-2`, `name-3`… when it is taken: deleting a run keeps its branch, so
+ * running the same ticket again must not reuse (or overwrite) it.
+ */
+export async function freeBranchName(cwd: string, name: string): Promise<string> {
+  let candidate = name;
+  for (let suffix = 2; await refExists(cwd, `refs/heads/${candidate}`); suffix++) {
+    candidate = `${name}-${suffix}`;
+  }
+  return candidate;
 }
 
 export async function removeWorktree(worktree: Worktree, deleteBranch = false): Promise<void> {
-  // Unlink the node_modules junction first so nothing recurses into the main checkout.
-  const link = join(worktree.path, "node_modules");
-  if (existsSync(link) && lstatSync(link).isSymbolicLink()) {
-    unlinkSync(link);
-  }
+  // Unlink the node_modules junctions first so nothing recurses into the main checkout.
+  unlinkNodeModules(worktree.path);
   await git(worktree.repoPath, ["worktree", "remove", "--force", worktree.path]);
   forgetWorktree(worktree.path);
   if (deleteBranch) {

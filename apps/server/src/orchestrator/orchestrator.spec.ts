@@ -4,14 +4,16 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import type { PrDraft, ReviewReply, ReviewThread, Run, RunRequest, Worktree } from "@nexura/shared";
+import type { RepoRemote } from "../forge/remote.ts";
 
-// Never push or call Azure DevOps from tests: record what would have been created.
+// Never push or call Azure DevOps / GitHub from tests: record what would have been created.
 const createdPrs: PrDraft[] = [];
 const postedReplies: ReviewReply[] = [];
 const pushed: string[] = [];
 const activeThreads: ReviewThread[] = [];
-vi.mock("../azure/pr-threads.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../azure/pr-threads.ts")>()),
+const prStatus = { value: "active" };
+vi.mock("../forge/forge.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../forge/forge.ts")>()),
   getActiveThreads: async () => activeThreads,
   replyToThread: async (_worktree: Worktree, _prId: number, reply: ReviewReply) => {
     postedReplies.push(reply);
@@ -19,15 +21,17 @@ vi.mock("../azure/pr-threads.ts", async (importOriginal) => ({
   pushBranch: async (worktree: Worktree) => {
     pushed.push(worktree.branch);
   },
-}));
-const prStatus = { value: "active" };
-vi.mock("../azure/pull-requests.ts", async (importOriginal) => ({
-  ...(await importOriginal<typeof import("../azure/pull-requests.ts")>()),
   getPrStatus: async () => prStatus.value,
   pushAndCreatePr: async (worktree: Worktree, draft: PrDraft) => {
     createdPrs.push(draft);
     return { repo: worktree.repo, id: 42, url: "https://dev.azure.com/org/p/_git/r/pullrequest/42", title: draft.title };
   },
+}));
+// The sandbox has no origin: pretend it is on Azure DevOps (or GitHub) so the PR drafts can be built.
+const sandboxRemote = { value: { provider: "azure", organization: "org", project: "p", repository: "r" } as RepoRemote };
+vi.mock("../forge/remote.ts", async (importOriginal) => ({
+  ...(await importOriginal<typeof import("../forge/remote.ts")>()),
+  repoRemoteOf: async () => sandboxRemote.value,
 }));
 
 // Env must be set before the modules read their paths.
@@ -44,7 +48,7 @@ process.env.NEXURA_TRUST_WORKTREES = "0";
 const { loadConfig } = await import("../config/config-loader.ts");
 const { RunStore } = await import("../store/run-store.ts");
 const { Orchestrator } = await import("./orchestrator.ts");
-const { PrWatcher } = await import("../azure/pr-watcher.ts");
+const { PrWatcher } = await import("../forge/pr-watcher.ts");
 const { readRepoNotes, saveRepoNotes } = await import("../workspace/repo-context.ts");
 const { closeMemoryStore, memoryStore } = await import("../memory/memory.ts");
 
@@ -276,7 +280,7 @@ describe("Orchestrator (fake claude)", () => {
   });
 });
 
-describe("Release to Azure DevOps (push and PR mocked)", () => {
+describe("Release with a PR (push and PR mocked)", () => {
   function onPause(orchestrator: InstanceType<typeof Orchestrator>, runId: string, act: (run: Run) => void): void {
     orchestrator.on("message", (message) => {
       if (message.type === "run" && message.run.id === runId && message.run.status === "paused" && message.run.pendingStep?.prDrafts) {
@@ -307,6 +311,40 @@ describe("Release to Azure DevOps (push and PR mocked)", () => {
     await orchestrator.cleanup(run.id, true);
   });
 
+  it("on a GitHub remote links only a GitHub issue, naming its repo when it is another one", async () => {
+    createdPrs.length = 0;
+    sandboxRemote.value = { provider: "github", owner: "abastidadev", repo: "sandbox" };
+    try {
+      const store = new RunStore(":memory:");
+      const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+      const drafts: PrDraft[] = [];
+      const launch = async (overrides: Partial<RunRequest>): Promise<Run> => {
+        const started = orchestrator.start(request({ profile: "minimal", ticketText: "Issue de GitHub", release: "pr", ...overrides }));
+        onPause(orchestrator, started.id, (run) => {
+          drafts.push(run.pendingStep!.prDrafts![0]!);
+          orchestrator.continue(started.id);
+        });
+        return waitFor(orchestrator, started.id);
+      };
+      const runs = [
+        await launch({ ticketId: "12", ticketSource: "github", ticketProject: "abastidadev/backlog" }),
+        await launch({ ticketId: "13", ticketSource: "github", ticketProject: "AbastidaDev/Sandbox" }),
+        await launch({ ticketId: "59128" }),
+      ];
+
+      expect(drafts[0]).toMatchObject({ provider: "github", workItemId: 12, workItemProject: "abastidadev/backlog" });
+      expect(drafts[1]).toMatchObject({ provider: "github", workItemId: 13, workItemProject: undefined });
+      // An Azure work item id means nothing on GitHub.
+      expect(drafts[2]).toMatchObject({ provider: "github", workItemId: undefined });
+      expect(runs.map((run) => run.status)).toEqual(["done", "done", "done"]);
+      for (const run of runs) {
+        await orchestrator.cleanup(run.id, true);
+      }
+    } finally {
+      sandboxRemote.value = { provider: "azure", organization: "org", project: "p", repository: "r" };
+    }
+  });
+
   it("skipping at the approval keeps the branch local and finishes the run", async () => {
     createdPrs.length = 0;
     const store = new RunStore(":memory:");
@@ -322,7 +360,7 @@ describe("Release to Azure DevOps (push and PR mocked)", () => {
   });
 });
 
-describe("addressReview (Azure mocked)", () => {
+describe("addressReview (provider mocked)", () => {
   it("fixes, commits, pauses with the replies and only pushes and answers after approval", async () => {
     createdPrs.length = 0;
     postedReplies.length = 0;

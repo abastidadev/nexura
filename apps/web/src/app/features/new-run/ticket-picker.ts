@@ -1,19 +1,27 @@
 import { afterNextRender, Component, computed, ElementRef, inject, input, output, resource, signal, viewChild } from "@angular/core";
-import type { WorkItemScope, WorkItemSummary } from "@nexura/shared";
+import type { TicketSource, WorkItemScope, WorkItemSummary } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 
-const SCOPES: { id: WorkItemScope; label: string; help: string }[] = [
-  { id: "mine", label: "Asignados a mí", help: "En cualquier proyecto de la organización" },
-  { id: "project", label: "Todo el proyecto", help: "Los abiertos del proyecto del repo" },
-];
+export const SOURCE_LABELS: Record<TicketSource, string> = { azure: "Azure DevOps", github: "GitHub" };
 
-/** Open Azure DevOps tickets (backlog + in progress) to start a flow from. Plain REST, no tokens. */
+const SCOPES: Record<TicketSource, { id: WorkItemScope; label: string; help: string }[]> = {
+  azure: [
+    { id: "mine", label: "Asignados a mí", help: "En cualquier proyecto de la organización" },
+    { id: "project", label: "Todo el proyecto", help: "Los abiertos del proyecto del repo" },
+  ],
+  github: [
+    { id: "mine", label: "Asignados a mí", help: "Los issues abiertos del repo asignados a ti" },
+    { id: "project", label: "Todo el repo", help: "Todos los issues abiertos del repo" },
+  ],
+};
+
+/** Open Azure DevOps work items (backlog + in progress) or GitHub issues to start a flow from. Plain REST, no tokens. */
 @Component({
   selector: "nx-ticket-picker",
   template: `
     <div class="flex flex-wrap items-center gap-2 border-b border-border p-3">
       <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Qué tickets">
-        @for (option of scopes; track option.id) {
+        @for (option of scopes(); track option.id) {
           <button
             type="button"
             role="radio"
@@ -58,12 +66,12 @@ const SCOPES: { id: WorkItemScope; label: string; help: string }[] = [
 
     <div class="min-h-0 flex-1 overflow-y-auto">
       @if (tickets.isLoading()) {
-        <p class="px-3 py-8 text-center text-muted">Consultando Azure DevOps…</p>
+        <p class="px-3 py-8 text-center text-muted">Consultando {{ sourceLabel() }}…</p>
       } @else if (tickets.error()) {
         <p class="m-3 rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">{{ errorText() }}</p>
       } @else if (visible().length === 0) {
         <p class="px-3 py-8 text-center text-muted">
-          {{ (tickets.value() ?? []).length ? "Ningún ticket coincide con el filtro." : "No hay tickets abiertos aquí." }}
+          {{ list().length ? "Ningún ticket coincide con el filtro." : "No hay tickets abiertos aquí." }}
         </p>
       } @else {
         <ul class="divide-y divide-border">
@@ -76,6 +84,13 @@ const SCOPES: { id: WorkItemScope; label: string; help: string }[] = [
                   <span class="block truncate text-[11px] text-muted">
                     {{ ticket.type }} · {{ ticket.project }}{{ ticket.assignedTo ? " · " + ticket.assignedTo : "" }}
                   </span>
+                  @if (ticket.labels?.length) {
+                    <span class="mt-0.5 flex flex-wrap gap-1">
+                      @for (label of ticket.labels; track label) {
+                        <span class="rounded-full bg-surface-3 px-1.5 text-[10px] text-fg-soft">{{ label }}</span>
+                      }
+                    </span>
+                  }
                 </span>
                 <span class="shrink-0 rounded px-1.5 py-0.5 text-[11px]" [class]="stateClass(ticket.state)">{{ ticket.state }}</span>
               </button>
@@ -93,27 +108,32 @@ const SCOPES: { id: WorkItemScope; label: string; help: string }[] = [
 export class TicketPicker {
   private readonly api = inject(Api);
 
-  /** Repo whose origin remote gives the organisation/project. */
+  public readonly source = input<TicketSource>("azure");
+  /** Repo whose origin remote gives the organisation/project or the GitHub repo. */
   public readonly repo = input<string | undefined>();
   public readonly picked = output<number>();
   public readonly closed = output<void>();
 
-  protected readonly scopes = SCOPES;
+  protected readonly scopes = computed(() => SCOPES[this.source()]);
+  protected readonly sourceLabel = computed(() => SOURCE_LABELS[this.source()]);
   protected readonly scope = signal<WorkItemScope>("mine");
   protected readonly query = signal("");
   protected readonly hiddenStates = signal<ReadonlySet<string>>(new Set());
   private readonly search = viewChild.required<ElementRef<HTMLInputElement>>("search");
 
   protected readonly tickets = resource({
-    params: () => ({ scope: this.scope(), repo: this.repo() }),
-    loader: ({ params }) => this.api.listWorkItems(params.scope, params.repo),
+    params: () => ({ source: this.source(), scope: this.scope(), repo: this.repo() }),
+    loader: ({ params }) => this.api.listTickets(params.source, params.scope, params.repo),
   });
+
+  /** `value()` throws while the resource is in error: read the list through this. */
+  protected readonly list = computed<WorkItemSummary[]>(() => (this.tickets.hasValue() ? this.tickets.value() : []));
 
   protected readonly errorText = computed(() => apiError(this.tickets.error(), "No se pudieron cargar los tickets"));
 
   protected readonly states = computed(() => {
     const counts = new Map<string, number>();
-    for (const ticket of this.tickets.value() ?? []) {
+    for (const ticket of this.list()) {
       counts.set(ticket.state, (counts.get(ticket.state) ?? 0) + 1);
     }
     return [...counts].map(([name, count]) => ({ name, count }));
@@ -122,11 +142,11 @@ export class TicketPicker {
   protected readonly visible = computed<WorkItemSummary[]>(() => {
     const words = this.query().toLowerCase().split(/\s+/).filter(Boolean);
     const hidden = this.hiddenStates();
-    return (this.tickets.value() ?? []).filter((ticket) => {
+    return this.list().filter((ticket) => {
       if (hidden.has(ticket.state)) {
         return false;
       }
-      const haystack = `${ticket.id} ${ticket.title} ${ticket.type} ${ticket.state} ${ticket.assignedTo} ${ticket.iteration}`.toLowerCase();
+      const haystack = `${ticket.id} ${ticket.title} ${ticket.type} ${ticket.state} ${ticket.assignedTo} ${ticket.iteration} ${(ticket.labels ?? []).join(" ")}`.toLowerCase();
       return words.every((word) => haystack.includes(word.replace(/^#/, "")));
     });
   });

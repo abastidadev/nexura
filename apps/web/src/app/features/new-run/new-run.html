@@ -15,6 +15,20 @@
   <section class="relative flex min-h-[420px] flex-col rounded-lg border border-border bg-surface p-4 xl:min-h-0" aria-labelledby="ticket-title">
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <h2 id="ticket-title" class="mr-1 font-semibold">Ticket <span class="text-err">*</span></h2>
+      <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Origen del ticket">
+        @for (option of sources; track option.id) {
+          <button
+            type="button"
+            role="radio"
+            class="px-2.5 py-1"
+            [class]="ticketSource() === option.id ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+            [attr.aria-checked]="ticketSource() === option.id"
+            (click)="setSource(option.id)"
+          >
+            {{ option.label }}
+          </button>
+        }
+      </div>
       <button
         type="button"
         class="rounded-md border px-2.5 py-1"
@@ -26,8 +40,8 @@
       </button>
       <input
         class="w-28 rounded-md border border-border bg-surface-2 px-2.5 py-1 font-mono outline-none focus:border-accent"
-        placeholder="ID"
-        aria-label="ID del work item"
+        [placeholder]="ticketSource() === 'github' ? 'Nº issue' : 'ID'"
+        [attr.aria-label]="ticketSource() === 'github' ? 'Número del issue' : 'ID del work item'"
         [value]="ticketId()"
         (input)="ticketId.set(value($event))"
         (keydown.enter)="$event.preventDefault(); loadTicket()"
@@ -38,7 +52,7 @@
         [disabled]="!ticketId().trim() || loadingTicket()"
         (click)="loadTicket()"
       >
-        {{ loadingTicket() ? "Cargando…" : "Cargar de Azure DevOps" }}
+        {{ loadingTicket() ? "Cargando…" : "Cargar de " + sourceLabel() }}
       </button>
       @if (loadedTicket(); as ticket) {
         <a
@@ -53,7 +67,13 @@
           <span aria-hidden="true">↗</span>
         </a>
       } @else {
-        <span class="text-[11px] text-muted">Trae título, descripción, criterios, comentarios y tareas. Sin tokens.</span>
+        <span class="text-[11px] text-muted">
+          {{
+            ticketSource() === "github"
+              ? "Trae título, cuerpo, etiquetas, comentarios y sub-issues. Sin tokens."
+              : "Trae título, descripción, criterios, comentarios y tareas. Sin tokens."
+          }}
+        </span>
       }
     </div>
     @if (ticketError(); as message) {
@@ -69,6 +89,7 @@
     @if (pickerOpen()) {
       <nx-ticket-picker
         class="absolute inset-x-3 top-14 bottom-3 z-10"
+        [source]="ticketSource()"
         [repo]="selectedRepos()[0]"
         (picked)="pickTicket($event)"
         (closed)="pickerOpen.set(false)"
@@ -120,7 +141,7 @@
           </ul>
         } @else {
           <p class="rounded-md border border-dashed border-border px-3 py-6 text-center text-[12px] text-muted">
-            Sin tareas. Cárgalas del work item, extráelas de las viñetas o añádelas abajo.
+            Sin tareas. Cárgalas del ticket, extráelas de las viñetas o añádelas abajo.
           </p>
         }
       </div>
@@ -228,8 +249,10 @@
         <label class="flex cursor-pointer items-start gap-2.5 rounded-md px-2 py-1.5 hover:bg-surface-2">
           <input type="checkbox" class="mt-0.5 size-4 accent-(--nx-accent)" [checked]="createPr()" (change)="createPr.set(!createPr())" />
           <span>
-            <span class="block font-medium">Crear PR en Azure DevOps</span>
-            <span class="block text-[12px] text-muted">Se pausa con el borrador; nada se sube hasta que lo apruebes.</span>
+            <span class="block font-medium">Crear PR</span>
+            <span class="block text-[12px] text-muted">
+              En Azure DevOps o GitHub, según el remote de cada repo. Se pausa con el borrador; nada se sube hasta que lo apruebes.
+            </span>
           </span>
         </label>
       </fieldset>

@@ -1,5 +1,6 @@
-import { Component, input, linkedSignal, output } from "@angular/core";
+import { Component, computed, input, linkedSignal, output } from "@angular/core";
 import type { PrDraft } from "@nexura/shared";
+import { SOURCE_LABELS } from "../new-run/ticket-picker";
 
 /**
  * The go-ahead for release: shows each PR draft (editable title, description, target and
@@ -10,8 +11,8 @@ import type { PrDraft } from "@nexura/shared";
   template: `
     <section class="border-b border-accent bg-accent-soft px-4 py-3" aria-labelledby="pr-title">
       <div class="flex flex-wrap items-center gap-3">
-        <h2 id="pr-title" class="font-semibold">⇪ Aprobar la PR en Azure DevOps</h2>
-        <span class="text-[12px] text-fg-soft">Al aprobar se hace <code class="font-mono">git push</code> de la rama y se abre la PR con el work item enlazado.</span>
+        <h2 id="pr-title" class="font-semibold">⇪ Aprobar la PR en {{ providers() }}</h2>
+        <span class="text-[12px] text-fg-soft">Al aprobar se hace <code class="font-mono">git push</code> de la rama y se abre la PR con el ticket enlazado.</span>
         <div class="ml-auto flex gap-2">
           <button type="button" class="rounded-md border border-border bg-surface px-3 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="keepLocal.emit()">
             Dejar en local
@@ -30,10 +31,13 @@ import type { PrDraft } from "@nexura/shared";
         <div class="mt-3 grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-[1fr_180px]">
           <div class="text-[12px] text-muted md:col-span-2">
             <span class="font-medium text-fg">{{ draft.repo }}</span> · <span class="font-mono">{{ draft.branch }}</span> →
-            @if (draft.workItemId) {
-              · enlaza el work item <span class="font-mono">#{{ draft.workItemId }}</span>
+            <span class="font-mono">{{ draft.target }}</span> en {{ labels[draft.provider] }}
+            @if (!draft.workItemId) {
+              · sin ticket enlazado (el flujo no tiene ID de ticket de {{ labels[draft.provider] }})
+            } @else if (draft.provider === "github") {
+              · añade <span class="font-mono">Closes {{ draft.workItemProject ?? "" }}#{{ draft.workItemId }}</span> (el issue se cierra al hacer merge)
             } @else {
-              · sin work item (el flujo no tiene ID de ticket)
+              · enlaza el work item <span class="font-mono">#{{ draft.workItemId }}</span>
             }
           </div>
           <label class="flex flex-col gap-1">
@@ -68,7 +72,12 @@ export class PrApproval {
   public readonly approve = output<PrDraft[]>();
   public readonly keepLocal = output<void>();
 
-  protected readonly edited = linkedSignal(() => structuredClone(this.drafts()));
+  /** Drafts saved before GitHub support have no provider: they were Azure DevOps. */
+  protected readonly edited = linkedSignal(() =>
+    structuredClone(this.drafts()).map((draft) => ({ ...draft, provider: draft.provider ?? "azure" })),
+  );
+  protected readonly labels = SOURCE_LABELS;
+  protected readonly providers = computed(() => [...new Set(this.edited().map((draft) => SOURCE_LABELS[draft.provider]))].join(" y "));
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;

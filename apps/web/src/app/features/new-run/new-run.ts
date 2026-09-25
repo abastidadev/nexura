@@ -1,10 +1,10 @@
-import { Component, computed, inject, linkedSignal, signal } from "@angular/core";
+import { Component, computed, inject, linkedSignal, resource, signal } from "@angular/core";
 import { Router } from "@angular/router";
-import { orderSteps, type FlowProfile, type TaskItem, type TicketDetails } from "@nexura/shared";
+import { orderSteps, type FlowProfile, type TaskItem, type TicketDetails, type TicketSource } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
-import { TicketPicker } from "./ticket-picker";
+import { SOURCE_LABELS, TicketPicker } from "./ticket-picker";
 
 export const AUTO_PROFILE = "auto";
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/;
@@ -39,11 +39,12 @@ export class NewRun {
   protected readonly submitting = signal(false);
   protected readonly error = signal<string | null>(null);
 
-  // ---- Azure DevOps work item
+  // ---- Azure DevOps work item or GitHub issue
   protected readonly loadedTicket = signal<TicketDetails | null>(null);
   protected readonly loadingTicket = signal(false);
   protected readonly ticketError = signal<string | null>(null);
   protected readonly pickerOpen = signal(false);
+  protected readonly sources = Object.entries(SOURCE_LABELS).map(([id, label]) => ({ id: id as TicketSource, label }));
 
   protected readonly repos = computed(() => this.store.config()?.repos ?? []);
   /** Pre-selects the only repo when there is just one. */
@@ -51,6 +52,26 @@ export class NewRun {
     const repos = this.repos();
     return repos.length === 1 ? [repos[0]!.name] : [];
   });
+
+  /** Provider of the first selected repo's origin remote: the default ticket source. */
+  private readonly repoProvider = resource({
+    params: () => this.selectedRepos()[0],
+    loader: ({ params }) => this.api.repoProvider(params),
+  });
+  /** Follows the first repo's provider; the user can switch (e.g. code on Azure, issues on GitHub). */
+  protected readonly ticketSource = linkedSignal<TicketSource | null | undefined, TicketSource>({
+    source: () => (this.repoProvider.hasValue() ? this.repoProvider.value() : undefined),
+    computation: (provider, previous) => provider ?? previous?.value ?? "azure",
+  });
+  protected readonly sourceLabel = computed(() => SOURCE_LABELS[this.ticketSource()]);
+
+  protected setSource(source: TicketSource): void {
+    if (source !== this.ticketSource()) {
+      this.ticketSource.set(source);
+      this.loadedTicket.set(null);
+      this.ticketError.set(null);
+    }
+  }
 
   protected readonly profiles = computed<ProfileCard[]>(() => [
     {
@@ -74,7 +95,7 @@ export class NewRun {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
   }
 
-  /** Fills the ticket text and the tasks (child work items) from Azure DevOps. No tokens. */
+  /** Fills the ticket text and the tasks (child work items or sub-issues) from Azure DevOps or GitHub. No tokens. */
   protected async loadTicket(): Promise<void> {
     const id = this.ticketId().trim().replace(/^#/, "");
     if (!id) {
@@ -83,7 +104,7 @@ export class NewRun {
     this.loadingTicket.set(true);
     this.ticketError.set(null);
     try {
-      const { ticket, text } = await this.api.loadWorkItem(id, this.selectedRepos()[0]);
+      const { ticket, text } = await this.api.loadTicket(this.ticketSource(), id, this.selectedRepos()[0]);
       this.loadedTicket.set(ticket);
       this.ticketText.set(text);
       this.tasks.set(
@@ -96,7 +117,7 @@ export class NewRun {
       );
     } catch (error: unknown) {
       this.loadedTicket.set(null);
-      this.ticketError.set(apiError(error, "No se pudo cargar el work item"));
+      this.ticketError.set(apiError(error, this.ticketSource() === "github" ? "No se pudo cargar el issue" : "No se pudo cargar el work item"));
     } finally {
       this.loadingTicket.set(false);
     }
@@ -153,9 +174,14 @@ export class NewRun {
     }
     this.submitting.set(true);
     this.error.set(null);
+    const ticketId = this.ticketId().trim().replace(/^#/, "") || undefined;
+    const loaded = this.loadedTicket();
     try {
       const run = await this.api.startRun({
-        ticketId: this.ticketId().trim().replace(/^#/, "") || undefined,
+        ticketId,
+        ticketSource: this.ticketSource(),
+        // A GitHub issue number only means something next to its repo.
+        ticketProject: loaded?.source === "github" && String(loaded.id) === ticketId ? loaded.project : undefined,
         ticketText: this.ticketText().trim(),
         repos: this.selectedRepos(),
         tasks: this.tasks(),

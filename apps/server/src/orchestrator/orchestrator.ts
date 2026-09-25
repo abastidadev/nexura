@@ -29,8 +29,7 @@ import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
 import { isMemoryWrite, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
 import { projectOf, type NewObservation } from "../memory/memory-store.ts";
-import { getActiveThreads, pushBranch, replyToThread, threadsToText } from "../azure/pr-threads.ts";
-import { buildPrDraft, pushAndCreatePr } from "../azure/pull-requests.ts";
+import { buildPrDraft, getActiveThreads, pushAndCreatePr, pushBranch, replyToThread, threadsToText } from "../forge/forge.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
 
 /** Deciding the profile must be cheap. */
@@ -992,11 +991,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     const implementOutputs = run.steps
       .filter((step) => step.step === "implement" && step.status === "succeeded")
       .map((step) => step.structuredOutput as { summary: string; filesChanged: string[] });
-    const workItemId = Number(run.request.ticketId) || undefined;
     const drafts = await Promise.all(
       worktrees.map((worktree) => {
         const target = this.config.repos.find((repo) => repo.name === worktree.repo)?.baseBranch ?? worktree.baseRef;
-        return buildPrDraft(worktree, target, implementOutputs, workItemId);
+        return buildPrDraft(worktree, target, implementOutputs, run.request);
       }),
     );
 
@@ -1015,7 +1013,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       emit({
         kind: "toolUse",
         id: toolId,
-        name: "AzureDevOps",
+        name: draft.provider === "github" ? "GitHub" : "AzureDevOps",
         input: { push: draft.branch, target: draft.target, title: draft.title, workItem: draft.workItemId },
         parentToolUseId: null,
       });

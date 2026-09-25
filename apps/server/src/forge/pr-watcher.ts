@@ -1,6 +1,6 @@
 import type { Run } from "@nexura/shared";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
-import { getPrStatus } from "./pull-requests.ts";
+import { getPrStatus } from "./forge.ts";
 
 const MS_PER_SECOND = 1000;
 

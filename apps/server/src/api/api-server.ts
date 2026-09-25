@@ -4,6 +4,7 @@ import { extname, join, normalize } from "node:path";
 import { WebSocketServer, type WebSocket } from "ws";
 import {
   STEP_NAMES,
+  TICKET_SOURCES,
   type FlowProfile,
   type NexuraSettings,
   type RepoConfig,
@@ -11,6 +12,7 @@ import {
   type RunRequest,
   type ServerMessage,
   type StepName,
+  type TicketSource,
   type WorkItemScope,
 } from "@nexura/shared";
 import {
@@ -28,8 +30,9 @@ import {
 import { NEXURA_HOME } from "../config/paths.ts";
 import { rejectReason } from "./request-guard.ts";
 import { AzureError } from "../azure/azure-client.ts";
-import { azureRepoOf } from "../azure/repo-remote.ts";
-import { getTicket, listOpenTickets, ticketToText } from "../azure/work-items.ts";
+import { repoRemoteOf } from "../forge/remote.ts";
+import { listTickets, loadTicket, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
+import { GithubError } from "../github/github-client.ts";
 import { pickFolder } from "../system/folder-picker.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { mcpAddCommand, memoryStore } from "../memory/memory.ts";
@@ -196,44 +199,52 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     orchestrator.setConfig(loadConfig());
   });
 
-  /** Organisation (and project) from the chosen repo's origin remote, or from the first Azure repo. */
-  const azureTarget = async (wanted: string | null): Promise<{ organization: string; project?: string }> => {
-    const repos = loadConfig().repos;
-    for (const repo of wanted ? repos.filter((candidate) => candidate.name === wanted) : repos) {
-      const remote = await azureRepoOf(repo.path);
-      if (remote) {
-        return remote;
-      }
+  /** Azure DevOps work items or GitHub issues (`source`); the org/repo comes from the chosen repo's origin remote. */
+  const requestedTarget = (url: URL): Promise<TicketTarget> => {
+    const source = url.searchParams.get("source") ?? "azure";
+    if (!TICKET_SOURCES.includes(source as TicketSource)) {
+      throw new HttpError(400, `Origen de tickets desconocido: ${source}`);
     }
-    if (process.env.NEXURA_AZURE_ORG) {
-      return { organization: process.env.NEXURA_AZURE_ORG, project: process.env.NEXURA_AZURE_PROJECT };
-    }
-    throw new HttpError(400, "Ningún repo seleccionado tiene un remote origin de Azure DevOps (o define NEXURA_AZURE_ORG)");
+    return ticketTarget(source as TicketSource, loadConfig().repos, url.searchParams.get("repo"));
+  };
+  /** Upstream 404/400 (missing ticket, a PR number instead of an issue) as such; anything else is a bad gateway. */
+  const upstreamError = (error: unknown): HttpError => {
+    const status = error instanceof AzureError || error instanceof GithubError ? error.status : undefined;
+    return new HttpError(status === 404 || status === 400 ? status : 502, String((error as Error).message));
   };
 
+  /** Which provider a repo's origin remote is on: the default ticket source for it. */
+  route("GET", "/api/repos/:name/remote", async ([name]) => {
+    const repo = loadConfig().repos.find((candidate) => candidate.name === name);
+    if (!repo) {
+      throw new HttpError(404, `Repo desconocido: ${name}`);
+    }
+    return { provider: (await repoRemoteOf(repo.path))?.provider ?? null };
+  });
+
   /** Open tickets (backlog + in progress) to pick from when creating a flow. Zero tokens. */
-  route("GET", "/api/azure/work-items", async (_params, _body, url) => {
+  route("GET", "/api/tickets", async (_params, _body, url) => {
     const scope: WorkItemScope = url.searchParams.get("scope") === "project" ? "project" : "mine";
-    const { organization, project } = await azureTarget(url.searchParams.get("repo"));
+    const target = await requestedTarget(url);
     try {
-      return await listOpenTickets(organization, scope, project);
+      return await listTickets(target, scope);
     } catch (error) {
-      throw new HttpError(502, String((error as Error).message));
+      throw upstreamError(error);
     }
   });
 
-  /** Loads a work item (zero tokens). The organisation comes from the chosen repo's origin remote. */
-  route("GET", "/api/azure/work-items/:id", async ([id], _body, url) => {
-    const { organization } = await azureTarget(url.searchParams.get("repo"));
-    const workItemId = Number(id);
-    if (!Number.isInteger(workItemId) || workItemId <= 0) {
-      throw new HttpError(400, `ID de work item no válido: ${id}`);
+  /** Loads a work item or an issue (zero tokens). */
+  route("GET", "/api/tickets/:id", async ([id], _body, url) => {
+    const target = await requestedTarget(url);
+    const ticketId = Number(id);
+    if (!Number.isInteger(ticketId) || ticketId <= 0) {
+      throw new HttpError(400, `ID de ticket no válido: ${id}`);
     }
     try {
-      const ticket = await getTicket(organization, workItemId);
+      const ticket = await loadTicket(target, ticketId);
       return { ticket, text: ticketToText(ticket) };
     } catch (error) {
-      throw new HttpError(error instanceof AzureError && error.status === 404 ? 404 : 502, String((error as Error).message));
+      throw upstreamError(error);
     }
   });
 

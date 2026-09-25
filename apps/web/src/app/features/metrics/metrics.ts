@@ -47,7 +47,7 @@ export class MetricsPage {
     loader: ({ params }) => this.api.metrics(params.days),
   });
 
-  protected readonly metrics = computed<Metrics | undefined>(() => this.data.value());
+  protected readonly metrics = computed<Metrics | undefined>(() => (this.data.hasValue() ? this.data.value() : undefined));
 
   protected readonly tiles = computed(() => {
     const m = this.metrics();

@@ -3,7 +3,7 @@ import { readFileSync } from "node:fs";
 import { parseArgs } from "node:util";
 import type { ModelAlias, Run, RunRequest, StepName } from "@nexura/shared";
 import { createApiServer } from "../api/api-server.ts";
-import { PrWatcher } from "../azure/pr-watcher.ts";
+import { PrWatcher } from "../forge/pr-watcher.ts";
 import { loadConfig } from "../config/config-loader.ts";
 import { Orchestrator } from "../orchestrator/orchestrator.ts";
 import { RunStore } from "../store/run-store.ts";

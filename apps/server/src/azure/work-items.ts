@@ -66,6 +66,7 @@ export async function getTicket(organization: string, id: number): Promise<Ticke
   const repro = htmlToText(field(item, "Microsoft.VSTS.TCM.ReproSteps"));
 
   return {
+    source: "azure",
     id,
     type,
     title: field(item, "System.Title"),
@@ -84,26 +85,6 @@ export async function getTicket(organization: string, id: number): Promise<Ticke
       done: CLOSED_STATES.has(field(child, "System.State")),
     })),
   };
-}
-
-/** The ticket as the text the flow works from (title first, as the form expects). */
-export function ticketToText(ticket: TicketDetails): string {
-  const sections = [`${ticket.title}`, `${ticket.type} · ${ticket.state} · ${ticket.project}`];
-  if (ticket.description) {
-    sections.push(`## Descripción\n${ticket.description}`);
-  }
-  if (ticket.acceptanceCriteria) {
-    sections.push(`## Criterios de aceptación\n${ticket.acceptanceCriteria}`);
-  }
-  if (ticket.reproSteps) {
-    sections.push(`## Pasos para reproducir\n${ticket.reproSteps}`);
-  }
-  if (ticket.comments.length) {
-    sections.push(
-      `## Comentarios\n${ticket.comments.map((comment) => `- ${comment.author} (${comment.date.slice(0, 10)}): ${comment.text}`).join("\n")}`,
-    );
-  }
-  return sections.join("\n\n");
 }
 
 const wiqlList = (values: Iterable<string>): string => [...values].map((value) => `'${value.replace(/'/g, "''")}'`).join(", ");
