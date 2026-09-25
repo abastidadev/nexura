@@ -143,26 +143,40 @@ export type RunRequest = {
   /** Profile name, or "auto" to let the classify step decide. */
   profile: string;
   stepByStep: boolean;
-  /** `pr`: after release, pause for approval, then push and open the PR in Azure DevOps. */
+  /** `pr`: after release, pause for approval, then push and open the PR where the repo's origin lives (Azure DevOps or GitHub). */
   release?: "local" | "pr";
+  /** Where `ticketId` lives (missing = azure). A PR only links it when it is opened on the same provider. */
+  ticketSource?: TicketSource;
+  /** GitHub: `owner/repo` of the issue, so a PR in another repo still links it. */
+  ticketProject?: string;
 };
 
-/** Work item as loaded from Azure DevOps (HTML fields already converted to text). */
+/** Where tickets come from and PRs go: Azure DevOps work items or GitHub issues. */
+export type TicketSource = "azure" | "github";
+
+export const TICKET_SOURCES: readonly TicketSource[] = ["azure", "github"];
+
+/** Ticket as loaded from Azure DevOps (HTML fields already converted to text) or GitHub (markdown). */
 export type TicketDetails = {
+  source: TicketSource;
   id: number;
   type: string;
   title: string;
   state: string;
+  /** Azure DevOps project, or `owner/repo` on GitHub. */
   project: string;
   url: string;
   description: string;
   acceptanceCriteria: string;
   reproSteps: string;
   comments: { author: string; date: string; text: string }[];
+  /** Child work items (Azure) or sub-issues (GitHub). */
   children: { id: number; title: string; state: string; type: string; done: boolean }[];
+  /** GitHub labels. */
+  labels?: string[];
 };
 
-/** One row of the "pick a ticket" list: open (backlog or in progress) work items. */
+/** One row of the "pick a ticket" list: open (backlog or in progress) work items or issues. */
 export type WorkItemSummary = {
   id: number;
   type: string;
@@ -170,11 +184,17 @@ export type WorkItemSummary = {
   state: string;
   project: string;
   assignedTo: string;
+  /** Azure iteration path, or the GitHub milestone. */
   iteration: string;
   changedDate: string;
+  /** GitHub labels. */
+  labels?: string[];
 };
 
-/** `mine`: assigned to me in any project of the organisation; `project`: everything open in the repo's project. */
+/**
+ * Azure: `mine` = assigned to me in any project of the organisation; `project` = everything open in the repo's project.
+ * GitHub: `mine` = open issues of the repo assigned to me; `project` = every open issue of the repo.
+ */
 export type WorkItemScope = "mine" | "project";
 
 /** A pull request waiting for approval (editable) before push + create. */
@@ -184,13 +204,21 @@ export type PrDraft = {
   target: string;
   title: string;
   description: string;
+  /** Where the PR is opened: the provider of the repo's origin remote. */
+  provider: TicketSource;
+  /** Work item (Azure: linked on creation) or issue (GitHub: `Closes #n` added on creation); never in the editable body. */
   workItemId?: number;
+  /** GitHub: `owner/repo` of the issue when it is not the PR's repo. */
+  workItemProject?: string;
   isDraft: boolean;
 };
 
 export type CreatedPr = { repo: string; id: number; url: string; title: string };
 
-/** An active comment thread of a PR, as read from Azure DevOps. */
+/**
+ * An active comment thread of a PR: an Azure DevOps thread, or an unresolved GitHub review
+ * thread (identified by its first comment's id).
+ */
 export type ReviewThread = {
   repo: string;
   prId: number;
@@ -259,7 +287,7 @@ export type Run = {
 export type ReviewWatch = {
   checkedAt: string;
   activeThreads: number;
-  /** Azure DevOps PR status of the first PR: active, completed, abandoned. Polling stops when not active. */
+  /** Status of the first PR: active, completed (merged), abandoned (closed unmerged). Polling stops when not active. */
   prStatus: string;
   error?: string;
 };

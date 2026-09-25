@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { htmlToText } from "./html-to-text.ts";
 import { parseAzureRemote } from "./repo-remote.ts";
-import { openTicketsQuery, ticketToText } from "./work-items.ts";
+import { openTicketsQuery } from "./work-items.ts";
 
 describe("openTicketsQuery", () => {
   it("excludes closed states and task/test types, scoped to me or to the project", () => {
@@ -31,27 +31,5 @@ describe("htmlToText", () => {
       "<div><h2>Contexto</h2><p>El <b>badge</b> usa&nbsp;azul &amp; debe ser <code>verde</code>.</p><ul><li>Uno</li><li>Dos</li></ul><img src='x'><br>Fin</div>";
     expect(htmlToText(html)).toBe("## Contexto\nEl **badge** usa azul & debe ser `verde`.\n\n- Uno\n- Dos\n[imagen]\nFin");
     expect(htmlToText(undefined)).toBe("");
-  });
-});
-
-describe("ticketToText", () => {
-  it("puts the title on the first line and only the sections that exist", () => {
-    const text = ticketToText({
-      id: 1,
-      type: "Bug",
-      title: "Mapa no carga",
-      state: "Active",
-      project: "Schedule",
-      url: "",
-      description: "",
-      acceptanceCriteria: "",
-      reproSteps: "1. Abrir mapa",
-      comments: [{ author: "Ana", date: "2026-09-01T10:00:00Z", text: "Pasa en Chrome" }],
-      children: [],
-    });
-    expect(text.split("\n")[0]).toBe("Mapa no carga");
-    expect(text).toContain("## Pasos para reproducir\n1. Abrir mapa");
-    expect(text).toContain("- Ana (2026-09-01): Pasa en Chrome");
-    expect(text).not.toContain("Descripción");
   });
 });

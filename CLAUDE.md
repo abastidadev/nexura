@@ -1,6 +1,6 @@
 # Nexura
 
-Local IDE that orchestrates headless `claude -p` flows to resolve Azure DevOps tickets step by step. Overview, structure and usage in [README.md](README.md); plan in [docs/plan.md](docs/plan.md).
+Local IDE that orchestrates headless `claude -p` flows to resolve Azure DevOps work items or GitHub issues step by step. Overview, structure and usage in [README.md](README.md); plan in [docs/plan.md](docs/plan.md).
 
 ## Commits — ABSOLUTE RULE
 

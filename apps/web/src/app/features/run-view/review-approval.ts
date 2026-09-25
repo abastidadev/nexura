@@ -6,7 +6,7 @@ type ReplyRow = ReviewReply & { include: boolean };
 const ACTIONS: { value: ReviewReply["action"]; label: string }[] = [
   { value: "fixed", label: "Arreglado (resuelve el hilo)" },
   { value: "answered", label: "Respondido (lo deja abierto)" },
-  { value: "wontFix", label: "No se hará (wontFix)" },
+  { value: "wontFix", label: "No se hará (cierra el hilo)" },
 ];
 
 /** Go-ahead for addressReview: local commits + drafted replies. Nothing leaves the machine before "Aprobar". */

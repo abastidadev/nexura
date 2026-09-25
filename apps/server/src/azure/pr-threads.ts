@@ -1,7 +1,6 @@
 import type { CreatedPr, ReviewReply, ReviewThread, Worktree } from "@nexura/shared";
-import { git } from "../workspace/git.ts";
 import { azureRequest } from "./azure-client.ts";
-import { azureRepoOf, type AzureRepo } from "./repo-remote.ts";
+import type { AzureRepo } from "./repo-remote.ts";
 
 type ApiThread = {
   id: number;
@@ -19,21 +18,12 @@ const STATUS_BY_ACTION: Record<ReviewReply["action"], string | undefined> = {
   answered: undefined,
 };
 
-async function remoteOf(worktree: Worktree): Promise<AzureRepo> {
-  const remote = await azureRepoOf(worktree.repoPath);
-  if (!remote) {
-    throw new Error(`${worktree.repo}: el remote origin no es de Azure DevOps`);
-  }
-  return remote;
-}
-
 function threadsPath(remote: AzureRepo, prId: number): string {
   return `${encodeURIComponent(remote.project)}/_apis/git/repositories/${encodeURIComponent(remote.repository)}/pullRequests/${prId}/threads`;
 }
 
 /** Active human comment threads of a PR (system/bot and resolved threads are skipped). No tokens. */
-export async function getActiveThreads(worktree: Worktree, pr: CreatedPr): Promise<ReviewThread[]> {
-  const remote = await remoteOf(worktree);
+export async function getActiveThreads(remote: AzureRepo, worktree: Worktree, pr: CreatedPr): Promise<ReviewThread[]> {
   const { value } = await azureRequest<{ value: ApiThread[] }>(remote.organization, threadsPath(remote, pr.id));
   return value
     .filter((thread) => !thread.isDeleted && ACTIVE_STATUSES.has(thread.status ?? ""))
@@ -51,8 +41,7 @@ export async function getActiveThreads(worktree: Worktree, pr: CreatedPr): Promi
 }
 
 /** Replies in the thread and, when the change fixed it, moves it to `fixed` (or `wontFix`). */
-export async function replyToThread(worktree: Worktree, prId: number, reply: ReviewReply): Promise<void> {
-  const remote = await remoteOf(worktree);
+export async function replyToThread(remote: AzureRepo, prId: number, reply: ReviewReply): Promise<void> {
   const path = `${threadsPath(remote, prId)}/${reply.threadId}`;
   await azureRequest(remote.organization, `${path}/comments`, {
     method: "POST",
@@ -62,19 +51,4 @@ export async function replyToThread(worktree: Worktree, prId: number, reply: Rev
   if (status) {
     await azureRequest(remote.organization, path, { method: "PATCH", body: { status } });
   }
-}
-
-export async function pushBranch(worktree: Worktree): Promise<void> {
-  await git(worktree.path, ["push", "origin", worktree.branch]);
-}
-
-/** Threads as the prompt reads them. */
-export function threadsToText(threads: ReviewThread[]): string {
-  return threads
-    .map((thread) => {
-      const where = thread.filePath ? `${thread.filePath}${thread.line ? `:${thread.line}` : ""}` : "comentario general";
-      const comments = thread.comments.map((comment) => `  - ${comment.author}: ${comment.content.replace(/\n+/g, " ")}`).join("\n");
-      return `- repo \`${thread.repo}\` · thread ${thread.threadId} · ${where}\n${comments}`;
-    })
-    .join("\n");
 }

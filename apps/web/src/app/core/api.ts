@@ -15,6 +15,7 @@ import type {
   RunRequest,
   StepDefinition,
   TicketDetails,
+  TicketSource,
   WorkItemScope,
   WorkItemSummary,
 } from "@nexura/shared";
@@ -144,17 +145,23 @@ export class Api {
     return firstValueFrom(this.http.put<void>("/api/repos", { repos }));
   }
 
-  public loadWorkItem(id: string, repo?: string): Promise<{ ticket: TicketDetails; text: string }> {
-    const params: Record<string, string> = repo ? { repo } : {};
-    return firstValueFrom(
-      this.http.get<{ ticket: TicketDetails; text: string }>(`/api/azure/work-items/${encodeURIComponent(id)}`, { params }),
-    );
+  /** An Azure DevOps work item or a GitHub issue, from the repo's organisation/project or GitHub repo. */
+  public loadTicket(source: TicketSource, id: string, repo?: string): Promise<{ ticket: TicketDetails; text: string }> {
+    const params: Record<string, string> = repo ? { source, repo } : { source };
+    return firstValueFrom(this.http.get<{ ticket: TicketDetails; text: string }>(`/api/tickets/${encodeURIComponent(id)}`, { params }));
   }
 
-  /** Open tickets (backlog + in progress) of the repo's Azure DevOps organisation/project. */
-  public listWorkItems(scope: WorkItemScope, repo?: string): Promise<WorkItemSummary[]> {
-    const params: Record<string, string> = repo ? { scope, repo } : { scope };
-    return firstValueFrom(this.http.get<WorkItemSummary[]>("/api/azure/work-items", { params }));
+  /** Open work items (backlog + in progress) or open issues to pick from. */
+  public listTickets(source: TicketSource, scope: WorkItemScope, repo?: string): Promise<WorkItemSummary[]> {
+    const params: Record<string, string> = repo ? { source, scope, repo } : { source, scope };
+    return firstValueFrom(this.http.get<WorkItemSummary[]>("/api/tickets", { params }));
+  }
+
+  /** Provider of the repo's origin remote (null = neither Azure DevOps nor GitHub). */
+  public repoProvider(repo: string): Promise<TicketSource | null> {
+    return firstValueFrom(this.http.get<{ provider: TicketSource | null }>(`/api/repos/${encodeURIComponent(repo)}/remote`)).then(
+      (response) => response.provider,
+    );
   }
 
   /** Native folder dialog on the Nexura machine; "" when cancelled. */

@@ -309,7 +309,7 @@
       <section class="min-h-0" aria-labelledby="ledger-heading">
         <h2 id="ledger-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Libro de tareas</h2>
         <pre class="rounded-md bg-surface-2 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-fg-soft [overflow-wrap:anywhere]">{{
-          ledger.value() || "Vacío."
+          (ledger.hasValue() && ledger.value()) || (ledger.error() ? "No se pudo cargar." : "Vacío.")
         }}</pre>
       </section>
     </aside>
