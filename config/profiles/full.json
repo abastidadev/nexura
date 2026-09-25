@@ -1,7 +1,8 @@
 {
   "name": "full",
-  "description": "Tickets grandes o de riesgo: esfuerzo alto en plan y review.",
+  "description": "Tickets grandes o de riesgo: esfuerzo alto en plan y review, con doble revisión ciega (dos jueces).",
   "maxLoops": 3,
+  "reviewMode": "blind",
   "steps": {
     "enrich": {
       "model": "sonnet",

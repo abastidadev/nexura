@@ -4,6 +4,8 @@
 // Env:
 //   FAKE_STATE_DIR        where call counters are kept (required)
 //   FAKE_REVIEW_REJECTS   how many times codeReview answers "changes" before approving
+//                         (counts calls: a blind review makes two per round)
+//   FAKE_REVIEW_SPLIT     each rejecting codeReview call flags a different file, so blind judges disagree
 //   FAKE_FAIL_MARKER      if the prompt contains it, enrich fails (unless resumed/overridden)
 //   FAKE_WAIT_MESSAGE     enrich waits for a second stdin message and puts it in its summary
 //   FAKE_SUBAGENTS        implement launches an Explore subagent (Agent tool) before editing
@@ -105,7 +107,7 @@ switch (step) {
     const rejects = Number(process.env.FAKE_REVIEW_REJECTS ?? 0);
     output =
       count <= rejects
-        ? { verdict: "changes", summary: "fake", issues: [{ severity: "major", file: "x", problem: "p", fix: "f" }] }
+        ? { verdict: "changes", summary: "fake", issues: [{ severity: "major", file: process.env.FAKE_REVIEW_SPLIT ? `x-${count}` : "x", problem: "p", fix: "f" }] }
         : { verdict: "approve", summary: "fake", issues: [] };
     break;
   }

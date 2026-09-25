@@ -39,6 +39,12 @@ export type StepConfig = {
   enabled: boolean;
 };
 
+/**
+ * How codeReview runs: `single` = one reviewer; `blind` = two judges that never see each
+ * other, and only what both confirm goes back to implement.
+ */
+export type ReviewMode = "single" | "blind";
+
 export type FlowProfile = {
   name: string;
   description: string;
@@ -46,6 +52,8 @@ export type FlowProfile = {
   /** How many times review/qa may send the flow back to implement. */
   maxLoops: number;
   budgetUsd?: number;
+  /** Missing = `single`. */
+  reviewMode?: ReviewMode;
 };
 
 /** Static definition of a step, from config/steps/<step>/step.json. */
@@ -241,6 +249,8 @@ export type StepRun = {
   runId: string;
   step: StepName;
   attempt: number;
+  /** Judge of a blind (double) code review; `attempt` counts per judge. */
+  judge?: "A" | "B";
   /** Position in the run (increments on every execution, including loops and retries). */
   seq: number;
   status: StepStatus;

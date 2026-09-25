@@ -101,6 +101,9 @@ export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void 
   if (profile.budgetUsd !== undefined && (!Number.isFinite(profile.budgetUsd) || profile.budgetUsd <= 0)) {
     throw new Error("El presupuesto debe ser un número mayor que 0 (o vacío para no limitar)");
   }
+  if (profile.reviewMode !== undefined && profile.reviewMode !== "single" && profile.reviewMode !== "blind") {
+    throw new Error("Modo de revisión no válido: usa single o blind");
+  }
   if (!Object.values(steps).some((step) => step?.enabled)) {
     throw new Error("El perfil necesita al menos un paso activo");
   }
@@ -110,6 +113,7 @@ export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void 
     maxLoops: profile.maxLoops,
     steps,
     ...(profile.budgetUsd !== undefined ? { budgetUsd: profile.budgetUsd } : {}),
+    ...(profile.reviewMode === "blind" ? { reviewMode: "blind" as const } : {}),
   };
   writeFileSync(file, JSON.stringify(clean, null, 2) + "\n");
 }

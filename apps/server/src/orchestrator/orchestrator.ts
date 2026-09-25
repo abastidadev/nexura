@@ -30,6 +30,7 @@ import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-contex
 import { isMemoryWrite, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
 import { projectOf, type NewObservation } from "../memory/memory-store.ts";
 import { buildPrDraft, getActiveThreads, pushAndCreatePr, pushBranch, replyToThread, threadsToText } from "../forge/forge.ts";
+import { mergeJudgments, type CodeReviewOutput, type ReviewIssue } from "./blind-review.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
 
 /** Deciding the profile must be cheap. */
@@ -397,7 +398,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           }
         }
 
-        const stepRun = await this.runWithRateLimit(run, context, stepName, stepConfig, stepContext, pending);
+        const blind = stepName === "codeReview" && profile.reviewMode === "blind";
+        const stepRun = blind
+          ? await this.runBlindReview(run, context, stepConfig, stepContext, pending, ledger)
+          : await this.runWithRateLimit(run, context, stepName, stepConfig, stepContext, pending);
         pending = undefined;
         if (!stepRun) {
           return;
@@ -423,7 +427,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
             return;
           }
           if (loops >= profile.maxLoops) {
-            this.fail(run, `${stepName} sigue pidiendo cambios tras ${loops} vuelta(s) (maxLoops=${profile.maxLoops})`);
+            const escalated = blind ? " (escalado: los dos jueces siguen confirmando problemas)" : "";
+            this.fail(run, `${stepName} sigue pidiendo cambios tras ${loops} vuelta(s) (maxLoops=${profile.maxLoops})${escalated}`);
             return;
           }
           loops++;
@@ -463,6 +468,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     stepConfig: StepConfig,
     stepContext: StepContext,
     options?: RetryOptions,
+    judge?: StepRun["judge"],
   ): Promise<StepRun | undefined> {
     const usesClaude = this.config.steps.get(stepName)?.kind !== "builtin";
     for (;;) {
@@ -472,7 +478,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         await this.waitForWindow(run, context, guardedUntil);
         continue;
       }
-      const { stepRun, rateLimitedUntil } = await this.runStep(run, context, stepName, stepConfig, stepContext, options);
+      const { stepRun, rateLimitedUntil } = await this.runStep(run, context, stepName, stepConfig, stepContext, options, judge);
       if (context.cancelled) {
         throw new CancelledError();
       }
@@ -485,6 +491,50 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       }
       await this.waitForWindow(run, context, rateLimitedUntil);
     }
+  }
+
+  /**
+   * Blind double review: two judges get the very same prompt in fresh sessions (they never see
+   * each other's answer, and it is rendered once, before judge A). Only the blocking issues both
+   * confirm go back to implement. Returns judge B's step run carrying the merged output, or
+   * undefined when a judge failed (the run is already failed then).
+   */
+  private async runBlindReview(
+    run: Run,
+    context: RunContext,
+    stepConfig: StepConfig,
+    stepContext: StepContext,
+    pending: RetryOptions | undefined,
+    ledger: Ledger,
+  ): Promise<StepRun | undefined> {
+    const prompt = pending?.prompt ?? this.renderPrompt(run, "codeReview", stepContext);
+    const options: RetryOptions = { ...pending, prompt, resumeSession: false };
+    const judgeA = await this.runWithRateLimit(run, context, "codeReview", stepConfig, stepContext, options, "A");
+    if (!judgeA) {
+      return undefined;
+    }
+    const judgeB = await this.runWithRateLimit(run, context, "codeReview", stepConfig, stepContext, options, "B");
+    if (!judgeB) {
+      return undefined;
+    }
+
+    const merged = mergeJudgments(judgeA.structuredOutput as CodeReviewOutput, judgeB.structuredOutput as CodeReviewOutput);
+    const describe = (issue: ReviewIssue): string => `- [${issue.severity}] ${issue.file}: ${issue.problem}`;
+    const discarded = merged.unconfirmed.length ? `\nDescartadas (solo un juez): ${merged.unconfirmed.map(describe).join(" ")}` : "";
+    this.recordEvent(run, judgeB, {
+      kind: "text",
+      text: `Doble revisión ciega: ${merged.summary}.${merged.issues.length ? `\nConfirmadas:\n${merged.issues.map(describe).join("\n")}` : ""}${discarded}`,
+    });
+    ledger.append(
+      "codeReview (doble ciega)",
+      [
+        `Juez A: ${merged.judges.A}. Juez B: ${merged.judges.B}. Confirmadas: ${merged.issues.length}.`,
+        merged.unconfirmed.length ? `Descartadas (solo las marca un juez):\n${merged.unconfirmed.map(describe).join("\n")}` : "",
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+    return { ...judgeB, structuredOutput: merged };
   }
 
   /** Epoch seconds of the 5 h window reset when its usage is at/above the configured %, else undefined. */
@@ -517,13 +567,15 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     stepConfig: StepConfig,
     stepContext: StepContext,
     options?: RetryOptions,
+    judge?: StepRun["judge"],
   ): Promise<StepOutcome> {
     const definition = this.config.steps.get(stepName);
     const stepRun: StepRun = {
       id: randomUUID(),
       runId: run.id,
       step: stepName,
-      attempt: run.steps.filter((s) => s.step === stepName).length + 1,
+      ...(judge ? { judge } : {}),
+      attempt: run.steps.filter((s) => s.step === stepName && s.judge === judge).length + 1,
       seq: run.steps.length,
       status: "running",
       kind: definition?.kind ?? "claude",
@@ -598,9 +650,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     }
 
     const [primary, ...others] = run.worktrees;
+    // Judge B only reads: both judges would save the same observations.
+    const memoryMode = stepRun.judge === "B" && definition.memory === "readwrite" ? "read" : definition.memory;
     const memory =
-      this.settings.memoryEnabled && definition.memory && definition.memory !== "off"
-        ? memoryRunOptions(definition.memory, {
+      this.settings.memoryEnabled && memoryMode && memoryMode !== "off"
+        ? memoryRunOptions(memoryMode, {
             project: await projectOf(primary!.repoPath),
             step: stepRun.step,
             runId: run.id,
