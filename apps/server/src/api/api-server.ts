@@ -7,6 +7,7 @@ import {
   TICKET_SOURCES,
   type AgentInfo,
   type ConversationChange,
+  type ConversationImage,
   type ConversationUpdate,
   type FlowProfile,
   type NewConversation,
@@ -185,6 +186,7 @@ export function createApiServer(
   route("DELETE", "/api/conversations/:id", ([id]) => conversations.delete(requireConversation(id!)));
   route("POST", "/api/conversations/:id/start", ([id], body) => conversations.start(requireConversation(id!), body as ConversationChange));
   route("POST", "/api/conversations/:id/stop", ([id]) => conversations.stop(requireConversation(id!)));
+  route("POST", "/api/conversations/:id/images", ([id], body) => conversations.saveImage(requireConversation(id!), body as ConversationImage));
   route("GET", "/api/conversations/:id/history", ([id]) => conversations.history(requireConversation(id!)));
 
   route("GET", "/api/config", () => {

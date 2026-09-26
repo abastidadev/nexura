@@ -7,6 +7,7 @@ import type {
   ClaudeInventory,
   Conversation,
   ConversationChange,
+  ConversationImage,
   ConversationUpdate,
   FlowProfile,
   Metrics,
@@ -19,6 +20,7 @@ import type {
   RetryOptions,
   ReviewThread,
   Run,
+  SavedConversationImage,
   RunRequest,
   StepDefinition,
   TicketDetails,
@@ -257,6 +259,11 @@ export class Api {
 
   public stopConversation(id: string): Promise<Conversation> {
     return firstValueFrom(this.http.post<Conversation>(`/api/conversations/${id}/stop`, {}));
+  }
+
+  /** Saves an image for the conversation's CLI; returns the text to paste so it attaches it. */
+  public saveConversationImage(id: string, image: ConversationImage): Promise<SavedConversationImage> {
+    return firstValueFrom(this.http.post<SavedConversationImage>(`/api/conversations/${id}/images`, image));
   }
 
   /** Every message across the agents it went through, from their session files (no tokens). */

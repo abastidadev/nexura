@@ -11,10 +11,12 @@ import {
   type AgentKind,
   type Conversation,
   type ConversationChange,
+  type ConversationImage,
   type ConversationSegment,
   type ConversationUpdate,
   type NewConversation,
   type RepoConfig,
+  type SavedConversationImage,
   type ServerMessage,
   type TranscriptMessage,
 } from "@nexura/shared";
@@ -28,6 +30,10 @@ import type { ConversationStore } from "./conversation-store.ts";
 import { conversationHistory, handoffMarkdown, handoffPrompt, planHandoff } from "./handoff.ts";
 import { choosesSessionId, interactiveArgs } from "./interactive-args.ts";
 import { findCodexSession, readTranscript, sessionFile, sessionHomes, sessionTitle, type SessionHomes } from "./transcripts.ts";
+
+/** Images the agent CLIs accept, by MIME type, with the extension they are saved with. */
+const IMAGE_TYPES: Record<string, string> = { "image/png": "png", "image/jpeg": "jpg", "image/gif": "gif", "image/webp": "webp" };
+const MAX_IMAGE_BYTES = 20 * 1024 * 1024;
 
 /** Output kept per conversation, replayed to a tab that (re)attaches. */
 const MAX_BUFFER = 512 * 1024;
@@ -227,6 +233,32 @@ export class ConversationManager extends EventEmitter {
     this.store.delete(id);
     rmSync(this.folder(id), { recursive: true, force: true });
     this.broadcast({ type: "conversationDeleted", id });
+  }
+
+  /**
+   * Saves an image pasted or dropped on the terminal in the conversation's folder (removed
+   * with it). Pasting its path is how the CLIs attach an image: claude and codex turn a pasted
+   * image path into an attachment, copilot takes it as an `@` file mention.
+   */
+  public saveImage(id: string, image: ConversationImage): SavedConversationImage {
+    const conversation = this.get(id);
+    const extension = IMAGE_TYPES[image.mimeType];
+    if (!extension) {
+      throw new Error(`Formato de imagen no admitido: ${image.mimeType || "desconocido"} (usa PNG, JPEG, GIF o WebP)`);
+    }
+    const data = Buffer.from(String(image.data ?? ""), "base64");
+    if (data.length === 0) {
+      throw new Error("La imagen está vacía");
+    }
+    if (data.length > MAX_IMAGE_BYTES) {
+      throw new Error(`La imagen pesa más de ${MAX_IMAGE_BYTES / 1024 / 1024} MB`);
+    }
+    const file = join(this.folder(id), "images", `${new Date().toISOString().replace(/[:.]/g, "-")}-${randomUUID().slice(0, 8)}.${extension}`);
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, data);
+    const quoted = /\s/.test(file) ? `"${file}"` : file;
+    const agent = conversation.segments.at(-1)?.agent;
+    return { path: file, text: conversation.kind === "agent" && agent === "copilot" ? `@${quoted} ` : quoted };
   }
 
   /** The whole conversation, across agents, read from their session files (no tokens). */

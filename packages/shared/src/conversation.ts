@@ -124,6 +124,12 @@ export type ConversationChange = {
 
 export type ConversationUpdate = { title?: string; pinned?: boolean };
 
+/** An image pasted or dropped on a conversation's terminal, base64 encoded. */
+export type ConversationImage = { mimeType: string; data: string };
+
+/** Where the image was saved, and the text to paste into the CLI so it attaches it. */
+export type SavedConversationImage = { path: string; text: string };
+
 /** One message of a conversation, read from the session files of the agents it went through. */
 export type TranscriptMessage = {
   role: "user" | "assistant";

@@ -1,6 +1,7 @@
 import { effect, inject, Service, signal, type Signal, type WritableSignal } from "@angular/core";
 import { FitAddon } from "@xterm/addon-fit";
 import { Terminal, type ITheme } from "@xterm/xterm";
+import { Api, apiError } from "../../core/api";
 import { NexuraStore } from "../../core/nexura-store";
 
 const FONT_SIZE = 13;
@@ -23,6 +24,20 @@ function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+function imageFiles(data: DataTransfer | null): File[] {
+  return [...(data?.files ?? [])].filter((file) => file.type.startsWith("image/"));
+}
+
+/** The file's bytes as base64 (without the `data:` prefix). */
+function base64(file: File): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result).replace(/^data:[^,]*,/, ""));
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(file);
+  });
+}
+
 function theme(): ITheme {
   return {
     background: cssVar("--nx-bg"),
@@ -41,6 +56,7 @@ function theme(): ITheme {
 @Service()
 export class TerminalSessions {
   private readonly store = inject(NexuraStore);
+  private readonly api = inject(Api);
   private readonly sessions = new Map<string, Session>();
 
   public constructor() {
@@ -168,7 +184,47 @@ export class TerminalSessions {
       // Ctrl+V: the browser pastes (xterm takes the paste event); the CLI must not see ^V.
       return event.key !== "v" && event.key !== "V";
     });
+
+    // Images pasted or dropped on the terminal go to the CLI as a saved file's path. Capture
+    // phase: xterm's own paste handler (on its textarea, inside `element`) must not see them.
+    element.addEventListener(
+      "paste",
+      (event) => {
+        const images = imageFiles(event.clipboardData);
+        if (images.length) {
+          event.preventDefault();
+          event.stopPropagation();
+          void this.attachImages(session, images);
+        }
+      },
+      true,
+    );
+    element.addEventListener("dragover", (event) => {
+      if (event.dataTransfer?.types.includes("Files")) {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = "copy";
+      }
+    });
+    element.addEventListener("drop", (event) => {
+      const images = imageFiles(event.dataTransfer);
+      if (images.length) {
+        event.preventDefault();
+        void this.attachImages(session, images);
+      }
+    });
     return session;
+  }
+
+  private async attachImages(session: Session, images: File[]): Promise<void> {
+    for (const image of images) {
+      try {
+        const saved = await this.api.saveConversationImage(session.id, { mimeType: image.type, data: await base64(image) });
+        session.terminal.paste(saved.text);
+      } catch (error) {
+        this.store.toast({ title: "No se pudo adjuntar la imagen", body: apiError(error, String(error)), tone: "err" });
+      }
+    }
+    session.terminal.focus();
   }
 
   private connect(session: Session): void {

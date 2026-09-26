@@ -70,6 +70,7 @@ describe("interactiveArgs", () => {
       "--ask-for-approval",
       "on-request",
       "--no-alt-screen",
+      "--no-daemon",
       "c1",
       "sigue",
     ]);
@@ -447,6 +448,24 @@ describe("ConversationManager", () => {
     await manager.delete(created.id);
     expect(manager.list()).toEqual([]);
     expect(socket.readyState).toBe(3);
+  });
+
+  it("saves pasted images in the conversation's folder and says what to paste per agent", async () => {
+    const png = Buffer.from([0x89, 0x50, 0x4e, 0x47]).toString("base64");
+    const claude = await manager.create({ kind: "agent", repo: "demo", agent: "claude" });
+    const saved = manager.saveImage(claude.id, { mimeType: "image/png", data: png });
+    expect(saved.path.startsWith(join(root, "data", "conversations", claude.id, "images"))).toBe(true);
+    expect(saved.path.endsWith(".png")).toBe(true);
+    expect(readFileSync(saved.path).toString("base64")).toBe(png);
+    expect(saved.text).toBe(saved.path);
+
+    const copilot = await manager.create({ kind: "agent", repo: "demo", agent: "copilot" });
+    expect(manager.saveImage(copilot.id, { mimeType: "image/jpeg", data: png }).text).toMatch(/^@.+\.jpg $/);
+    expect(() => manager.saveImage(claude.id, { mimeType: "image/svg+xml", data: png })).toThrow(/no admitido/);
+    expect(() => manager.saveImage(claude.id, { mimeType: "image/png", data: "" })).toThrow(/vacía/);
+
+    await manager.delete(claude.id);
+    expect(existsSync(saved.path)).toBe(false);
   });
 
   it("keeps nothing when the CLI cannot start", async () => {
