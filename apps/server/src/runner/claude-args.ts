@@ -1,4 +1,5 @@
 import type { Effort } from "@nexura/shared";
+import type { McpServerSpec } from "../workspace/claude-inventory.ts";
 
 export type ClaudeRunOptions = {
   cwd: string;
@@ -10,9 +11,14 @@ export type ClaudeRunOptions = {
   tools: string[];
   allowedTools?: string[];
   disallowedTools?: string[];
-  useMcp?: boolean;
-  /** Extra MCP servers (`--mcp-config`), loaded even with `useMcp` off, e.g. the memory server. */
+  /** Nexura's own MCP servers (the memory server), passed inline. */
   mcpConfig?: { mcpServers: Record<string, { command: string; args: string[] }> };
+  /**
+   * MCP servers taken from the repo's Claude config for this step. Claude gets them in a
+   * file (their env/headers may hold secrets, and args are shown in the UI). Nothing else is
+   * loaded: every agent runs with the equivalent of `--strict-mcp-config`.
+   */
+  mcpServers?: Record<string, McpServerSpec>;
   addDirs?: string[];
   /** JSON Schema object; the step's answer comes back in `result.structuredOutput`. */
   jsonSchema?: object;
@@ -34,7 +40,7 @@ export type ClaudeRunOptions = {
  * and `--permission-mode dontAsk` makes anything not pre-approved fail instead of
  * waiting for a prompt that nobody will answer.
  */
-export function buildClaudeArgs(options: ClaudeRunOptions): string[] {
+export function buildClaudeArgs(options: ClaudeRunOptions, mcpFile?: string): string[] {
   const args = [
     "-p",
     "--input-format",
@@ -58,11 +64,11 @@ export function buildClaudeArgs(options: ClaudeRunOptions): string[] {
   if (options.disallowedTools?.length) {
     args.push("--disallowedTools", options.disallowedTools.join(","));
   }
-  if (!options.useMcp) {
-    args.push("--strict-mcp-config");
-  }
-  if (options.mcpConfig) {
-    args.push("--mcp-config", JSON.stringify(options.mcpConfig));
+  args.push("--strict-mcp-config");
+  // One variadic flag: inline JSON and/or a file.
+  const mcpConfigs = [...(options.mcpConfig ? [JSON.stringify(options.mcpConfig)] : []), ...(mcpFile ? [mcpFile] : [])];
+  if (mcpConfigs.length) {
+    args.push("--mcp-config", ...mcpConfigs);
   }
   for (const dir of options.addDirs ?? []) {
     args.push("--add-dir", dir);

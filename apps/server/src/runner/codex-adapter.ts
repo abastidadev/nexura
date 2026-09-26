@@ -5,6 +5,7 @@ import type { NexuraEvent } from "@nexura/shared";
 import { limitStatus, resultEvent, type AgentAdapter, type AgentLaunch, type AgentRunOptions, type Json } from "./agent-adapter.ts";
 import { overrideCommand, resolveNpmCli } from "./agent-bin.ts";
 import { fromStrictOutput, toStrictSchema } from "./strict-schema.ts";
+import type { McpServerSpec } from "../workspace/claude-inventory.ts";
 
 /** Tools that change files: a step with any of them gets a writable sandbox. */
 const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
@@ -19,13 +20,39 @@ export function codexSandbox(tools: string[]): "read-only" | "workspace-write" {
   return tools.some((tool) => WRITE_TOOLS.has(tool)) ? "workspace-write" : "read-only";
 }
 
-/** `-c` overrides that register an MCP server (the TOML value of a JSON string/array is the same text). */
-function mcpOverrides(mcpConfig: AgentRunOptions["mcpConfig"]): string[] {
-  return Object.entries(mcpConfig?.mcpServers ?? {}).flatMap(([name, server]) => [
-    "-c",
-    `mcp_servers.${name}.command=${JSON.stringify(server.command)}`,
-    "-c",
-    `mcp_servers.${name}.args=${JSON.stringify(server.args)}`,
+/** A TOML inline table of strings (`{ "K" = "v" }`); a JSON string is a valid TOML string. */
+function tomlTable(values: Record<string, string>): string {
+  return `{ ${Object.entries(values)
+    .map(([key, value]) => `${JSON.stringify(key)} = ${JSON.stringify(String(value))}`)
+    .join(", ")} }`;
+}
+
+/** `-c` settings of one server: stdio (command/args/env) or streamable HTTP (url/headers). */
+function serverSettings(server: McpServerSpec): string[] {
+  if ("url" in server) {
+    return [`url=${JSON.stringify(server.url)}`, ...(server.headers ? [`http_headers=${tomlTable(server.headers)}`] : [])];
+  }
+  return [
+    `command=${JSON.stringify(server.command)}`,
+    `args=${JSON.stringify(server.args ?? [])}`,
+    ...(server.env ? [`env=${tomlTable(server.env)}`] : []),
+  ];
+}
+
+/**
+ * `-c` overrides that register the step's MCP servers: Nexura's memory server and the ones
+ * taken from the repo's Claude config (the TOML value of a JSON string/array is the same text).
+ */
+function mcpOverrides(options: AgentRunOptions): string[] {
+  const servers: Record<string, McpServerSpec> = { ...options.mcpServers, ...options.mcpConfig?.mcpServers };
+  // Codex takes a server name as a bare TOML key.
+  return Object.entries(servers).filter(([name]) => /^[A-Za-z0-9_-]+$/.test(name)).flatMap(([name, server]) => [
+    ...serverSettings(server).flatMap((setting) => ["-c", `mcp_servers.${name}.${setting}`]),
+    // Pre-approve only tools explicitly allowed for this step on its injected servers.
+    ...(options.allowedTools ?? []).filter((tool) => tool.startsWith(`mcp__${name}__`) && /^[A-Za-z0-9_-]+$/.test(tool.slice(`mcp__${name}__`.length)) && !options.disallowedTools?.includes(tool)).flatMap((tool) => [
+      "-c",
+      `mcp_servers.${name}.tools.${tool.slice(`mcp__${name}__`.length)}.approval_mode="approve"`,
+    ]),
   ]);
 }
 
@@ -40,7 +67,7 @@ export function buildCodexArgs(options: AgentRunOptions, schemaFile?: string): s
   for (const dir of options.addDirs ?? []) {
     args.push("--add-dir", dir);
   }
-  args.push(...mcpOverrides(options.mcpConfig));
+  args.push(...mcpOverrides(options));
   if (schemaFile) {
     args.push("--output-schema", schemaFile);
   }
@@ -53,7 +80,7 @@ export function buildCodexArgs(options: AgentRunOptions, schemaFile?: string): s
 }
 
 const usageOf = (usage: Json | undefined) => ({
-  inputTokens: usage?.input_tokens ?? 0,
+  inputTokens: Math.max(0, (usage?.input_tokens ?? 0) - (usage?.cached_input_tokens ?? 0)),
   outputTokens: usage?.output_tokens ?? 0,
   cacheReadTokens: usage?.cached_input_tokens ?? 0,
   cacheCreationTokens: 0,

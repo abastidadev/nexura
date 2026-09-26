@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync } from "node:fs";
-import { isAbsolute, join, relative, resolve } from "node:path";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { RepoConfig, Worktree } from "@nexura/shared";
 import { forgetWorktree, trustWorktree } from "./claude-trust.ts";
@@ -55,8 +55,31 @@ export async function createWorktree(repo: RepoConfig, runId: string, branchName
   } else if (mode === "install") {
     await runShell("npm ci", path, 20 * 60 * 1000);
   }
-  trustWorktree(path);
+  copyLocalClaudeConfig(repo.path, path);
+  trustWorktree(path, repo.path);
   return { repo: repo.name, repoPath: repo.path, path, branch, baseRef };
+}
+
+/**
+ * Claude config that usually lives outside git (MCP approvals, personal permissions and
+ * notes, an uncommitted `.mcp.json`). A worktree only has what is committed, so these are
+ * copied from the main checkout: the steps and the embedded terminal then see what
+ * `claude` sees in the repo. `commitAll` never commits them.
+ */
+export const LOCAL_CLAUDE_FILES = [".claude/settings.local.json", "CLAUDE.local.md", ".mcp.json"];
+
+export function copyLocalClaudeConfig(repoPath: string, worktreePath: string): string[] {
+  const copied: string[] = [];
+  for (const file of LOCAL_CLAUDE_FILES) {
+    const from = join(repoPath, file);
+    const to = join(worktreePath, file);
+    if (existsSync(from) && !existsSync(to)) {
+      mkdirSync(dirname(to), { recursive: true });
+      copyFileSync(from, to);
+      copied.push(file);
+    }
+  }
+  return copied;
 }
 
 function isInside(parent: string, child: string): boolean {
@@ -287,6 +310,12 @@ export async function commitAll(worktree: Worktree, message: string): Promise<st
   await git(worktree.path, ["add", "-A"]);
   // Belt and braces: never commit the node_modules junction, even if a repo does not ignore it.
   await git(worktree.path, ["rm", "-r", "-q", "--cached", "--ignore-unmatch", "node_modules"]);
+  // Local Claude config copied from the main checkout stays local (unless the repo tracks it).
+  const tracked = (await git(worktree.path, ["ls-tree", "--name-only", "HEAD", "--", ...LOCAL_CLAUDE_FILES])).split(/\r?\n/);
+  const local = LOCAL_CLAUDE_FILES.filter((file) => !tracked.includes(file));
+  if (local.length) {
+    await git(worktree.path, ["rm", "-q", "--cached", "--ignore-unmatch", "--", ...local]);
+  }
   const staged = await git(worktree.path, ["diff", "--cached", "--name-only"]);
   if (!staged) {
     return undefined;

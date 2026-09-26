@@ -65,6 +65,9 @@
         <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="cleanup(false)">
           Borrar worktrees
         </button>
+        <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="cleanup(true)">
+          Borrar worktrees y ramas
+        </button>
       }
       @if (!isActive()) {
         <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="deleteRun()">

@@ -6,7 +6,10 @@ import {
   STEP_NAMES,
   TICKET_SOURCES,
   type AgentInfo,
+  type ConversationChange,
+  type ConversationUpdate,
   type FlowProfile,
+  type NewConversation,
   type NexuraSettings,
   type RepoConfig,
   type RetryOptions,
@@ -31,6 +34,8 @@ import {
 import { NEXURA_HOME } from "../config/paths.ts";
 import { rejectReason } from "./request-guard.ts";
 import { AzureError } from "../azure/azure-client.ts";
+import { ConversationManager } from "../conversations/conversation-manager.ts";
+import { ConversationStore } from "../conversations/conversation-store.ts";
 import { repoRemoteOf } from "../forge/remote.ts";
 import { listTickets, loadTicket, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
 import { GithubError } from "../github/github-client.ts";
@@ -38,6 +43,8 @@ import { pickFolder } from "../system/folder-picker.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { mcpAddCommand, memoryStore } from "../memory/memory.ts";
 import { detectAgents } from "../runner/agents.ts";
+import { accountUsage } from "../runner/account-usage.ts";
+import { claudeInventory } from "../workspace/claude-inventory.ts";
 import { projectOf } from "../memory/memory-store.ts";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
@@ -97,7 +104,11 @@ function serveStatic(url: URL, response: ServerResponse): boolean {
   return true;
 }
 
-export function createApiServer(orchestrator: Orchestrator, store: RunStore): Server {
+export function createApiServer(
+  orchestrator: Orchestrator,
+  store: RunStore,
+  conversations = new ConversationManager(new ConversationStore()),
+): Server {
   const routes: Route[] = [];
   const terminals = new TerminalServer(store);
   const route = (method: string, path: string, handler: Handler): void => {
@@ -110,6 +121,13 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
       throw new HttpError(404, `Run no encontrado: ${id}`);
     }
     return run;
+  };
+
+  const requireConversation = (id: string): string => {
+    if (!conversations.find(id)) {
+      throw new HttpError(404, `No existe la conversación ${id}`);
+    }
+    return id;
   };
 
   const requireStep = (name: string): void => {
@@ -159,6 +177,15 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     }
     await orchestrator.cleanup(id!, Boolean((body as { deleteBranches?: boolean }).deleteBranches));
   });
+
+  // Interactive terminal conversations (claude, codex, copilot or a shell) on a project.
+  route("GET", "/api/conversations", () => conversations.list());
+  route("POST", "/api/conversations", (_params, body) => conversations.create(body as NewConversation));
+  route("PUT", "/api/conversations/:id", ([id], body) => conversations.update(requireConversation(id!), body as ConversationUpdate));
+  route("DELETE", "/api/conversations/:id", ([id]) => conversations.delete(requireConversation(id!)));
+  route("POST", "/api/conversations/:id/start", ([id], body) => conversations.start(requireConversation(id!), body as ConversationChange));
+  route("POST", "/api/conversations/:id/stop", ([id]) => conversations.stop(requireConversation(id!)));
+  route("GET", "/api/conversations/:id/history", ([id]) => conversations.history(requireConversation(id!)));
 
   route("GET", "/api/config", () => {
     const config = loadConfig();
@@ -233,6 +260,15 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
     return { provider: (await repoRemoteOf(repo.path))?.provider ?? null };
   });
 
+  /** Skills, subagents and MCP servers that `claude` finds in a repo (read from files, no tokens). */
+  route("GET", "/api/repos/:name/claude-config", ([name]) => {
+    const repo = loadConfig().repos.find((candidate) => candidate.name === name);
+    if (!repo) {
+      throw new HttpError(404, `Repo desconocido: ${name}`);
+    }
+    return claudeInventory(repo.path);
+  });
+
   /** Open tickets (backlog + in progress) to pick from when creating a flow. Zero tokens. */
   route("GET", "/api/tickets", async (_params, _body, url) => {
     const scope: WorkItemScope = url.searchParams.get("scope") === "project" ? "project" : "mine";
@@ -294,6 +330,7 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
   });
   route("GET", "/api/metrics/cost-by-step", () => store.costByStep());
   route("GET", "/api/metrics", (_params, _body, url) => store.metrics(Number(url.searchParams.get("days")) || undefined));
+  route("GET", "/api/metrics/account-usage", (_params, _body, url) => accountUsage(url.searchParams.has("refresh")));
   route("POST", "/api/runs/:id/classify-feedback", ([id], body) => {
     const { correct, expected } = body as { correct: boolean; expected?: string };
     return orchestrator.rateClassify(id!, Boolean(correct), expected);
@@ -329,6 +366,11 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
 
   // Several WebSocket servers on one HTTP server must route the upgrade themselves.
   const sockets = new WebSocketServer({ noServer: true });
+  const conversationSockets = new WebSocketServer({ noServer: true });
+  conversationSockets.on("connection", (socket: WebSocket, request: IncomingMessage) => {
+    const params = new URL(request.url ?? "/", "http://localhost").searchParams;
+    conversations.attach(socket, params.get("id") ?? "", Number(params.get("cols")), Number(params.get("rows")));
+  });
   server.on("upgrade", (request, socket, head) => {
     if (rejectReason(request)) {
       socket.end("HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n");
@@ -339,6 +381,8 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
       sockets.handleUpgrade(request, socket, head, (ws) => sockets.emit("connection", ws, request));
     } else if (pathname === "/pty") {
       terminals.handleUpgrade(request, socket, head);
+    } else if (pathname === "/cpty") {
+      conversationSockets.handleUpgrade(request, socket, head, (ws) => conversationSockets.emit("connection", ws, request));
     } else {
       socket.destroy();
     }
@@ -352,12 +396,15 @@ export function createApiServer(orchestrator: Orchestrator, store: RunStore): Se
       socket.send(JSON.stringify({ type: "quota", quota } satisfies ServerMessage));
     }
   });
-  orchestrator.on("message", (message) => {
+  const broadcast = (message: ServerMessage): void => {
     const data = JSON.stringify(message);
     for (const client of clients) {
       client.send(data);
     }
-  });
+  };
+  orchestrator.on("message", broadcast);
+  conversations.on("message", broadcast);
+  server.on("close", () => conversations.dispose());
 
   return server;
 }

@@ -1,1 +1,1 @@
-{ "kind": "builtin", "tools": [], "allowedTools": [], "disallowedTools": [], "useMcp": false, "timeoutMs": 1200000 }
+{ "kind": "builtin", "tools": [], "allowedTools": [], "disallowedTools": [], "mcpServers": [], "timeoutMs": 1200000 }

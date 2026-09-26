@@ -1,9 +1,9 @@
 {
   "kind": "claude",
-  "tools": ["Read", "Glob", "Grep", "Bash"],
+  "tools": ["Read", "Glob", "Grep", "Bash", "Skill", "Agent"],
   "allowedTools": ["Bash(git diff*)", "Bash(git log*)", "Bash(git show*)"],
   "disallowedTools": [],
-  "useMcp": false,
+  "mcpServers": ["*"],
   "memory": "readwrite",
   "timeoutMs": 900000
 }

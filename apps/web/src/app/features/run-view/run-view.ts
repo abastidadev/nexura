@@ -253,7 +253,7 @@ export class RunView {
 
   protected cleanup(deleteBranches: boolean): Promise<void> {
     const message = deleteBranches
-      ? "¿Borrar los worktrees Y las ramas de este flujo? No se puede deshacer."
+      ? "¿Borrar los worktrees Y las ramas de este flujo, aunque tengan commits?\n\nLos commits que no estén subidos se pierden. No se puede deshacer."
       : "¿Borrar los worktrees de este flujo? Las ramas con commits se conservan; las vacías se borran.";
     if (!confirm(message)) {
       return Promise.resolve();

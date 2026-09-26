@@ -103,6 +103,61 @@
   </form>
 
   @if (!isNew()) {
+    <details class="rounded-lg border border-border bg-surface" (toggle)="loadClaudeConfig()">
+      <summary class="cursor-pointer px-4 py-3 font-medium">
+        Config de Claude del repo <span class="text-[11px] font-normal text-muted">(skills, subagentes y MCP que heredan los pasos)</span>
+      </summary>
+      <div class="flex flex-col gap-3 border-t border-border p-4">
+        <p class="text-[11px] text-muted">
+          Lo que vería <code class="font-mono">claude</code> abierto en este repo: <code class="font-mono">.claude/</code> y <code class="font-mono">.mcp.json</code> del proyecto,
+          tu config de usuario y los plugins activos. Los pasos con <code class="font-mono">Skill</code>/<code class="font-mono">Agent</code> en Herramientas pueden usar skills y
+          subagentes; los MCP se eligen por paso en Pasos.
+        </p>
+        @if (claudeConfigError()) {
+          <p class="text-err" role="alert">{{ claudeConfigError() }}</p>
+        }
+        @if (claudeConfig(); as inventory) {
+          <div class="grid gap-4 md:grid-cols-3">
+            <div class="flex min-w-0 flex-col gap-1">
+              <h3 class="text-[11px] font-medium text-muted uppercase">Skills ({{ inventory.skills.length }})</h3>
+              @for (skill of inventory.skills; track skill.source + skill.name) {
+                <div class="min-w-0" [title]="skill.description">
+                  <span class="font-mono text-[12px]">{{ skill.name }}</span>
+                  <span class="ml-1 text-[11px] text-muted">{{ sourceLabel(skill.source) }}</span>
+                </div>
+              } @empty {
+                <span class="text-[12px] text-muted">Ninguna</span>
+              }
+            </div>
+            <div class="flex min-w-0 flex-col gap-1">
+              <h3 class="text-[11px] font-medium text-muted uppercase">Subagentes ({{ inventory.agents.length }})</h3>
+              @for (agent of inventory.agents; track agent.source + agent.name) {
+                <div class="min-w-0" [title]="agent.description">
+                  <span class="font-mono text-[12px]">{{ agent.name }}</span>
+                  <span class="ml-1 text-[11px] text-muted">{{ sourceLabel(agent.source) }}</span>
+                </div>
+              } @empty {
+                <span class="text-[12px] text-muted">Ninguno</span>
+              }
+            </div>
+            <div class="flex min-w-0 flex-col gap-1">
+              <h3 class="text-[11px] font-medium text-muted uppercase">Servidores MCP ({{ inventory.mcpServers.length }})</h3>
+              @for (server of inventory.mcpServers; track server.source + server.name) {
+                <div class="min-w-0" [class.opacity-50]="!server.enabled" [title]="server.enabled ? '' : 'Sin aprobar en el proyecto: solo se carga si el paso lo nombra'">
+                  <span class="font-mono text-[12px]">{{ server.name }}</span>
+                  <span class="ml-1 text-[11px] text-muted">{{ sourceLabel(server.source) }} · {{ server.transport }}</span>
+                </div>
+              } @empty {
+                <span class="text-[12px] text-muted">Ninguno</span>
+              }
+            </div>
+          </div>
+        } @else if (!claudeConfigError()) {
+          <span class="text-[12px] text-muted">Leyendo…</span>
+        }
+      </div>
+    </details>
+
     <details class="rounded-lg border border-border bg-surface" (toggle)="loadNotes()">
       <summary class="cursor-pointer px-4 py-3 font-medium">
         Notas aprendidas <span class="text-[11px] font-normal text-muted">(las usa enrich/plan en cada ticket)</span>

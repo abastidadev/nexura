@@ -1,6 +1,6 @@
 import { computed, DestroyRef, effect, inject, Service, signal, type Signal, type WritableSignal } from "@angular/core";
 import { Router } from "@angular/router";
-import type { NexuraSettings, QuotaInfo, Run, ServerMessage } from "@nexura/shared";
+import type { Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage } from "@nexura/shared";
 import { setCustomStepLabels, stepLabel, type Tone } from "./format";
 import { Api, type NexuraConfigView, type StoredEvent } from "./api";
 
@@ -48,6 +48,7 @@ export class NexuraStore {
   private readonly router = inject(Router);
   private toastSeq = 0;
   private readonly runsById = signal<Record<string, Run>>({});
+  private readonly conversationsById = signal<Record<string, Conversation>>({});
   private readonly eventSignals = new Map<string, WritableSignal<StoredEvent[]>>();
   private readonly loadedEvents = new Set<string>();
   private socket?: WebSocket;
@@ -68,6 +69,11 @@ export class NexuraStore {
   public readonly runs = computed(() =>
     Object.values(this.runsById()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
   );
+  /** Terminal conversations: pinned first, then the most recently active. */
+  public readonly conversations = computed(() =>
+    Object.values(this.conversationsById()).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt)),
+  );
+  public readonly runningConversations = computed(() => this.conversations().filter((conversation) => conversation.status === "running").length);
   public readonly activeCount = computed(
     () => this.runs().filter((run) => ["running", "queued", "waiting-rate-limit", "paused"].includes(run.status)).length,
   );
@@ -96,13 +102,15 @@ export class NexuraStore {
 
   public async init(): Promise<void> {
     this.connect();
-    const [runs, config, quota, settings] = await Promise.all([
+    const [runs, config, quota, settings, conversations] = await Promise.all([
       this.api.listRuns(),
       this.api.getConfig(),
       this.api.getQuota(),
       this.api.getSettings(),
+      this.api.listConversations(),
     ]);
     this.settings.set(settings);
+    this.conversationsById.set(Object.fromEntries(conversations.map((conversation) => [conversation.id, conversation])));
     this.runsById.set(Object.fromEntries(runs.map((run) => [run.id, run])));
     this.setConfig(config);
     if (quota) {
@@ -123,6 +131,14 @@ export class NexuraStore {
 
   public run(id: string): Signal<Run | undefined> {
     return computed(() => this.runsById()[id]);
+  }
+
+  public upsertConversation(conversation: Conversation): void {
+    this.conversationsById.update((all) => ({ ...all, [conversation.id]: conversation }));
+  }
+
+  public forgetConversation(id: string): void {
+    this.conversationsById.update(({ [id]: _removed, ...rest }) => rest);
   }
 
   public upsertRun(run: Run): void {
@@ -268,6 +284,9 @@ export class NexuraStore {
       this.connected.set(true);
       // Catch up on anything missed while disconnected.
       void this.api.listRuns().then((runs) => runs.forEach((run) => this.upsertRun(run)));
+      void this.api
+        .listConversations()
+        .then((conversations) => this.conversationsById.set(Object.fromEntries(conversations.map((conversation) => [conversation.id, conversation]))));
     };
     socket.onmessage = (message) => this.handle(JSON.parse(String(message.data)) as ServerMessage);
     socket.onclose = () => {
@@ -294,6 +313,12 @@ export class NexuraStore {
         break;
       case "runDeleted":
         this.forgetRun(message.runId);
+        break;
+      case "conversation":
+        this.upsertConversation(message.conversation);
+        break;
+      case "conversationDeleted":
+        this.forgetConversation(message.id);
         break;
       case "event":
         this.eventSignal(message.stepRunId).update((current) =>

@@ -1,4 +1,4 @@
-import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
@@ -97,15 +97,34 @@ describe("config editing", () => {
   it("updates step.json allowlists but never its kind", () => {
     saveStepDefinition(
       "qaCode",
-      { tools: ["Read"], allowedTools: [" Bash(node *) ", ""], disallowedTools: [], useMcp: true, timeoutMs: 60_000 },
+      { tools: ["Read"], allowedTools: [" Bash(node *) ", ""], disallowedTools: [], mcpServers: ["context7", " context7", "*"], timeoutMs: 60_000 },
       configDir,
     );
     const step = loadSteps(configDir).get("qaCode")!;
     expect(step.kind).toBe("builtin");
     expect(step.allowedTools).toEqual(["Bash(node *)"]);
+    expect(step.mcpServers).toEqual(["context7", "*"]);
     expect(() =>
-      saveStepDefinition("qaCode", { tools: [], allowedTools: [], disallowedTools: [], useMcp: false, timeoutMs: 5 }, configDir),
+      saveStepDefinition("qaCode", { tools: [], allowedTools: [], disallowedTools: [], mcpServers: ["a,b"], timeoutMs: 60_000 }, configDir),
+    ).toThrow(/MCP/);
+    expect(() =>
+      saveStepDefinition("qaCode", { tools: [], allowedTools: [], disallowedTools: [], mcpServers: [], timeoutMs: 5 }, configDir),
     ).toThrow(/timeoutMs/);
+  });
+
+  it("reads the old useMcp flag as every MCP server of the repo (true) or none (false)", () => {
+    const file = join(configDir, "steps", "qaNotes", "step.json");
+    const original = readFileSync(file, "utf8");
+    const { mcpServers: _, ...rest } = JSON.parse(original);
+    try {
+      writeFileSync(file, JSON.stringify({ ...rest, useMcp: true }));
+      expect(loadSteps(configDir).get("qaNotes")).toMatchObject({ mcpServers: ["*"] });
+      expect(loadSteps(configDir).get("qaNotes")).not.toHaveProperty("useMcp");
+      writeFileSync(file, JSON.stringify({ ...rest, useMcp: false }));
+      expect(loadSteps(configDir).get("qaNotes")!.mcpServers).toEqual([]);
+    } finally {
+      writeFileSync(file, original);
+    }
   });
 
   it("keeps the memory mode of claude steps (builtin steps have none) and rejects unknown modes", () => {
@@ -117,7 +136,7 @@ describe("config editing", () => {
     saveStepDefinition("plan", { ...plan, memory: undefined }, configDir);
     expect(loadSteps(configDir).get("plan")!.memory).toBe("readwrite");
     expect(() => saveStepDefinition("plan", { ...plan, memory: "all" as never }, configDir)).toThrow(/memoria/);
-    saveStepDefinition("qaCode", { tools: [], allowedTools: [], disallowedTools: [], useMcp: false, memory: "read", timeoutMs: 60_000 }, configDir);
+    saveStepDefinition("qaCode", { tools: [], allowedTools: [], disallowedTools: [], mcpServers: [], memory: "read", timeoutMs: 60_000 }, configDir);
     expect(loadSteps(configDir).get("qaCode")!.memory).toBeUndefined();
   });
 
@@ -137,7 +156,7 @@ describe("config editing", () => {
       "classify", "enrich", "plan", "implement", "audit", "docs", "changelog", "codeReview", "qaCode", "release", "qaNotes", "addressReview",
     ]);
 
-    saveStepDefinition("docs", { tools: ["Read", "Edit"], allowedTools: [], disallowedTools: [], useMcp: false, timeoutMs: 60_000, after: "codeReview" }, configDir);
+    saveStepDefinition("docs", { tools: ["Read", "Edit"], allowedTools: [], disallowedTools: [], mcpServers: [], timeoutMs: 60_000, after: "codeReview" }, configDir);
     expect(loadSteps(configDir).get("docs")).toMatchObject({ custom: true, label: "Docs", after: "codeReview", tools: ["Read", "Edit"] });
 
     saveProfile(profile({ steps: { implement: { model: "sonnet", effort: "low", enabled: true }, audit: { model: "haiku", effort: "low", enabled: true } } }), configDir);

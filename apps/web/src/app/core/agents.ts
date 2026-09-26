@@ -107,6 +107,7 @@ export function toolBubble(name: string, input: unknown): string {
     field(input, "command") ??
     field(input, "pattern") ??
     field(input, "url") ??
+    field(input, "skill") ??
     field(input, "description") ??
     "";
   return clip(target ? `${name} ${target}` : name);

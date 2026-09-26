@@ -175,18 +175,28 @@ export class RunStore {
          CASE WHEN json_extract(data, '$.kind') = 'builtin' THEN 'sin LLM' ELSE model END AS model,
          COUNT(*) AS runs, SUM(status = 'failed') AS failed, SUM(cost_usd) AS costUsd, AVG(cost_usd) AS avgCostUsd,
          AVG(num_turns) AS avgTurns, SUM(${tokens}) AS tokens
-       FROM step_runs WHERE status != 'skipped' GROUP BY 1, 2, 3 ORDER BY costUsd DESC, runs DESC`,
+       FROM step_runs WHERE status != 'skipped' GROUP BY 1, 2, 3 ORDER BY tokens DESC, runs DESC`,
+    );
+    const byAgent = all<Metrics["byAgent"][number]>(
+      `SELECT COALESCE(json_extract(data, '$.agent'), 'claude') AS agent,
+         COUNT(*) AS runs, SUM(status = 'failed') AS failed, SUM(${tokens}) AS tokens
+       FROM step_runs WHERE status != 'skipped' AND COALESCE(json_extract(data, '$.kind'), 'claude') != 'builtin'
+       GROUP BY 1 ORDER BY tokens DESC`,
     );
     const byProfile = all<Metrics["byProfile"][number]>(
       `SELECT COALESCE(profile, 'sin decidir') AS profile, COUNT(*) AS runs, SUM(status = 'done') AS done,
-         SUM(total_cost_usd) AS costUsd, AVG(total_cost_usd) AS avgCostUsd
+         SUM(total_cost_usd) AS costUsd, AVG(total_cost_usd) AS avgCostUsd,
+         (SELECT COALESCE(SUM(${tokens}), 0) FROM step_runs WHERE run_id IN
+           (SELECT id FROM runs AS profile_runs WHERE COALESCE(profile_runs.profile, 'sin decidir') = COALESCE(runs.profile, 'sin decidir'))) AS tokens
        FROM runs GROUP BY 1 ORDER BY runs DESC`,
     );
     const implementCounts = all<{ n: number }>(
       `SELECT COUNT(*) AS n FROM step_runs WHERE step = 'implement' AND status = 'succeeded' GROUP BY run_id`,
     );
     const byDay = all<Metrics["byDay"][number]>(
-      `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS runs, SUM(total_cost_usd) AS costUsd
+      `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS runs, SUM(total_cost_usd) AS costUsd,
+         (SELECT COALESCE(SUM(${tokens}), 0) FROM step_runs WHERE run_id IN
+           (SELECT id FROM runs AS day_runs WHERE substr(day_runs.created_at, 1, 10) = substr(runs.created_at, 1, 10))) AS tokens
        FROM runs WHERE created_at >= ? GROUP BY 1 ORDER BY 1`,
       new Date(Date.now() - days * 86_400_000).toISOString().slice(0, 10),
     );
@@ -206,6 +216,7 @@ export class RunStore {
     return {
       totals,
       byStep,
+      byAgent,
       byProfile,
       loops: {
         avgImplementPerRun: implementCounts.length

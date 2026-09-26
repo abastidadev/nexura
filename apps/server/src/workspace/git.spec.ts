@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Worktree } from "@nexura/shared";
-import { freeBranchName, linkNodeModules, removeWorktree, unlinkNodeModules } from "./git.ts";
+import { commitAll, copyLocalClaudeConfig, freeBranchName, linkNodeModules, removeWorktree, unlinkNodeModules } from "./git.ts";
 
 const repo = mkdtempSync(join(tmpdir(), "nexura-git-"));
 const git = (...args: string[]): string => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
@@ -24,6 +24,35 @@ describe("freeBranchName", () => {
     expect(await freeBranchName(repo, "feat/2-ticket")).toBe("feat/2-ticket-2");
     git("branch", "feat/2-ticket-2");
     expect(await freeBranchName(repo, "feat/2-ticket")).toBe("feat/2-ticket-3");
+  });
+});
+
+describe("local Claude config in a worktree", () => {
+  afterAll(() => {
+    git("worktree", "remove", "--force", join(`${repo}.worktrees`, "wt-claude"));
+    git("branch", "-D", "feat/wt-claude");
+    rmSync(join(repo, ".claude"), { recursive: true, force: true });
+    rmSync(join(repo, ".mcp.json"), { force: true });
+  });
+
+  it("copies the uncommitted Claude files of the main checkout and never commits them", async () => {
+    mkdirSync(join(repo, ".claude"));
+    writeFileSync(join(repo, ".claude", "settings.local.json"), '{"enabledMcpjsonServers":["db"]}');
+    writeFileSync(join(repo, ".mcp.json"), '{"mcpServers":{}}');
+    const path = join(`${repo}.worktrees`, "wt-claude");
+    git("worktree", "add", "-q", "-b", "feat/wt-claude", path, "main");
+    const worktree: Worktree = { repo: "repo", repoPath: repo, path, branch: "feat/wt-claude", baseRef: "main" };
+
+    expect(copyLocalClaudeConfig(repo, path)).toEqual([".claude/settings.local.json", ".mcp.json"]);
+    expect(readFileSync(join(path, ".claude", "settings.local.json"), "utf8")).toContain("db");
+    // Already there (e.g. tracked by the repo): left alone.
+    expect(copyLocalClaudeConfig(repo, path)).toEqual([]);
+
+    expect(await commitAll(worktree, "chore: nothing")).toBeUndefined();
+    writeFileSync(join(path, "c.txt"), "c\n");
+    expect(await commitAll(worktree, "feat: c")).toBeDefined();
+    const committed = execFileSync("git", ["show", "--name-only", "--format=", "HEAD"], { cwd: path, encoding: "utf8" }).trim();
+    expect(committed).toBe("c.txt");
   });
 });
 

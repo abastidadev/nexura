@@ -39,11 +39,13 @@ export function loadSteps(configDir = CONFIG_DIR): Map<StepName, LoadedStep> {
     if (!existsSync(join(dir, "step.json"))) {
       continue;
     }
-    const definition = readJson<Omit<StepDefinition, "name">>(join(dir, "step.json"));
+    const { useMcp, ...definition } = readJson<Omit<StepDefinition, "name"> & { useMcp?: boolean }>(join(dir, "step.json"));
     const promptFile = join(dir, "prompt.md");
     const schemaFile = join(dir, "schema.json");
     steps.set(name, {
       ...definition,
+      // Before mcpServers, `useMcp: true` loaded every MCP server of the repo.
+      mcpServers: definition.mcpServers ?? (useMcp ? ["*"] : []),
       name,
       // CRLF from a Windows checkout (core.autocrlf) is noise in a prompt.
       promptTemplate: existsSync(promptFile) ? readFileSync(promptFile, "utf8").replace(/\r\n/g, "\n") : undefined,
@@ -152,7 +154,7 @@ export function deleteProfile(name: string, configDir = CONFIG_DIR): void {
   unlinkSync(file);
 }
 
-export type StepDefinitionUpdate = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs"> &
+export type StepDefinitionUpdate = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "mcpServers" | "timeoutMs"> &
   Partial<Pick<StepDefinition, "memory" | "label" | "description" | "after">>;
 
 const list = (values: unknown): string[] => (Array.isArray(values) ? values.map((value) => String(value).trim()).filter(Boolean) : []);
@@ -177,13 +179,19 @@ export function saveStepDefinition(step: StepName, update: StepDefinitionUpdate,
   if (!Number.isFinite(update.timeoutMs) || update.timeoutMs < MIN_TIMEOUT_MS) {
     throw new Error(`timeoutMs debe ser >= ${MIN_TIMEOUT_MS}`);
   }
+  const mcpServers = [...new Set(list(update.mcpServers))];
+  // Names end up in `--allowedTools mcp__<name>` (comma separated) and in Codex's TOML keys.
+  const invalid = mcpServers.filter((name) => name !== "*" && !/^[\w-]+$/.test(name));
+  if (invalid.length) {
+    throw new Error(`Nombre de servidor MCP no válido: ${invalid.join(", ")} (letras, números, _ o -)`);
+  }
   const next = {
     kind: current.kind,
     ...(current.custom ? customMetadata(step, { ...current, ...update }, configDir) : {}),
     tools: list(update.tools),
     allowedTools: list(update.allowedTools),
     disallowedTools: list(update.disallowedTools),
-    useMcp: Boolean(update.useMcp),
+    mcpServers,
     ...(current.kind === "claude" ? { memory: memoryMode(update.memory ?? current.memory) } : {}),
     timeoutMs: Math.round(update.timeoutMs),
   };
@@ -237,7 +245,7 @@ export function createStep(step: NewStep, configDir = CONFIG_DIR): void {
     tools: ["Read", "Glob", "Grep"],
     allowedTools: [],
     disallowedTools: ["Bash(git commit*)", "Bash(git push*)", "Bash(git checkout*)", "Bash(git switch*)", "Bash(git reset*)"],
-    useMcp: false,
+    mcpServers: [],
     memory: "off",
     timeoutMs: 600_000,
   };

@@ -2,11 +2,17 @@ import { HttpClient } from "@angular/common/http";
 import { inject, Service } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 import type {
+  AgentAccountUsage,
   AgentInfo,
+  ClaudeInventory,
+  Conversation,
+  ConversationChange,
+  ConversationUpdate,
   FlowProfile,
   Metrics,
   NexuraEvent,
   MemoryObservation,
+  NewConversation,
   NexuraSettings,
   QuotaInfo,
   RepoConfig,
@@ -17,6 +23,7 @@ import type {
   StepDefinition,
   TicketDetails,
   TicketSource,
+  TranscriptMessage,
   WorkItemScope,
   WorkItemSummary,
 } from "@nexura/shared";
@@ -31,7 +38,7 @@ export type NexuraConfigView = {
   steps: StepDefinitionView[];
 };
 
-export type StepDefinitionEdit = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "useMcp" | "timeoutMs"> &
+export type StepDefinitionEdit = Pick<StepDefinition, "tools" | "allowedTools" | "disallowedTools" | "mcpServers" | "timeoutMs"> &
   Partial<Pick<StepDefinition, "memory">> &
   Partial<Pick<StepDefinition, "label" | "description" | "after">>;
 
@@ -191,6 +198,11 @@ export class Api {
     return firstValueFrom(this.http.put<void>(`/api/repos/${encodeURIComponent(repo)}/notes`, { markdown }));
   }
 
+  /** Skills, subagents and MCP servers that `claude` finds in the repo (project, user, plugins). */
+  public claudeConfig(repo: string): Promise<ClaudeInventory> {
+    return firstValueFrom(this.http.get<ClaudeInventory>(`/api/repos/${encodeURIComponent(repo)}/claude-config`));
+  }
+
   /** Shared memory of a repo: a full-text search, or the latest when `query` is empty. */
   public searchMemory(repo: string, query: string): Promise<{ project: string; observations: MemoryObservation[] }> {
     return firstValueFrom(this.http.get<{ project: string; observations: MemoryObservation[] }>("/api/memory", { params: { repo, q: query } }));
@@ -209,12 +221,47 @@ export class Api {
     return firstValueFrom(this.http.get<QuotaInfo | null>("/api/quota"));
   }
 
+  public accountUsage(refresh = false): Promise<AgentAccountUsage> {
+    return firstValueFrom(this.http.get<AgentAccountUsage>("/api/metrics/account-usage", { params: refresh ? { refresh: 1 } : {} }));
+  }
+
   public metrics(days = 14): Promise<Metrics> {
     return firstValueFrom(this.http.get<Metrics>("/api/metrics", { params: { days } }));
   }
 
   public rateClassify(runId: string, correct: boolean, expected?: string): Promise<Run> {
     return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/classify-feedback`, { correct, expected }));
+  }
+
+  public listConversations(): Promise<Conversation[]> {
+    return firstValueFrom(this.http.get<Conversation[]>("/api/conversations"));
+  }
+
+  /** Creates a terminal conversation on a project and starts its CLI. */
+  public createConversation(request: NewConversation): Promise<Conversation> {
+    return firstValueFrom(this.http.post<Conversation>("/api/conversations", request));
+  }
+
+  public updateConversation(id: string, update: ConversationUpdate): Promise<Conversation> {
+    return firstValueFrom(this.http.put<Conversation>(`/api/conversations/${id}`, update));
+  }
+
+  public deleteConversation(id: string): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/conversations/${id}`));
+  }
+
+  /** (Re)starts its CLI: resumes the session, or hands the history over to another agent. */
+  public startConversation(id: string, change: ConversationChange = {}): Promise<Conversation> {
+    return firstValueFrom(this.http.post<Conversation>(`/api/conversations/${id}/start`, change));
+  }
+
+  public stopConversation(id: string): Promise<Conversation> {
+    return firstValueFrom(this.http.post<Conversation>(`/api/conversations/${id}/stop`, {}));
+  }
+
+  /** Every message across the agents it went through, from their session files (no tokens). */
+  public conversationHistory(id: string): Promise<TranscriptMessage[]> {
+    return firstValueFrom(this.http.get<TranscriptMessage[]>(`/api/conversations/${id}/history`));
   }
 
   public costByStep(): Promise<CostByStep[]> {

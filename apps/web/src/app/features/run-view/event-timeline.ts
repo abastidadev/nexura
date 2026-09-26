@@ -45,6 +45,9 @@ function summarize(use: ToolUse): string {
     case "StructuredOutput":
       text = "entrega la salida estructurada";
       break;
+    case "Skill":
+      text = [pick("skill") ?? pick("command"), pick("args")].filter(Boolean).join(" ");
+      break;
     default:
       text = JSON.stringify(input);
   }

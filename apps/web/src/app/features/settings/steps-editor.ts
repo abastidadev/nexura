@@ -1,8 +1,8 @@
-import { Component, computed, inject, input, linkedSignal, signal } from "@angular/core";
+import { Component, computed, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
 import { orderSteps, type MemoryMode } from "@nexura/shared";
 import { Api, apiError, type StepDefinitionView } from "../../core/api";
-import { stepLabel } from "../../core/format";
+import { sourceLabel, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 const MS_PER_MINUTE = 60_000;
@@ -30,7 +30,7 @@ type Draft = {
   allowedTools: string;
   disallowedTools: string;
   timeoutMinutes: number;
-  useMcp: boolean;
+  mcpServers: string;
   memory: MemoryMode;
   /** Custom steps only. */
   label: string;
@@ -45,7 +45,7 @@ function toDraft(step: StepDefinitionView | undefined): Draft {
     allowedTools: (step?.allowedTools ?? []).join("\n"),
     disallowedTools: (step?.disallowedTools ?? []).join("\n"),
     timeoutMinutes: (step?.timeoutMs ?? 0) / MS_PER_MINUTE,
-    useMcp: step?.useMcp ?? false,
+    mcpServers: (step?.mcpServers ?? []).join(", "),
     memory: step?.memory ?? "off",
     label: step?.label ?? "",
     description: step?.description ?? "",
@@ -96,6 +96,46 @@ export class StepsEditor {
   protected readonly message = signal<{ ok: boolean; text: string } | null>(null);
   protected readonly busy = signal(false);
 
+  /** Claude tools that open the repo's own skills and subagents to the step. */
+  protected readonly claudeExtras = [
+    { tool: "Skill", label: "Skills del repo" },
+    { tool: "Agent", label: "Subagentes" },
+  ];
+  /** MCP servers found in the Claude config of the configured repos (a step's names are resolved per run, against its repo). */
+  private readonly inventories = resource({
+    params: () => (this.store.config()?.repos ?? []).map((repo) => repo.name),
+    loader: ({ params }) => Promise.all(params.map((repo) => this.api.claudeConfig(repo).then((inventory) => ({ repo, inventory })).catch(() => undefined))),
+  });
+  protected readonly knownMcp = computed(() => {
+    const servers = new Map<string, { name: string; where: string[] }>();
+    for (const entry of this.inventories.hasValue() ? this.inventories.value() : []) {
+      for (const server of entry?.inventory.mcpServers ?? []) {
+        const known = servers.get(server.name) ?? { name: server.name, where: [] };
+        known.where.push(`${entry!.repo} (${sourceLabel(server.source)}${server.enabled ? "" : ", sin aprobar"})`);
+        servers.set(server.name, known);
+      }
+    }
+    return [...servers.values()].sort((a, b) => a.name.localeCompare(b.name));
+  });
+
+  protected hasTool(tool: string): boolean {
+    return lines(this.draft().tools).includes(tool);
+  }
+
+  protected toggleTool(tool: string): void {
+    const tools = lines(this.draft().tools);
+    this.patch({ tools: (tools.includes(tool) ? tools.filter((name) => name !== tool) : [...tools, tool]).join(", ") });
+  }
+
+  protected hasMcp(name: string): boolean {
+    return lines(this.draft().mcpServers).includes(name);
+  }
+
+  protected toggleMcp(name: string): void {
+    const servers = lines(this.draft().mcpServers);
+    this.patch({ mcpServers: (servers.includes(name) ? servers.filter((server) => server !== name) : [...servers, name]).join(", ") });
+  }
+
   protected value(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
   }
@@ -125,7 +165,7 @@ export class StepsEditor {
         tools: lines(draft.tools),
         allowedTools: lines(draft.allowedTools),
         disallowedTools: lines(draft.disallowedTools),
-        useMcp: draft.useMcp,
+        mcpServers: lines(draft.mcpServers),
         ...(step.kind === "claude" ? { memory: draft.memory } : {}),
         timeoutMs: Math.round(draft.timeoutMinutes * MS_PER_MINUTE),
         ...(step.custom ? { label: draft.label, description: draft.description, after: draft.after } : {}),

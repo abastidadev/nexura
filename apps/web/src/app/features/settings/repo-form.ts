@@ -1,7 +1,8 @@
 import { Component, computed, inject, input, linkedSignal, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
-import type { RepoConfig } from "@nexura/shared";
+import type { ClaudeInventory, RepoConfig } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
+import { sourceLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 type RepoDraft = Omit<RepoConfig, "checks" | "nodeModules" | "branchPrefix"> & {
@@ -83,6 +84,22 @@ export class RepoForm {
       this.message.set({ ok: false, text: apiError(error, "No se pudo abrir el selector de carpetas") });
     } finally {
       this.picking.set(false);
+    }
+  }
+
+  protected readonly claudeConfig = signal<ClaudeInventory | null>(null);
+  protected readonly claudeConfigError = signal("");
+  protected readonly sourceLabel = sourceLabel;
+
+  protected async loadClaudeConfig(): Promise<void> {
+    const name = this.name();
+    if (!name || this.claudeConfig()) {
+      return;
+    }
+    try {
+      this.claudeConfig.set(await this.api.claudeConfig(name));
+    } catch (error: unknown) {
+      this.claudeConfigError.set(apiError(error, "No se pudo leer la config de Claude del repo"));
     }
   }
 

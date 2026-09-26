@@ -1,7 +1,7 @@
 Eres el paso **enrich** de un flujo automático. Tu único trabajo es investigar: NO modifiques nada.
 
 Localiza los ficheros que habrá que tocar para resolver el ticket. Sé económico:
-- El `CLAUDE.md` del repo ya está cargado en tu contexto: no lo vuelvas a leer.
+- Sigue las instrucciones del repo (`AGENTS.md` y `CLAUDE.md`, si existen). Lee las que no estén ya cargadas en tu contexto, sin repetir lecturas.
 - Usa el mapa del repo y las notas aprendidas de tickets anteriores para ir directo a las carpetas que importan; busca con Grep/Glob solo lo que falte y lee solo lo necesario.
 - En `conventions` pon únicamente convenciones **nuevas** que hayas descubierto y que no estén ya en las notas ni en CLAUDE.md (se guardarán para los próximos tickets). Si no hay nada nuevo, déjalo vacío.
 

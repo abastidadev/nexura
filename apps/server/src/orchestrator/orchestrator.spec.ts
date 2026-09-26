@@ -47,6 +47,8 @@ process.env.NEXURA_COPILOT_BIN = join(FIXTURES, "fake-copilot.mjs");
 process.env.FAKE_STATE_DIR = stateDir;
 // Never touch the real ~/.claude.json from tests.
 process.env.NEXURA_TRUST_WORKTREES = "0";
+// Nor read the user's Claude config: the steps with `mcpServers: ["*"]` resolve against this one.
+process.env.CLAUDE_CONFIG_DIR = join(root, "claude-home");
 
 const { loadConfig } = await import("../config/config-loader.ts");
 const { RunStore } = await import("../store/run-store.ts");
@@ -118,6 +120,30 @@ afterAll(() => {
 });
 
 describe("Orchestrator (fake claude)", () => {
+  it("gives the steps with mcpServers '*' every MCP server of the repo's Claude config, pre-approved", async () => {
+    const home = process.env.CLAUDE_CONFIG_DIR!;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, ".claude.json"), JSON.stringify({ mcpServers: { context7: { command: "docs-mcp" }, playwright: { command: "pw-mcp" }, "nexura-memory": { command: "impostor" } } }));
+    try {
+      const store = new RunStore(":memory:");
+      const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+      const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal" })).id);
+      expect(run.status).toBe("done");
+      for (const name of ["enrich", "implement"]) {
+        const args = run.steps.find((step) => step.step === name)!.args!;
+        // The memory server inline (always Nexura's own), the repo's servers in a file removed after the step.
+        const configs = args.slice(args.indexOf("--mcp-config") + 1, args.indexOf("--mcp-config") + 3);
+        expect(JSON.parse(configs[0]!).mcpServers["nexura-memory"].command).toBe(process.execPath);
+        expect(configs[1]).toMatch(/mcp\.json$/);
+        expect(args[args.indexOf("--allowedTools") + 1]!.split(",")).toEqual(expect.arrayContaining(["mcp__context7", "mcp__playwright"]));
+        expect(args[args.indexOf("--allowedTools") + 1]!.split(",")).not.toContain("mcp__nexura-memory");
+      }
+      await orchestrator.cleanup(run.id, true);
+    } finally {
+      rmSync(join(home, ".claude.json"), { force: true });
+    }
+  });
+
   it("runs a custom step after its anchor, commits its changes, then deletes the run but keeps the branch", async () => {
     const config = loadConfig();
     const implement = config.steps.get("implement")!;
@@ -705,6 +731,33 @@ describe("Mixed agents (fake codex and copilot)", () => {
   const callOf = (agent: string, step: string, count = 1): Call => JSON.parse(readFileSync(join(stateDir, `${agent}-${step}-${count}.json`), "utf8")) as Call;
   const flagValues = (args: string[], flag: string): string[] => args.flatMap((arg, index) => (arg === flag ? [args[index + 1]!] : []));
 
+  it("runs the codex-test profile through a rejected review, correction and local release", async () => {
+    process.env.FAKE_REVIEW_REJECTS = "1";
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "codex-test", release: "local" })).id);
+
+    expect(run.error).toBeUndefined();
+    expect(run.status).toBe("done");
+    expect(run.steps.map((step) => step.step)).toEqual([
+      "enrich", "plan", "implement", "codeReview", "implement", "codeReview", "qaCode", "release",
+    ]);
+    const agentSteps = run.steps.filter((step) => step.kind === "claude");
+    expect(agentSteps).toHaveLength(6);
+    for (const step of agentSteps) {
+      expect(step).toMatchObject({ agent: "codex", status: "succeeded" });
+      expect(step.sessionId).toBeTruthy();
+      expect(step.structuredOutput).toBeDefined();
+    }
+    expect(flagValues(callOf("codex", "enrich").args, "--sandbox")).toEqual(["read-only"]);
+    expect(flagValues(callOf("codex", "implement").args, "--sandbox")).toEqual(["workspace-write"]);
+    expect(flagValues(callOf("codex", "codeReview").args, "--sandbox")).toEqual(["read-only"]);
+    expect(callOf("codex", "implement", 2).prompt).toContain("[major] x: p → f");
+    expect(run.steps.find((step) => step.step === "qaCode")?.status).toBe("succeeded");
+    expect(run.pullRequests ?? []).toEqual([]);
+    await orchestrator.cleanup(run.id, true);
+  });
+
   it("runs one flow on three agents, with a blind review whose judges use different agents", async () => {
     process.env.FAKE_REVIEW_REJECTS = "2";
     const config = loadConfig();
@@ -751,7 +804,7 @@ describe("Mixed agents (fake codex and copilot)", () => {
     expect(implement.args.join(" ")).toContain("mcp_servers.nexura-memory.args=");
     expect(implement.prompt.indexOf("Eres el paso **implement**")).toBeGreaterThan(0);
     const implementRun = run.steps.find((s) => s.step === "implement")!;
-    expect(implementRun).toMatchObject({ costUsd: 0, usage: { inputTokens: 100, cacheReadTokens: 40, thinkingTokens: 5 } });
+    expect(implementRun).toMatchObject({ costUsd: 0, usage: { inputTokens: 60, cacheReadTokens: 40, thinkingTokens: 5 } });
     expect(implementRun.sessionId).toBeTruthy();
     expect(git(run.worktrees[0]!.path, "log", "--format=%s", "-3")).toContain("feat(fake): implement 1");
     // Its commands and file changes show up as Bash/Edit tool calls.

@@ -57,6 +57,19 @@ describe("checkJson / extractJson (copilot answers)", () => {
 });
 
 describe("codex adapter", () => {
+  it("pre-approves only allowed MCP tools on the servers injected for the step", () => {
+    const args = buildCodexArgs({
+      ...base,
+      mcpConfig: { mcpServers: { "nexura-memory": { command: "node", args: ["server.ts", "--mode", "read"] } } },
+      allowedTools: ["Read", "mcp__nexura-memory__mem_search", "mcp__nexura-memory__mem_save", "mcp__other__write", "mcp__nexura-memory__*", "mcp__nexura-memory__nested.key"],
+      disallowedTools: ["mcp__nexura-memory__mem_save"],
+    });
+    expect(args.filter((arg) => arg.includes("approval_mode"))).toEqual([
+      'mcp_servers.nexura-memory.tools.mem_search.approval_mode="approve"',
+    ]);
+    expect(buildCodexArgs(base).some((arg) => arg.includes("approval_mode"))).toBe(false);
+  });
+
   it("builds exec args: model, effort, sandbox by tools, extra dirs, memory MCP, schema, resume and prompt on stdin", () => {
     expect(codexSandbox(["Read", "Bash"])).toBe("read-only");
     expect(codexSandbox(["Read", "Edit"])).toBe("workspace-write");
@@ -69,6 +82,29 @@ describe("codex adapter", () => {
     expect(args).toContain('mcp_servers.nexura-memory.command="C:\\\\node.exe"');
     expect(args).toContain('mcp_servers.nexura-memory.args=["server.ts","--mode","read"]');
     expect(args.slice(-3)).toEqual(["resume", "thread-1", "-"]);
+  });
+
+  it("registers the repo's MCP servers too: stdio with env, http with url and headers", () => {
+    const args = buildCodexArgs({
+      ...base,
+      mcpServers: {
+        db: { command: "node", args: ["db.js"], env: { DB_URL: "postgres://x" } },
+        docs: { type: "http", url: "https://mcp.example/docs", headers: { "X-Key": "k" } },
+        "bad.name": { command: "x" },
+      },
+      allowedTools: ["mcp__db__query"],
+    });
+    expect(args).toEqual(
+      expect.arrayContaining([
+        'mcp_servers.db.command="node"',
+        'mcp_servers.db.args=["db.js"]',
+        'mcp_servers.db.env={ "DB_URL" = "postgres://x" }',
+        'mcp_servers.db.tools.query.approval_mode="approve"',
+        'mcp_servers.docs.url="https://mcp.example/docs"',
+        'mcp_servers.docs.http_headers={ "X-Key" = "k" }',
+      ]),
+    );
+    expect(args.some((arg) => arg.includes("bad.name"))).toBe(false);
   });
 
   it("writes a strict schema for the run and removes it afterwards; the memory protocol goes before the prompt", () => {
@@ -102,7 +138,7 @@ describe("codex adapter", () => {
     const memorySave = events.find((event) => event.kind === "toolUse" && event.id === "2");
     expect(memorySave?.kind === "toolUse" && isMemoryWrite(memorySave.name)).toBe(true);
     const result = resultOf(events);
-    expect(result).toMatchObject({ success: true, costUsd: 0, usage: { inputTokens: 10, cacheReadTokens: 4, outputTokens: 3, thinkingTokens: 1 } });
+    expect(result).toMatchObject({ success: true, costUsd: 0, usage: { inputTokens: 6, cacheReadTokens: 4, outputTokens: 3, thinkingTokens: 1 } });
     expect(result.structuredOutput).toEqual({ approach: "a", changes: [], acceptanceCriteria: [{ description: "d" }] });
     expect(finish!(0, "")).toEqual([]);
   });
@@ -163,10 +199,21 @@ describe("copilot adapter (checked against the real Copilot CLI 1.0.88)", () => 
     launch.cleanup!();
     expect(existsSync(join(usageFile, ".."))).toBe(false);
 
-    const resumed = copilotAdapter.launch({ ...base, agent: "copilot", useMcp: true, resume: "s-1" });
+    const resumed = copilotAdapter.launch({
+      ...base,
+      agent: "copilot",
+      resume: "s-1",
+      mcpServers: { docs: { type: "http", url: "https://mcp.example/docs" }, db: { command: "node", args: ["db.js"] } },
+      allowedTools: ["mcp__docs"],
+    });
     expect(resumed.args[resumed.args.indexOf("--resume") + 1]).toBe("s-1");
     expect(resumed.args).not.toContain("--session-id");
-    expect(resumed.args).not.toContain("--disable-builtin-mcps");
+    expect(resumed.args).toContain("--disable-builtin-mcps");
+    expect(JSON.parse(resumed.args[resumed.args.indexOf("--additional-mcp-config") + 1]!).mcpServers).toEqual({
+      docs: { type: "http", url: "https://mcp.example/docs", tools: ["*"] },
+      db: { type: "local", command: "node", args: ["db.js"], tools: ["*"] },
+    });
+    expect(resumed.args).toEqual(expect.arrayContaining(["--allow-tool", "docs"]));
     resumed.cleanup!();
 
     const long = copilotAdapter.launch({ ...base, agent: "copilot", prompt: "x".repeat(MAX_INLINE_PROMPT + 1) });

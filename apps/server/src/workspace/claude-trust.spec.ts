@@ -15,10 +15,10 @@ describe("claude trust for Nexura worktrees", () => {
   it("trusts only Nexura worktrees, keeps the rest of the file and forgets on cleanup", () => {
     writeFileSync(file, JSON.stringify({ other: "keep", projects: { "C:/Dev/Repo": { hasTrustDialogAccepted: true, lastCost: 1 } } }));
 
-    expect(trustWorktree("C:\\Dev\\Repo", file)).toBe(false);
-    expect(trustWorktree("C:\\Dev\\Repo.worktrees\\something-else", file)).toBe(false);
-    expect(trustWorktree(worktree, file)).toBe(true);
-    expect(trustWorktree(worktree, file)).toBe(false);
+    expect(trustWorktree("C:\\Dev\\Repo", undefined, file)).toBe(false);
+    expect(trustWorktree("C:\\Dev\\Repo.worktrees\\something-else", undefined, file)).toBe(false);
+    expect(trustWorktree(worktree, undefined, file)).toBe(true);
+    expect(trustWorktree(worktree, undefined, file)).toBe(false);
 
     const config = read();
     expect(config.other).toBe("keep");
@@ -30,12 +30,27 @@ describe("claude trust for Nexura worktrees", () => {
     expect(read().projects["C:/Dev/Repo"]).toBeDefined();
   });
 
+  it("copies the repo's MCP approvals and local servers, and refreshes them when they change", () => {
+    const servers = { db: { command: "node", args: ["db.js"] } };
+    writeFileSync(file, JSON.stringify({ projects: { "c:/dev/repo": { enabledMcpjsonServers: ["github"], mcpServers: servers, lastCost: 1 } } }));
+
+    expect(trustWorktree(worktree, "C:\\Dev\\Repo", file)).toBe(true);
+    expect(read().projects["C:/Dev/Repo.worktrees/nexura-ab12cd34"]).toEqual({ enabledMcpjsonServers: ["github"], mcpServers: servers, hasTrustDialogAccepted: true });
+    expect(trustWorktree(worktree, "C:\\Dev\\Repo", file)).toBe(false);
+
+    const config = read();
+    config.projects["c:/dev/repo"]!["enableAllProjectMcpServers"] = true;
+    writeFileSync(file, JSON.stringify(config));
+    expect(trustWorktree(worktree, "C:\\Dev\\Repo", file)).toBe(true);
+    expect(read().projects["C:/Dev/Repo.worktrees/nexura-ab12cd34"]!["enableAllProjectMcpServers"]).toBe(true);
+  });
+
   it("does nothing when the Claude config does not exist or trust is disabled", () => {
-    expect(trustWorktree(worktree, join(root, "missing.json"))).toBe(false);
+    expect(trustWorktree(worktree, undefined, join(root, "missing.json"))).toBe(false);
     process.env.NEXURA_TRUST_WORKTREES = "0";
     try {
       writeFileSync(file, JSON.stringify({ projects: {} }));
-      expect(trustWorktree(worktree, file)).toBe(false);
+      expect(trustWorktree(worktree, undefined, file)).toBe(false);
     } finally {
       delete process.env.NEXURA_TRUST_WORKTREES;
     }

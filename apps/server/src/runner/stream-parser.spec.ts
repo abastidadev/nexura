@@ -1,9 +1,10 @@
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { NexuraEvent } from "@nexura/shared";
 import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
 import { buildClaudeArgs } from "./claude-args.ts";
+import { claudeAdapter } from "./claude-adapter.ts";
 import { claudeEnv } from "./claude-process.ts";
 import { memoryProtocol, memoryRunOptions } from "../memory/memory.ts";
 
@@ -112,6 +113,28 @@ describe("buildClaudeArgs", () => {
     });
     expect(args).toEqual(expect.arrayContaining(["--resume", "abc", "--fork-session"]));
     expect(args).not.toContain("--session-id");
+  });
+
+  it("passes the repo's MCP servers in a temporary file (not in the args) and removes it afterwards", () => {
+    const launch = claudeAdapter.launch({
+      agent: "claude",
+      cwd: ".",
+      prompt: "",
+      model: "haiku",
+      effort: "low",
+      tools: [],
+      mcpConfig: { mcpServers: { "nexura-memory": { command: "node", args: ["m.ts"] } } },
+      mcpServers: { docs: { type: "http", url: "https://mcp.example", headers: { Authorization: "Bearer secret" } } },
+    });
+    const at = launch.args.indexOf("--mcp-config");
+    expect(launch.args).toContain("--strict-mcp-config");
+    expect(JSON.parse(launch.args[at + 1]!).mcpServers).toHaveProperty("nexura-memory");
+    const file = launch.args[at + 2]!;
+    expect(JSON.parse(readFileSync(file, "utf8"))).toEqual({ mcpServers: { docs: { type: "http", url: "https://mcp.example", headers: { Authorization: "Bearer secret" } } } });
+    expect(launch.args.join(" ")).not.toContain("secret");
+    launch.cleanup!();
+    expect(existsSync(file)).toBe(false);
+    expect(claudeAdapter.launch({ agent: "claude", cwd: ".", prompt: "", model: "haiku", effort: "low", tools: [] }).args).not.toContain("--mcp-config");
   });
 
   it("adds the memory server as the only MCP server of a memory step, with its tools pre-approved", () => {

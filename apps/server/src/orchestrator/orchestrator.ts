@@ -33,7 +33,8 @@ import { AgentProcess } from "../runner/agent-process.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace/git.ts";
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
-import { isMemoryWrite, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
+import { isMemoryWrite, MEMORY_SERVER, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
+import { resolveMcpServers } from "../workspace/claude-inventory.ts";
 import { projectOf, type NewObservation } from "../memory/memory-store.ts";
 import { buildPrDraft, getActiveThreads, pushAndCreatePr, pushBranch, replyToThread, threadsToText } from "../forge/forge.ts";
 import { mergeJudgments, type CodeReviewOutput, type ReviewIssue } from "./blind-review.ts";
@@ -699,6 +700,14 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     }
 
     const [primary, ...others] = run.worktrees;
+    // MCP servers of the repo's own Claude config (project, local, user, plugins), pre-approved
+    // as whole servers (`dontAsk` refuses anything else). The memory server is Nexura's.
+    const mcp = resolveMcpServers(primary!.repoPath, definition.mcpServers ?? [], [MEMORY_SERVER]);
+    if (mcp.missing.length) {
+      // Expected with the defaults (e.g. angular-cli in a repo that is not Angular): a note, not a warning.
+      this.recordEvent(run, stepRun, { kind: "text", text: `MCP del paso que ${primary!.repo} no tiene (se omiten): ${mcp.missing.join(", ")}` });
+    }
+    const allowedTools = [...definition.allowedTools, ...Object.keys(mcp.servers).map((name) => `mcp__${name}`)];
     // Judge B only reads: both judges would save the same observations.
     const memoryMode = stepRun.judge === "B" && definition.memory === "readwrite" ? "read" : definition.memory;
     const memory =
@@ -707,7 +716,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
             project: await projectOf(primary!.repoPath),
             step: stepRun.step,
             runId: run.id,
-            allowedTools: definition.allowedTools,
+            allowedTools,
           })
         : undefined;
     const process = new AgentProcess({
@@ -718,9 +727,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       model: stepRun.model,
       effort: stepRun.effort,
       tools: definition.tools,
-      allowedTools: definition.allowedTools,
+      allowedTools,
       disallowedTools: definition.disallowedTools,
-      useMcp: definition.useMcp,
+      mcpServers: mcp.servers,
       addDirs: others.map((worktree) => worktree.path),
       jsonSchema: stepRun.step === "classify" ? this.classifySchema(definition.schema) : definition.schema,
       timeoutMs: definition.timeoutMs,

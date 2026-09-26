@@ -14,7 +14,7 @@ const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
 
 /**
  * `Bash(git diff*)` → `shell(git diff:*)` (`:*` = prefix match), `Bash(npm run check)` →
- * `shell(npm run check)`; `mcp__srv__tool` → `srv(tool)`; Edit/Write → `write`.
+ * `shell(npm run check)`; `mcp__srv__tool` → `srv(tool)`, `mcp__srv` → `srv`; Edit/Write → `write`.
  */
 function copilotRule(rule: string): string | undefined {
   const bash = /^Bash\((.*)\)$/.exec(rule);
@@ -35,6 +35,11 @@ function copilotRule(rule: string): string | undefined {
   const mcp = /^mcp__(.+?)__(.+)$/.exec(rule);
   if (mcp) {
     return `${mcp[1]}(${mcp[2]})`;
+  }
+  // A whole server: `mcp__srv` → `srv`.
+  const server = /^mcp__([\w-]+)$/.exec(rule);
+  if (server) {
+    return server[1];
   }
   return undefined;
 }
@@ -104,13 +109,12 @@ export function buildCopilotArgs(options: AgentRunOptions, prompt: string, files
   for (const dir of options.addDirs ?? []) {
     args.push("--add-dir", dir);
   }
-  if (!options.useMcp) {
-    // Like --strict-mcp-config: no built-in GitHub MCP server (fewer tool schemas, fewer tokens).
-    args.push("--disable-builtin-mcps");
-  }
-  const servers = Object.entries(options.mcpConfig?.mcpServers ?? {});
+  // Like --strict-mcp-config: no built-in GitHub MCP server (fewer tool schemas, fewer tokens);
+  // the step's servers (repo + memory) come explicitly.
+  args.push("--disable-builtin-mcps");
+  const servers = Object.entries({ ...options.mcpServers, ...options.mcpConfig?.mcpServers });
   if (servers.length) {
-    const mcpServers = Object.fromEntries(servers.map(([name, server]) => [name, { type: "local", ...server, tools: ["*"] }]));
+    const mcpServers = Object.fromEntries(servers.map(([name, server]) => [name, { ...server, type: "url" in server ? server.type : "local", tools: ["*"] }]));
     args.push("--additional-mcp-config", JSON.stringify({ mcpServers }));
   }
   if (files.usageFile) {

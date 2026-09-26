@@ -5,6 +5,9 @@ import { join } from "node:path";
 /** Only folders created by Nexura (`<repo>.worktrees/nexura-<runId>`) are ever touched. */
 const NEXURA_WORKTREE = /\.worktrees[\\/]nexura-[\w-]+$/;
 
+/** Per-project keys a worktree inherits from its repo: which `.mcp.json` servers are approved, and local-scope MCP servers. */
+const INHERITED_KEYS = ["enabledMcpjsonServers", "disabledMcpjsonServers", "enableAllProjectMcpServers", "mcpServers"];
+
 type ClaudeConfig = { projects?: Record<string, Record<string, unknown>> };
 
 export function claudeConfigFile(): string {
@@ -36,10 +39,12 @@ function update(file: string, mutate: (config: ClaudeConfig) => boolean): void {
 
 /**
  * Accepts Claude Code's "do you trust this folder?" dialog for a Nexura worktree, so
- * `claude --resume` in the embedded terminal opens straight away. Opt out with
- * NEXURA_TRUST_WORKTREES=0. Never throws: trust is a convenience, not a requirement.
+ * `claude --resume` in the embedded terminal opens straight away, and copies the MCP
+ * approvals and local MCP servers of its repo (`repoPath`), so Claude in the worktree sees
+ * the repo's servers. Opt out with NEXURA_TRUST_WORKTREES=0. Never throws: trust is a
+ * convenience, not a requirement.
  */
-export function trustWorktree(path: string, file = claudeConfigFile()): boolean {
+export function trustWorktree(path: string, repoPath?: string, file = claudeConfigFile()): boolean {
   if (!enabled() || !NEXURA_WORKTREE.test(path)) {
     return false;
   }
@@ -48,10 +53,14 @@ export function trustWorktree(path: string, file = claudeConfigFile()): boolean 
     update(file, (config) => {
       const key = projectKey(path);
       config.projects ??= {};
-      if (config.projects[key]?.["hasTrustDialogAccepted"] === true) {
+      const repoKey = repoPath && Object.keys(config.projects).find((candidate) => candidate.toLowerCase() === projectKey(repoPath).toLowerCase());
+      const repo = repoKey ? config.projects[repoKey]! : {};
+      const inherited = Object.fromEntries(INHERITED_KEYS.filter((name) => repo[name] !== undefined).map((name) => [name, repo[name]]));
+      const next = { ...config.projects[key], ...inherited, hasTrustDialogAccepted: true };
+      if (JSON.stringify(next) === JSON.stringify(config.projects[key])) {
         return false;
       }
-      config.projects[key] = { ...config.projects[key], hasTrustDialogAccepted: true };
+      config.projects[key] = next;
       changed = true;
       return true;
     });

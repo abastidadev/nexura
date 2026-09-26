@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import type { AgentAdapter } from "./agent-adapter.ts";
 import { buildClaudeArgs } from "./claude-args.ts";
 import { resolveClaudeCommand } from "./claude-process.ts";
@@ -14,12 +17,26 @@ function userMessage(text: string): string {
 export const claudeAdapter: AgentAdapter = {
   agent: "claude",
   command: resolveClaudeCommand,
-  launch: (options) => ({
-    args: buildClaudeArgs(options),
-    stdin: userMessage(options.prompt),
-    interactive: true,
-    userMessage,
-    normalize,
-  }),
+  launch: (options) => {
+    let dir: string | undefined;
+    let mcpFile: string | undefined;
+    if (options.mcpServers && Object.keys(options.mcpServers).length) {
+      dir = mkdtempSync(join(tmpdir(), "nexura-claude-"));
+      mcpFile = join(dir, "mcp.json");
+      writeFileSync(mcpFile, JSON.stringify({ mcpServers: options.mcpServers }));
+    }
+    return {
+      args: buildClaudeArgs(options, mcpFile),
+      stdin: userMessage(options.prompt),
+      interactive: true,
+      userMessage,
+      normalize,
+      cleanup: () => {
+        if (dir) {
+          rmSync(dir, { recursive: true, force: true });
+        }
+      },
+    };
+  },
   resumeArgs: (sessionId) => ["--resume", sessionId],
 };
