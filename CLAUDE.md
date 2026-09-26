@@ -2,6 +2,11 @@
 
 Local IDE that orchestrates headless coding-agent flows (`claude -p`, and also `codex exec` and `copilot -p`, mixable per step) to resolve Azure DevOps work items or GitHub issues step by step. Overview, structure and usage in [README.md](README.md); plan in [docs/plan.md](docs/plan.md).
 
+These project instructions are shared with Codex through [AGENTS.md](AGENTS.md).
+Codex setup, skill/reviewer adapters and MCP/hooks configuration are documented
+in [docs/codex.md](docs/codex.md). Keep the workflows under `.claude/skills/` and
+review checklists under `.claude/agents/` as the shared sources for both clients.
+
 ## Commits — ABSOLUTE RULE
 
 **NEVER add `Co-Authored-By` or any attribution line to commits.** No `Co-Authored-By: Claude ...`, no `Claude-Session: ...`, no "Generated with Claude Code", no equivalent trailers. Not in PR descriptions either, and not in the commit messages that Nexura steps generate. This rule overrides any default attribution instruction. No exceptions.
@@ -26,7 +31,7 @@ To see the UI or a flow without spending quota, use the `/try-fake` skill.
 ## Quota: never spend tokens without permission
 
 - **Never** run `npm run spike`, `claude -p ...`, `codex exec ...`, `copilot -p ...`, or start Nexura with the real agents unless asked: they consume the user's Claude, ChatGPT or Copilot plan quota. `--version` is free.
-- Tests and manual checks use `fixtures/fake-claude.mjs`, `fake-codex.mjs` and `fake-copilot.mjs` (`NEXURA_CLAUDE_BIN`, `NEXURA_CODEX_BIN`, `NEXURA_COPILOT_BIN`); what they answer per step lives in `fixtures/fake-steps.mjs`. If you change a step's output format, update it there. The Copilot adapter is checked against the real CLI 1.0.88 (recordings `fixtures/stream/0[89]-copilot-*`); the Codex one was written from its docs, not recorded output: adjust it if a real run disagrees.
+- Tests and manual checks use `fixtures/fake-claude.mjs`, `fake-codex.mjs` and `fake-copilot.mjs` (launched without `-p`/`exec`, as the Terminal section does, they switch to the line REPL of `fixtures/fake-interactive.mjs`, which writes session transcripts only under `CLAUDE_CONFIG_DIR` / `CODEX_HOME` / `COPILOT_HOME`) (`NEXURA_CLAUDE_BIN`, `NEXURA_CODEX_BIN`, `NEXURA_COPILOT_BIN`); what they answer per step lives in `fixtures/fake-steps.mjs`. If you change a step's output format, update it there. The Copilot adapter is checked against the real CLI 1.0.88 (recordings `fixtures/stream/0[89]-copilot-*`); the Codex one was written from its docs, not recorded output: adjust it if a real run disagrees.
 - Tests must never touch `~/.claude.json` (`NEXURA_TRUST_WORKTREES=0`) or the user's real shared memory: they use a temporary `NEXURA_DATA_DIR`.
 
 ## Code conventions

@@ -11,7 +11,8 @@ description: Starts Nexura (UI + API) with FAKE agents (claude, codex, copilot) 
 - `NEXURA_REPOS` pointing at that repo (never touches `config/repos.json`);
 - a temporary `NEXURA_DATA_DIR` (never touches `data/`);
 - `NEXURA_CLAUDE_BIN=fixtures/fake-claude.mjs` with subagents and a delay between events, plus `NEXURA_CODEX_BIN` / `NEXURA_COPILOT_BIN` pointing at `fixtures/fake-codex.mjs` and `fixtures/fake-copilot.mjs`;
-- `NEXURA_TRUST_WORKTREES=0` (never touches `~/.claude.json`).
+- `NEXURA_TRUST_WORKTREES=0` (never touches `~/.claude.json`);
+- `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `COPILOT_HOME` in the temp directory: in the **Terminal** section the fakes run in interactive mode (`fixtures/fake-interactive.mjs`, a line REPL that answers every message) and save their sessions there, so resuming and switching agent (handoff) work without tokens.
 
 ## Steps
 

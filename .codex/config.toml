@@ -1,0 +1,42 @@
+# Project configuration for Codex CLI / IDE. Launch from the repository root.
+# Model and approval preferences remain inherited from the user's configuration.
+[agents]
+enabled = true
+max_concurrent_threads_per_session = 3
+
+[mcp_servers.angular-cli]
+command = "node"
+args = ["node_modules/@angular/cli/bin/ng.js", "mcp", "--read-only"]
+startup_timeout_sec = 60
+
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+startup_timeout_sec = 120
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+http_headers_helper = "node .claude/mcp/github-headers.mjs"
+startup_timeout_sec = 60
+
+[mcp_servers.context7]
+url = "https://mcp.context7.com/mcp"
+startup_timeout_sec = 60
+
+[mcp_servers.nexura-memory]
+command = "node"
+args = ["--no-warnings", "apps/server/src/memory/mcp-server.ts", "--db", "data/memory.sqlite", "--source", "codex"]
+startup_timeout_sec = 30
+
+[[hooks.PreToolUse]]
+matcher = "^(Bash|PowerShell)$"
+[[hooks.PreToolUse.hooks]]
+type = "command"
+command = "node .claude/hooks/no-coauthor.mjs"
+timeout = 10
+
+[[hooks.Stop]]
+[[hooks.Stop.hooks]]
+type = "command"
+command = "node .claude/hooks/typecheck-on-stop.mjs"
+timeout = 240

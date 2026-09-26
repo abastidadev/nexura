@@ -50,6 +50,10 @@ const server = spawn(process.execPath, [join(home, "apps", "server", "src", "cli
     FAKE_STATE_DIR: stateDir,
     FAKE_SUBAGENTS: "1",
     FAKE_DELAY_MS: values.delay,
+    // Terminal conversations: the fakes' interactive mode writes its session transcripts here, like the real CLIs.
+    CLAUDE_CONFIG_DIR: join(root, "claude-home"),
+    CODEX_HOME: join(root, "codex-home"),
+    COPILOT_HOME: join(root, "copilot-home"),
   },
 });
 server.on("exit", (code) => process.exit(code ?? 0));

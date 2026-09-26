@@ -1,0 +1,23 @@
+name = "security-reviewer"
+description = "Read-only security review of Nexura REST/WS, PTY, process spawning, worktrees and forge integrations."
+sandbox_mode = "read-only"
+developer_instructions = """
+Read AGENTS.md and CLAUDE.md, then follow the threat model, workflow and report
+format in .claude/agents/security-reviewer.md. That file is the shared review
+source; its Claude-specific model/tools frontmatter does not apply in Codex.
+Use file reading/search tools. Shell commands are limited to read-only file
+reading/search and git diff, git log, git show. Never edit, run real agents,
+save memory or perform external mutations. Use the scope supplied by the parent.
+"""
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+enabled = false
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+enabled = false
+[mcp_servers.nexura-memory]
+command = "node"
+args = ["--no-warnings", "apps/server/src/memory/mcp-server.ts", "--db", "data/memory.sqlite", "--source", "codex"]
+enabled = false

@@ -52,7 +52,7 @@ nexura/
 - `spawn("claude", ["-p", prompt, "--output-format","stream-json","--verbose", ...])` con `cwd` = worktree del repo principal; el prompt se pasa por stdin para evitar límites/escapes de la línea de comandos en Windows.
 - Parser línea a línea → eventos tipados (`system/init`, `assistant` texto/`tool_use`, `user/tool_result`, `result`). Cada evento se persiste en JSONL y se emite por WS.
 - Detecta: `is_error`, `subtype` de error del `result`, salida no válida contra el schema, exit code ≠ 0, timeout, y **límite de uso** (→ estado `waiting-rate-limit`, no fallo; reanuda cuando se libera).
-- Como `cwd` es el repo, se cargan sus `.claude` plugins/skills: los pasos `release` y `addressReview` invocan `/azure-devops:create-pr` y `/azure-devops:address-pr-feedback` dentro del prompt.
+- Como `cwd` es el worktree del repo, se carga su config de Claude (CLAUDE.md, plugins, hooks, `.claude/skills` y `.claude/agents`), más la local copiada del checkout principal. Los pasos usan skills y subagentes si tienen `Skill`/`Agent` en `--tools`, y los MCP del repo que nombre su `mcpServers` (ver README, *Cómo funciona cada paso*). Push y PR los hace el orquestador (`release`, `addressReview`), no un slash command.
 
 ### Orquestador
 - Cola global con **concurrencia configurable (por defecto 2)** — con plan Pro no tiene sentido más.

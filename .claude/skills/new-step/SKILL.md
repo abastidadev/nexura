@@ -14,7 +14,7 @@ Use a similar existing step as reference: `classify` or `qaNotes` if it only rea
 ## Checklist
 
 1. **`config/steps/<step>/`**
-   - `step.json`: `kind` (`claude` | `builtin`), `tools` (hard allowlist for `--tools`), `allowedTools`, `disallowedTools`, `useMcp`, `memory` (`off` | `read` | `readwrite`) and `timeoutMs`. Grant the **minimum** tools. If it edits code, copy the `disallowedTools` of `implement` (no commit, push, checkout or reset).
+   - `step.json`: `kind` (`claude` | `builtin`), `tools` (hard allowlist for `--tools`), `allowedTools`, `disallowedTools`, `mcpServers` (MCP servers of the repo's Claude config by name, `"*"` = all enabled, `[]` = none), `memory` (`off` | `read` | `readwrite`) and `timeoutMs`. Grant the **minimum** tools. If it edits code, copy the `disallowedTools` of `implement` (no commit, push, checkout or reset).
    - `prompt.md` in Spanish (the prompts are written in Spanish). Only use variables that exist in `Orchestrator.renderPrompt` and `repoContextVars` (`apps/server/src/orchestrator/orchestrator.ts`): `ticket`, `tasks`, `repos`, `userPrompt`, `profiles`, `ledger`, `feedback`, `repoMap`, `repoNotes`, `memory` and `output.<earlierStep>`. An unknown variable silently renders as "(nada)".
    - `schema.json` if the orchestrator needs structured output: `additionalProperties: false` and every field in `required`.
 2. **`packages/shared/src/flow.ts`**: add the name to `STEP_NAMES` in its pipeline position. Add its output type if needed.

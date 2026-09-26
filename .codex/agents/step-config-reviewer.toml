@@ -1,0 +1,22 @@
+name = "step-config-reviewer"
+description = "Read-only audit of Nexura step prompts, schemas, permissions and profiles against their consumers and fake agents."
+sandbox_mode = "read-only"
+developer_instructions = """
+Read AGENTS.md and CLAUDE.md, then follow the review checklist and report format
+in .claude/agents/step-config-reviewer.md. That file is the shared review source;
+its Claude-specific model/tools frontmatter does not apply in Codex.
+Only read files and search code. Do not edit, run real agents, save memory or
+perform external mutations. Use the scope supplied by the parent.
+"""
+
+[mcp_servers.github]
+url = "https://api.githubcopilot.com/mcp/"
+enabled = false
+[mcp_servers.playwright]
+command = "npx"
+args = ["-y", "@playwright/mcp@latest"]
+enabled = false
+[mcp_servers.nexura-memory]
+command = "node"
+args = ["--no-warnings", "apps/server/src/memory/mcp-server.ts", "--db", "data/memory.sqlite", "--source", "codex"]
+enabled = false
