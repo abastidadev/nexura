@@ -1,4 +1,4 @@
-import { Component, computed, input, linkedSignal, output } from "@angular/core";
+import { Component, computed, effect, type ElementRef, input, linkedSignal, output, viewChild } from "@angular/core";
 import {
   AGENT_KINDS,
   AGENT_LABELS,
@@ -46,27 +46,26 @@ export function modeCommand(agent: AgentKind, mode: ConversationMode): string {
 
       <label class="flex items-center gap-1.5 text-muted">
         Modelo
+        <select
+          class="max-w-48 rounded-md border border-border bg-surface-2 px-1.5 py-1 font-mono text-fg"
+          (change)="chooseModel($any($event.target).value)"
+        >
+          <option value="" [selected]="!typingModel() && !settings().model">por defecto</option>
+          @for (model of models(); track model) {
+            <option [value]="model" [selected]="!typingModel() && model === settings().model">{{ model }}</option>
+          }
+          <option [value]="other" [selected]="typingModel()">Otro…</option>
+        </select>
         @if (typingModel()) {
           <input
+            #customModel
             class="w-40 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono text-fg outline-none focus:border-accent"
             spellcheck="false"
             placeholder="id del modelo"
-            [value]="settings().model"
-            (change)="setModel($any($event.target).value.trim())"
+            aria-label="Otro modelo"
+            (change)="typeModel($any($event.target).value.trim())"
             (keydown.escape)="typingModel.set(false)"
           />
-          <button type="button" class="text-[11px] hover:text-fg" title="Elegir de la lista" (click)="typingModel.set(false)">lista</button>
-        } @else {
-          <select
-            class="max-w-48 rounded-md border border-border bg-surface-2 px-1.5 py-1 font-mono text-fg"
-            (change)="chooseModel($any($event.target).value)"
-          >
-            <option value="" [selected]="!settings().model">por defecto</option>
-            @for (model of models(); track model) {
-              <option [value]="model" [selected]="model === settings().model">{{ model }}</option>
-            }
-            <option [value]="other">Otro…</option>
-          </select>
         }
       </label>
 
@@ -115,6 +114,11 @@ export class AgentControls {
   });
   protected readonly efforts = computed(() => CONVERSATION_EFFORTS[this.settings().agent]);
   protected readonly typingModel = linkedSignal({ source: () => this.settings().agent, computation: () => false });
+  private readonly customModel = viewChild<ElementRef<HTMLInputElement>>("customModel");
+
+  public constructor() {
+    effect(() => this.customModel()?.nativeElement.focus());
+  }
 
   protected available(agent: AgentKind): boolean {
     return this.agents()?.find((info) => info.agent === agent)?.available ?? true;
@@ -137,7 +141,16 @@ export class AgentControls {
     if (value === OTHER) {
       this.typingModel.set(true);
     } else {
+      this.typingModel.set(false);
       this.setModel(value);
+    }
+  }
+
+  /** A typed id becomes an option of the select, so the input closes once it is set. */
+  protected typeModel(model: string): void {
+    if (model) {
+      this.typingModel.set(false);
+      this.setModel(model);
     }
   }
 
