@@ -44,7 +44,17 @@ public static class NexuraFolderPicker {
   [DllImport("shell32.dll", CharSet = CharSet.Unicode, PreserveSig = false)]
   static extern void SHCreateItemFromParsingName(string path, IntPtr bindContext, ref Guid iid, out IShellItem item);
 
+  [DllImport("user32.dll")] static extern bool SetProcessDpiAwarenessContext(IntPtr context);
+  [DllImport("user32.dll")] static extern bool SetProcessDPIAware();
+
   const uint PICK_FOLDERS = 0x20, FORCE_FILESYSTEM = 0x40, FILESYSPATH = 0x80058000;
+
+  // powershell.exe is not DPI aware, so Windows would bitmap-stretch the dialog on scaled
+  // displays. Must run before any window exists. -4 = PER_MONITOR_AWARE_V2 (Win10 1703+).
+  public static void EnableHighDpi() {
+    try { if (SetProcessDpiAwarenessContext(new IntPtr(-4))) return; } catch (EntryPointNotFoundException) { }
+    SetProcessDPIAware();
+  }
 
   public static string Pick(IntPtr owner, string initial, string title) {
     var dialog = (IFileDialog)new FileOpenDialog();
@@ -67,7 +77,9 @@ public static class NexuraFolderPicker {
   }
 }
 '@
-$owner = New-Object System.Windows.Forms.Form -Property @{ TopMost = $true; ShowInTaskbar = $false; Opacity = 0; StartPosition = 'CenterScreen' }
+[NexuraFolderPicker]::EnableHighDpi()
+[System.Windows.Forms.Application]::EnableVisualStyles()
+$owner =New-Object System.Windows.Forms.Form -Property @{ TopMost = $true; ShowInTaskbar = $false; Opacity = 0; StartPosition = 'CenterScreen' }
 $owner.Show()
 $owner.Activate()
 try {
