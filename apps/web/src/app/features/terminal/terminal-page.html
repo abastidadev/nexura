@@ -1,0 +1,303 @@
+<aside class="flex w-72 shrink-0 flex-col border-r border-border bg-surface" aria-label="Conversaciones">
+  <div class="flex items-center gap-2 border-b border-border p-2">
+    <button
+      type="button"
+      class="flex-1 rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90"
+      (click)="creating.set(true)"
+    >
+      + Nueva conversación
+    </button>
+  </div>
+  <div class="flex flex-col gap-1.5 border-b border-border p-2">
+    <input
+      class="rounded-md border border-border bg-surface-2 px-2.5 py-1 outline-none focus:border-accent"
+      type="search"
+      placeholder="Buscar…"
+      aria-label="Buscar conversaciones"
+      [value]="query()"
+      (input)="query.set($any($event.target).value)"
+    />
+    @if (projects().length > 1) {
+      <select
+        class="rounded-md border border-border bg-surface-2 px-2 py-1"
+        aria-label="Filtrar por proyecto"
+        (change)="projectFilter.set($any($event.target).value)"
+      >
+        <option value="" [selected]="!projectFilter()">Todos los proyectos</option>
+        @for (project of projects(); track project) {
+          <option [value]="project" [selected]="project === projectFilter()">{{ project }}</option>
+        }
+      </select>
+    }
+  </div>
+
+  <nav class="min-h-0 flex-1 overflow-y-auto py-1" aria-label="Lista de conversaciones">
+    @for (group of groups(); track group.name) {
+      <h2 class="px-3 pt-2.5 pb-1 text-[11px] font-medium tracking-wide text-muted uppercase">{{ group.name }}</h2>
+      @for (conversation of group.items; track conversation.id) {
+        <div
+          class="group mx-1 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5"
+          [class]="conversation.id === selectedId() && !creating() ? 'bg-surface-3' : 'hover:bg-surface-2'"
+          tabindex="0"
+          role="button"
+          [attr.aria-current]="conversation.id === selectedId() ? 'true' : null"
+          (click)="select(conversation.id)"
+          (keydown.enter)="select(conversation.id)"
+        >
+          <span
+            class="mt-1.5 size-2 shrink-0 rounded-full"
+            [class]="conversation.status === 'running' ? 'bg-ok' : 'bg-border-strong'"
+            [attr.title]="conversation.status === 'running' ? 'En marcha' : 'Parada'"
+            aria-hidden="true"
+          ></span>
+          <div class="min-w-0 flex-1">
+            @if (renaming() === conversation.id) {
+              <input
+                #renameInput
+                class="w-full rounded border border-accent bg-surface-2 px-1.5 py-0.5"
+                aria-label="Nuevo título"
+                [value]="conversation.title"
+                (click)="$event.stopPropagation()"
+                (keydown.enter)="rename(conversation, renameInput.value)"
+                (keydown.escape)="renaming.set(null)"
+                (blur)="rename(conversation, renameInput.value)"
+              />
+            } @else {
+              <div class="truncate font-medium" [attr.title]="conversation.title">
+                @if (conversation.pinned) {
+                  <span class="text-accent" aria-label="Fijada">★</span>
+                }
+                {{ conversation.title }}
+              </div>
+            }
+            <div class="truncate text-[11px] text-muted">{{ chain(conversation) }} · {{ ago(conversation.updatedAt) }}</div>
+          </div>
+          <div class="hidden shrink-0 items-center gap-0.5 group-focus-within:flex group-hover:flex">
+            <button
+              type="button"
+              class="rounded px-1 text-muted hover:bg-surface-3 hover:text-fg"
+              [attr.aria-label]="conversation.pinned ? 'Desfijar' : 'Fijar arriba'"
+              [attr.title]="conversation.pinned ? 'Desfijar' : 'Fijar arriba'"
+              (click)="$event.stopPropagation(); togglePin(conversation)"
+            >
+              {{ conversation.pinned ? "★" : "☆" }}
+            </button>
+            <button
+              type="button"
+              class="rounded px-1 text-muted hover:bg-surface-3 hover:text-fg"
+              aria-label="Renombrar"
+              title="Renombrar"
+              (click)="$event.stopPropagation(); renaming.set(conversation.id)"
+            >
+              ✎
+            </button>
+            <button
+              type="button"
+              class="rounded px-1 text-muted hover:bg-err-soft hover:text-err"
+              aria-label="Borrar"
+              title="Borrar"
+              (click)="$event.stopPropagation(); remove(conversation)"
+            >
+              🗑
+            </button>
+          </div>
+        </div>
+      }
+    } @empty {
+      <p class="px-3 py-4 text-[12px] text-muted">
+        {{ store.conversations().length ? "Ninguna conversación coincide." : "Todavía no hay conversaciones." }}
+      </p>
+    }
+  </nav>
+</aside>
+
+<section class="flex min-w-0 flex-1 flex-col" aria-label="Terminal">
+  @if (creating() || !selected()) {
+    <div class="min-h-0 flex-1 overflow-y-auto">
+      <nx-new-conversation
+        [agents]="agents()"
+        [repos]="repos()"
+        [cancellable]="!!selected()"
+        (created)="onCreated($event)"
+        (cancelled)="creating.set(false)"
+      />
+    </div>
+  } @else {
+    @let conversation = selected()!;
+    <div class="flex shrink-0 flex-col gap-2 border-b border-border bg-surface px-3 py-2">
+      <div class="flex min-w-0 items-center gap-3">
+        <span
+          class="size-2.5 shrink-0 rounded-full"
+          [class]="conversation.status === 'running' ? 'bg-ok nx-pulse' : 'bg-border-strong'"
+          aria-hidden="true"
+        ></span>
+        <h1 class="min-w-0 shrink truncate text-[14px] font-semibold" [attr.title]="conversation.title">{{ conversation.title }}</h1>
+        <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted" [attr.title]="conversation.cwd">
+          {{ conversation.repo ? conversation.repo + " · " : "" }}{{ conversation.cwd }}
+        </span>
+        <span class="flex shrink-0 items-center gap-1">
+          @if (conversation.status === "running") {
+            <button
+              type="button"
+              class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+              [disabled]="busy()"
+              title="Cierra el CLI; la sesión se puede reanudar"
+              (click)="stop()"
+            >
+              ⏹ Parar
+            </button>
+            <button
+              type="button"
+              class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+              [disabled]="busy()"
+              title="Cierra el CLI y lo vuelve a abrir en la misma sesión"
+              (click)="resume()"
+            >
+              ↻ Reiniciar
+            </button>
+          } @else {
+            <button
+              type="button"
+              class="rounded-md bg-accent-strong px-2.5 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+              [disabled]="busy()"
+              (click)="resume()"
+            >
+              ▶ Reanudar
+            </button>
+          }
+          @if (conversation.kind === "agent") {
+            <button
+              type="button"
+              class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+              [disabled]="busy()"
+              title="Nueva conversación que parte del historial de esta (con el agente elegido abajo)"
+              (click)="fork()"
+            >
+              ⑂ Bifurcar
+            </button>
+            <button
+              type="button"
+              class="rounded-md border px-2.5 py-1"
+              [class]="showHistory() ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-3'"
+              [attr.aria-pressed]="showHistory()"
+              title="La conversación como texto, con todos los agentes por los que ha pasado"
+              (click)="showHistory.set(!showHistory())"
+            >
+              🗒 Historial
+            </button>
+          }
+          <button
+            type="button"
+            class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+            [disabled]="busy()"
+            title="Abre PowerShell en el mismo proyecto"
+            (click)="openShell(conversation)"
+          >
+            ⌨ Shell
+          </button>
+          <button
+            type="button"
+            class="rounded-md border border-border px-2 py-1 text-muted hover:border-err hover:bg-err-soft hover:text-err"
+            aria-label="Borrar la conversación"
+            title="Borrar"
+            (click)="remove(conversation)"
+          >
+            🗑
+          </button>
+        </span>
+      </div>
+
+      @if (conversation.kind === "agent") {
+        <div class="flex flex-wrap items-center gap-2">
+          <nx-agent-controls [settings]="draft()" [agents]="agents()" (settingsChange)="setDraft($event)" />
+          @if (dirty()) {
+            @if (agentChanged()) {
+              <input
+                class="w-64 rounded-md border border-border bg-surface-2 px-2.5 py-1 outline-none focus:border-accent"
+                [placeholder]="'Mensaje para ' + agentLabels[draft().agent] + ' (opcional)'"
+                [value]="message()"
+                (input)="message.set($any($event.target).value)"
+                (keydown.enter)="apply()"
+              />
+              <label class="flex items-center gap-1.5 text-[12px] text-muted" title="Empieza sin pasarle lo hablado hasta ahora">
+                <input type="checkbox" [checked]="fresh()" (change)="fresh.set($any($event.target).checked)" />
+                Sin historial
+              </label>
+            }
+            <button
+              type="button"
+              class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+              [disabled]="busy()"
+              (click)="apply()"
+            >
+              {{ agentChanged() ? "Cambiar a " + agentLabels[draft().agent] + (fresh() ? "" : " y continuar") : "Aplicar (reinicia en la misma sesión)" }}
+            </button>
+            <button type="button" class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3" (click)="discard()">Descartar</button>
+          }
+        </div>
+        <div class="flex min-w-0 items-center gap-1.5 overflow-x-auto text-[11px] whitespace-nowrap text-muted">
+          @for (segment of conversation.segments; track $index) {
+            @if (!$first) {
+              <span aria-hidden="true">→</span>
+            }
+            <span class="rounded px-1.5 py-0.5" [class]="$last ? 'bg-accent-soft text-accent' : 'bg-surface-2'" [attr.title]="segmentTitle(segment)">
+              @if (segment.handoff) {
+                <span aria-label="empezó con el historial">⇢ </span>
+              }
+              {{ agentLabels[segment.agent] }}{{ segment.model ? " · " + segment.model : "" }} · {{ modeLabels[segment.mode] }}
+            </span>
+          }
+          @if (conversation.command) {
+            <code class="ml-2 min-w-0 truncate font-mono" [attr.title]="conversation.command">{{ conversation.command }}</code>
+          }
+        </div>
+      }
+    </div>
+
+    @if (error(); as message) {
+      <p class="flex items-center gap-2 border-b border-err bg-err-soft px-3 py-1.5 text-err" role="alert">
+        {{ message }}
+        <button type="button" class="ml-auto text-err" aria-label="Cerrar aviso" (click)="error.set(null)">×</button>
+      </p>
+    }
+
+    <div class="flex min-h-0 flex-1">
+      <div class="flex min-w-0 flex-1 flex-col">
+        <nx-conversation-terminal class="min-h-0 flex-1" [conversationId]="conversation.id" />
+        @if (conversation.status === "stopped") {
+          <div class="flex flex-wrap items-center gap-3 border-t border-border bg-surface-2 px-3 py-2">
+            <span class="text-muted">
+              {{ conversation.exitCode !== undefined ? "El proceso terminó (código " + conversation.exitCode + ")." : "Parada." }}
+              @if (conversation.kind === "agent" && current()?.sessionId) {
+                Reanudar abre la misma sesión.
+              }
+            </span>
+            <button
+              type="button"
+              class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+              [disabled]="busy()"
+              (click)="resume()"
+            >
+              ▶ Reanudar
+            </button>
+            @if (conversation.kind === "agent") {
+              <button type="button" class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="resume(true)">
+                Sesión nueva
+              </button>
+            }
+          </div>
+        } @else {
+          <p class="shrink-0 border-t border-border bg-surface px-3 py-1 text-[11px] text-muted">
+            Shift+Enter: nueva línea · Ctrl+C con texto seleccionado: copiar · Ctrl+V: pegar
+            @if (conversation.kind === "agent" && conversation.segments.at(-1)?.agent !== "codex") {
+              · Shift+Tab dentro del agente cambia de modo sin reiniciar
+            }
+          </p>
+        }
+      </div>
+      @if (showHistory() && conversation.kind === "agent") {
+        <nx-conversation-history class="w-[380px] shrink-0 border-l border-border" [conversation]="conversation" (closed)="showHistory.set(false)" />
+      }
+    </div>
+  }
+</section>

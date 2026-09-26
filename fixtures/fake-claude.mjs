@@ -17,6 +17,12 @@ if (args.includes("--version")) {
   console.log("0.0.0 (fake Claude Code)");
   process.exit(0);
 }
+if (!args.includes("-p")) {
+  // Interactive TUI (terminal conversations): see fake-interactive.mjs.
+  const { interactive } = await import("./fake-interactive.mjs");
+  await interactive("claude", args);
+  process.exit(0);
+}
 const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
 async function nextMessage() {
   const { value, done } = await lines.next();

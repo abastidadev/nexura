@@ -18,6 +18,12 @@ if (args[0] === "help" && args[1] === "config") {
   console.log('  `model`: AI model to use for Copilot CLI.\n    - "fake-sonnet"\n    - "fake-gpt"\n');
   process.exit(0);
 }
+if (!args.includes("-p")) {
+  // Interactive TUI (terminal conversations): see fake-interactive.mjs.
+  const { interactive } = await import("./fake-interactive.mjs");
+  await interactive("copilot", args);
+  process.exit(0);
+}
 const argValue = (flag) => (args.includes(flag) ? args[args.indexOf(flag) + 1] : undefined);
 let prompt = argValue("-p") ?? "";
 const file = /^Lee el fichero @(.+?) y sigue/.exec(prompt)?.[1];

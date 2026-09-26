@@ -10,6 +10,12 @@ if (args.includes("--version")) {
   console.log("codex-cli 0.0.0-fake");
   process.exit(0);
 }
+if (args[0] !== "exec") {
+  // Interactive TUI (terminal conversations): see fake-interactive.mjs.
+  const { interactive } = await import("./fake-interactive.mjs");
+  await interactive("codex", args);
+  process.exit(0);
+}
 let prompt = "";
 for await (const chunk of process.stdin) {
   prompt += chunk;

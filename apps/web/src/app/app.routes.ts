@@ -17,6 +17,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/run-view/run-view").then((m) => m.RunView),
   },
   {
+    path: "terminal",
+    title: "Nexura · Terminal",
+    loadComponent: () => import("./features/terminal/terminal-page").then((m) => m.TerminalPage),
+  },
+  {
     path: "agents",
     title: "Nexura · Agentes",
     loadComponent: () => import("./features/agents/agents").then((m) => m.AgentsPage),

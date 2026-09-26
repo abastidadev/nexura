@@ -1,4 +1,3 @@
-import { createRequire } from "node:module";
 import type { IncomingMessage } from "node:http";
 import type { Duplex } from "node:stream";
 import { WebSocketServer, type WebSocket } from "ws";
@@ -6,25 +5,7 @@ import type { RunStore } from "../store/run-store.ts";
 import { adapterFor } from "../runner/agents.ts";
 import { claudeEnv } from "../runner/claude-process.ts";
 import { trustWorktree } from "../workspace/claude-trust.ts";
-
-type Pty = {
-  onData(listener: (data: string) => void): void;
-  onExit(listener: (event: { exitCode: number }) => void): void;
-  write(data: string): void;
-  resize(cols: number, rows: number): void;
-  kill(): void;
-};
-type PtyModule = {
-  spawn(file: string, args: string[], options: { name: string; cols: number; rows: number; cwd: string; env: NodeJS.ProcessEnv }): Pty;
-};
-
-// node-pty is CommonJS with a native addon; load it lazily so the rest of the server works without it.
-const require = createRequire(import.meta.url);
-let ptyModule: PtyModule | undefined;
-function loadPty(): PtyModule {
-  ptyModule ??= require("@lydell/node-pty") as PtyModule;
-  return ptyModule;
-}
+import { killPty, shellCommand, spawnPty, type Pty } from "./pty.ts";
 
 export type TerminalMode = "resume" | "shell";
 
@@ -32,12 +13,6 @@ type ClientMessage = { t: "i"; d: string } | { t: "r"; c: number; r: number };
 
 const DEFAULT_COLS = 120;
 const DEFAULT_ROWS = 30;
-
-function shellCommand(): { command: string; args: string[] } {
-  return process.platform === "win32"
-    ? { command: "powershell.exe", args: ["-NoLogo"] }
-    : { command: process.env.SHELL ?? "bash", args: [] };
-}
 
 /**
  * Interactive terminals in a run's worktree, over WebSocket (`/pty?runId=&mode=&stepRunId=`):
@@ -66,24 +41,7 @@ export class TerminalServer {
   public async closeRun(runId: string): Promise<void> {
     const ptys = [...(this.byRun.get(runId) ?? [])];
     this.byRun.delete(runId);
-    await Promise.all(
-      ptys.map(
-        (pty) =>
-          new Promise<void>((done) => {
-            const timer = setTimeout(done, 3000);
-            pty.onExit(() => {
-              clearTimeout(timer);
-              done();
-            });
-            try {
-              pty.kill();
-            } catch {
-              clearTimeout(timer);
-              done(); // Already exited.
-            }
-          }),
-      ),
-    );
+    await Promise.all(ptys.map((pty) => killPty(pty)));
   }
 
   private connect(socket: WebSocket, request: IncomingMessage): void {
@@ -101,7 +59,7 @@ export class TerminalServer {
     }
 
     // Worktrees created before trust existed get it on first use.
-    trustWorktree(worktree.path);
+    trustWorktree(worktree.path, worktree.repoPath);
     const mode = (url.searchParams.get("mode") ?? "shell") as TerminalMode;
     let command: string;
     let args: string[];
@@ -128,7 +86,7 @@ export class TerminalServer {
 
     let pty: Pty;
     try {
-      pty = loadPty().spawn(command, args, {
+      pty = spawnPty(command, args, {
         name: "xterm-256color",
         cols: Number(url.searchParams.get("cols")) || DEFAULT_COLS,
         rows: Number(url.searchParams.get("rows")) || DEFAULT_ROWS,

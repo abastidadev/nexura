@@ -1,3 +1,4 @@
+import type { Conversation } from "./conversation.ts";
 import type { NexuraEvent, TokenUsage } from "./events.ts";
 
 /** Steps shipped with Nexura, in pipeline order. Users can add their own (see StepDefinition.custom). */
@@ -107,8 +108,12 @@ export type StepDefinition = {
   allowedTools: string[];
   /** Always denied (`--disallowedTools`), e.g. "Bash(git push *)". */
   disallowedTools: string[];
-  /** Keep MCP servers from user/project config. Off = `--strict-mcp-config` (cheaper context). */
-  useMcp: boolean;
+  /**
+   * MCP servers of the run's repo Claude config (project `.mcp.json`, local, user, plugins)
+   * this step loads, by name; `"*"` = every enabled one. Nothing else is loaded
+   * (`--strict-mcp-config`), apart from Nexura's memory server. Empty = none (cheaper context).
+   */
+  mcpServers: string[];
   /** Shared memory through Nexura's memory MCP server (missing = off). */
   memory?: MemoryMode;
   timeoutMs: number;
@@ -161,6 +166,17 @@ export type RepoConfig = {
   checks: string[];
   /** How the worktree gets its node_modules: junction to the main checkout (default), `npm ci`, or nothing. */
   nodeModules?: "link" | "install" | "none";
+};
+
+/** Where a piece of Claude config comes from, with Claude Code's precedence (local > project > user > plugin). */
+export type ClaudeConfigSource = "local" | "project" | "user" | `plugin:${string}`;
+
+/** What `claude` opened in a repo would find (read from files, no CLI call). */
+export type ClaudeInventory = {
+  skills: { name: string; description: string; source: ClaudeConfigSource }[];
+  agents: { name: string; description: string; source: ClaudeConfigSource }[];
+  /** `enabled`: loaded by `"*"` (project servers need approval; plugins must be enabled). */
+  mcpServers: { name: string; source: ClaudeConfigSource; transport: "stdio" | "http" | "sse"; enabled: boolean }[];
 };
 
 export type Worktree = {
@@ -378,11 +394,19 @@ export type Metrics = {
   totals: { runs: number; done: number; failed: number; cancelled: number; active: number; costUsd: number; tokens: number };
   /** `agent` is null for builtin steps (no LLM). */
   byStep: { step: string; agent: AgentKind | null; model: string; runs: number; failed: number; costUsd: number; avgCostUsd: number; avgTurns: number; tokens: number }[];
-  byProfile: { profile: string; runs: number; done: number; costUsd: number; avgCostUsd: number }[];
+  byAgent: { agent: AgentKind; runs: number; failed: number; tokens: number }[];
+  byProfile: { profile: string; runs: number; done: number; costUsd: number; avgCostUsd: number; tokens: number }[];
   /** Implement executions per run: >1 means review/QA sent the work back. */
   loops: { avgImplementPerRun: number; runsWithLoops: number };
-  byDay: { day: string; runs: number; costUsd: number }[];
+  byDay: { day: string; runs: number; costUsd: number; tokens: number }[];
   classify: { rated: number; correct: number; mistakes: { runId: string; chosen: string; expected?: string; reason?: string }[] };
+};
+
+/** Account-wide plan usage read without starting an agent turn. Missing provider = unavailable. */
+export type AgentAccountUsage = {
+  claude?: { windows: { label: string; usedPercent: number; resetsAt?: number; resetText?: string }[]; updatedAt: string };
+  codex?: { windows: { label: string; usedPercent: number; resetsAt: number }[]; updatedAt: string };
+  copilot?: { used: number; allowance: number; remainingPercent: number; resetsAt?: string; updatedAt: string };
 };
 
 /** Whether an agent's CLI is installed (shown in Configuración and the profile editor). */
@@ -429,4 +453,6 @@ export type ServerMessage =
   | { type: "quota"; quota: QuotaInfo }
   | { type: "runDeleted"; runId: string }
   /** Something the user should hear about even when not looking at that run (e.g. new PR comments). */
-  | { type: "notice"; runId?: string; title: string; body: string; level: "info" | "warn" };
+  | { type: "notice"; runId?: string; title: string; body: string; level: "info" | "warn" }
+  | { type: "conversation"; conversation: Conversation }
+  | { type: "conversationDeleted"; id: string };

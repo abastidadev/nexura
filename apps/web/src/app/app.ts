@@ -1,6 +1,6 @@
 import { Component, computed, inject, signal, type OnInit } from "@angular/core";
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
-import { formatCost, RUN_STATUS, TONE_CLASSES, type Tone } from "./core/format";
+import { RUN_STATUS, TONE_CLASSES, type Tone } from "./core/format";
 import { NexuraStore, type Toast } from "./core/nexura-store";
 import { QuotaMeter } from "./shared/quota-meter";
 
@@ -14,7 +14,6 @@ export class App implements OnInit {
   private readonly router = inject(Router);
   protected readonly store = inject(NexuraStore);
   protected readonly loadError = signal<string | null>(null);
-  protected readonly formatCost = formatCost;
   protected readonly toastBorder: Record<Tone, string> = {
     ok: "border-ok",
     err: "border-err",
@@ -32,7 +31,6 @@ export class App implements OnInit {
       .map((run) => ({
         id: run.id,
         label: run.request.ticketId ? `#${run.request.ticketId}` : run.request.ticketText.split("\n")[0]!.slice(0, 28),
-        cost: run.totalCostUsd,
         status: RUN_STATUS[run.status],
         dot: TONE_CLASSES[RUN_STATUS[run.status].tone].dot,
         comments: run.reviewWatch?.prStatus === "active" ? run.reviewWatch.activeThreads : 0,

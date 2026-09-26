@@ -46,7 +46,6 @@
         @if (tab.comments) {
           <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info" [attr.title]="tab.comments + ' comentario(s) pendiente(s) en la PR'">💬{{ tab.comments }}</span>
         }
-        <span class="font-mono text-[10px] text-muted">{{ formatCost(tab.cost) }}</span>
         <button
           type="button"
           class="-mr-1 rounded px-1 text-muted opacity-60 hover:bg-surface-3 hover:text-fg group-hover:opacity-100"
@@ -57,6 +56,17 @@
         </button>
       </a>
     }
+    <a
+      routerLink="/terminal"
+      routerLinkActive="!text-fg border-accent"
+      class="flex items-center gap-1.5 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
+      title="Claude Code, Codex o Copilot en tus proyectos, sin salir de Nexura"
+    >
+      Terminal
+      @if (store.runningConversations()) {
+        <span class="rounded-full bg-ok-soft px-1.5 text-[10px] font-semibold text-ok" [attr.title]="store.runningConversations() + ' conversación(es) en marcha'">{{ store.runningConversations() }}</span>
+      }
+    </a>
     <a
       routerLink="/agents"
       routerLinkActive="!text-fg border-accent"
@@ -83,7 +93,7 @@
     </a>
   </nav>
 
-  <div class="flex shrink-0 items-center gap-4 pr-3">
+  <div class="flex shrink-0 items-center gap-2 pr-3 sm:gap-4">
     <nx-quota-meter />
     <button
       type="button"
@@ -101,9 +111,10 @@
       class="flex items-center gap-1.5 text-[11px]"
       [class]="store.connected() ? 'text-muted' : 'text-err'"
       role="status"
+      [attr.aria-label]="store.connected() ? 'Conectado' : 'Sin conexión'"
     >
       <span class="size-2 rounded-full" [class]="store.connected() ? 'bg-ok' : 'bg-err nx-pulse'" aria-hidden="true"></span>
-      {{ store.connected() ? "Conectado" : "Sin conexión" }}
+      <span class="hidden sm:inline">{{ store.connected() ? "Conectado" : "Sin conexión" }}</span>
     </span>
     <button
       type="button"
