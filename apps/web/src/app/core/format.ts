@@ -1,4 +1,4 @@
-import { AGENT_LABELS, agentOf, type AgentKind, type RunStatus, type StepRun, type StepStatus } from "@nexura/shared";
+import { AGENT_LABELS, agentOf, type AgentKind, type ClaudeConfigSource, type RunStatus, type StepRun, type StepStatus } from "@nexura/shared";
 
 export type Tone = "ok" | "err" | "warn" | "info" | "accent" | "muted";
 
@@ -63,6 +63,12 @@ export function setCustomStepLabels(steps: { name: string; label?: string; custo
 /** Display name of a step: built-in label, custom label, or its technical name. */
 export function stepLabel(name: string): string {
   return STEP_LABELS[name] ?? customStepLabels.get(name) ?? name;
+}
+
+/** Where a skill, subagent or MCP server of a repo's Claude config comes from. */
+export function sourceLabel(source: ClaudeConfigSource): string {
+  const labels: Record<string, string> = { project: "proyecto", local: "local", user: "usuario" };
+  return labels[source] ?? `plugin ${source.slice("plugin:".length)}`;
 }
 
 /** Tailwind classes per tone: [text, soft background]. Static strings so Tailwind can see them. */

@@ -1,0 +1,112 @@
+<details #panel class="group relative">
+  <summary
+    class="flex h-8 cursor-pointer list-none items-center gap-2 rounded-md border border-border bg-surface-2 px-2.5 text-[11px] text-fg-soft hover:bg-surface-3 hover:text-fg [&::-webkit-details-marker]:hidden"
+    aria-label="Cuotas de Claude, Codex y Copilot"
+  >
+    <svg viewBox="0 0 20 20" class="size-4 shrink-0 text-accent" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+      <path d="M3 14a7 7 0 1 1 14 0" stroke-linecap="round" />
+      <path d="m10 12 3-4" stroke-linecap="round" />
+      <circle cx="10" cy="13" r="1" fill="currentColor" stroke="none" />
+    </svg>
+    @if (accountData.isLoading()) {
+      <span class="flex items-center gap-1.5" role="status">
+        <span class="size-3 animate-spin rounded-full border border-muted border-t-accent" aria-hidden="true"></span>
+        <span>Cargando cuotas</span>
+      </span>
+    } @else if (accountData.error()) {
+      <span role="alert">Cuotas no disponibles</span>
+    } @else {
+      <span class="font-medium lg:hidden">Cuotas</span>
+      <span class="hidden items-center gap-2 lg:flex">
+        @for (item of summaries(); track item.label) {
+          <span class="flex items-center gap-1.5 border-l border-border pl-2 first:border-l-0 first:pl-0">
+            <span class="size-1.5 rounded-full" [class]="item.percent === null ? 'bg-muted' : tone(item.percent)" aria-hidden="true"></span>
+            <span>{{ item.label }}</span>
+            <span class="font-mono text-fg">{{ item.percent === null ? "—" : (item.percent | number: "1.0-0") + "%" }}</span>
+          </span>
+        }
+      </span>
+      @if (paused()) {
+        <span class="size-1.5 rounded-full bg-warn" title="Pasos Claude en espera" aria-label="Pasos Claude en espera"></span>
+      }
+    }
+    <span class="text-[10px] text-muted transition-transform group-open:rotate-180" aria-hidden="true">▼</span>
+  </summary>
+
+  <div class="fixed top-12 right-2 z-50 max-h-[min(75vh,34rem)] w-80 max-w-[calc(100vw-1rem)] overflow-y-auto rounded-lg border border-border bg-surface p-3 shadow-xl sm:absolute sm:top-full sm:right-0 sm:mt-2">
+    <div class="flex items-center justify-between gap-2">
+      <div>
+        <h2 class="text-[13px] font-semibold">Uso de los planes</h2>
+        <p class="text-[11px] text-muted">Toda la cuenta, también fuera de Nexura</p>
+      </div>
+      <button
+        type="button"
+        class="rounded p-1.5 text-muted hover:bg-surface-3 hover:text-fg"
+        aria-label="Actualizar cuotas"
+        title="Actualizar cuotas"
+        (click)="refreshCount.update((count) => count + 1)"
+      >↻</button>
+    </div>
+
+    <div class="mt-3 space-y-3">
+      @if (accountData.isLoading()) {
+        <div class="flex items-center gap-2 py-5 text-[12px] text-muted" role="status">
+          <span class="size-4 animate-spin rounded-full border-2 border-muted border-t-accent" aria-hidden="true"></span>
+          Cargando cuotas de los proveedores…
+        </div>
+      } @else if (accountData.error()) {
+        <p class="py-3 text-[12px] text-err" role="alert">No se pudieron cargar las cuotas. Pulsa actualizar para intentarlo de nuevo.</p>
+      } @else {
+      <section class="rounded-md border border-border bg-surface-2 p-2.5" aria-label="Cuota Claude">
+        <div class="flex items-center justify-between"><h3 class="font-medium">Claude</h3><span class="text-[10px] text-muted">{{ claudeAge() }}</span></div>
+        @for (window of claudeWindows(); track window.key) {
+          <div class="mt-2">
+            <div class="flex items-center justify-between text-[11px]"><span>{{ window.label }}</span><span class="font-mono">{{ window.percent }} % usado</span></div>
+            <div class="mt-1 h-1.5 rounded-full bg-surface-3" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="window.percent" [attr.aria-label]="'Claude ' + window.label + ': ' + window.percent + '% usado'">
+              <div class="h-1.5 rounded-full" [class]="window.tone" [style.width.%]="window.percent"></div>
+            </div>
+            <p class="mt-1 text-[10px] text-muted">{{ window.resets }}</p>
+          </div>
+        } @empty {
+          <p class="mt-1 text-[11px] text-muted">Sin datos de la cuenta.</p>
+        }
+        @if (paused()) {
+          <p class="mt-2 text-[11px] text-warn">⏸ Pasos Claude en espera por cuota</p>
+        }
+      </section>
+
+      <section class="rounded-md border border-border bg-surface-2 p-2.5" aria-label="Cuota Codex">
+        <h3 class="font-medium">Codex</h3>
+        @if (accountUsage()?.codex; as codex) {
+          @for (window of codex.windows; track window.label) {
+            <div class="mt-2">
+              <div class="flex items-center justify-between text-[11px]"><span>{{ window.label }}</span><span class="font-mono">{{ window.usedPercent | number: "1.0-1" }} % usado</span></div>
+              <div class="mt-1 h-1.5 rounded-full bg-surface-3" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="window.usedPercent" [attr.aria-label]="'Codex ' + window.label + ': ' + window.usedPercent + '% usado'">
+                <div class="h-1.5 rounded-full" [class]="tone(window.usedPercent)" [style.width.%]="window.usedPercent"></div>
+              </div>
+              <p class="mt-1 text-[10px] text-muted">Se reinicia en {{ resetIn(window.resetsAt) }}</p>
+            </div>
+          }
+        } @else {
+          <p class="mt-1 text-[11px] text-muted">Sin datos de la cuenta.</p>
+        }
+      </section>
+
+      <section class="rounded-md border border-border bg-surface-2 p-2.5" aria-label="Cuota Copilot">
+        <h3 class="font-medium">Copilot</h3>
+        @if (accountUsage()?.copilot; as copilot) {
+          <div class="mt-2 flex items-center justify-between text-[11px]"><span>Cuota del plan</span><span class="font-mono">{{ copilot.used }} / {{ copilot.allowance }}</span></div>
+          <div class="mt-1 h-1.5 rounded-full bg-surface-3" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="100 - copilot.remainingPercent" [attr.aria-label]="'Copilot: ' + copilot.remainingPercent + '% restante'">
+            <div class="h-1.5 rounded-full" [class]="tone(100 - copilot.remainingPercent)" [style.width.%]="100 - copilot.remainingPercent"></div>
+          </div>
+          <p class="mt-1 text-[10px] text-muted">{{ copilot.remainingPercent | number: "1.0-1" }} % restante · Reinicio {{ copilotReset(copilot.resetsAt) }}</p>
+        } @else {
+          <p class="mt-1 text-[11px] text-muted">Sin datos de la cuenta.</p>
+        }
+      </section>
+      }
+    </div>
+
+    <a routerLink="/metrics" class="mt-3 block text-right text-[11px] text-accent hover:underline" (click)="panel.open = false">Ver métricas →</a>
+  </div>
+</details>

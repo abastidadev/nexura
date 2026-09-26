@@ -3,7 +3,7 @@ import { DecimalPipe } from "@angular/common";
 import { RouterLink } from "@angular/router";
 import { AGENT_LABELS, type Metrics } from "@nexura/shared";
 import { Api } from "../../core/api";
-import { formatCost, formatTokens, stepLabel } from "../../core/format";
+import { formatTokens, relativeReset, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 const RANGES = [7, 14, 30] as const;
@@ -36,9 +36,9 @@ export class MetricsPage {
 
   protected readonly ranges = RANGES;
   protected readonly days = signal<number>(14);
+  protected readonly accountRefresh = signal(0);
   protected readonly stepLabel = stepLabel;
   protected readonly agentLabels = AGENT_LABELS;
-  protected readonly formatCost = formatCost;
   protected readonly formatTokens = formatTokens;
   protected readonly percent = percent;
 
@@ -49,6 +49,19 @@ export class MetricsPage {
   });
 
   protected readonly metrics = computed<Metrics | undefined>(() => (this.data.hasValue() ? this.data.value() : undefined));
+  protected readonly accountData = resource({
+    params: () => ({ refresh: this.accountRefresh() }),
+    loader: ({ params }) => this.api.accountUsage(params.refresh > 0),
+  });
+  protected readonly accountUsage = computed(() => (!this.accountData.isLoading() && this.accountData.hasValue() ? this.accountData.value() : undefined));
+  protected readonly resetIn = (epochSeconds: number): string => relativeReset(epochSeconds, this.store.now());
+
+  protected copilotReset(iso: string | undefined): string {
+    if (!iso) return "sin fecha";
+    const resetAt = Date.parse(iso);
+    if (!Number.isFinite(resetAt)) return "sin fecha";
+    return resetAt <= this.store.now() ? "pendiente de actualización" : `en ${this.resetIn(resetAt / 1000)}`;
+  }
 
   protected readonly tiles = computed(() => {
     const m = this.metrics();
@@ -59,9 +72,8 @@ export class MetricsPage {
     return [
       { label: "Flujos", value: String(m.totals.runs), hint: `${m.totals.active} activos ahora` },
       { label: "Terminan bien", value: percent(m.totals.done, finished), hint: `${m.totals.done} de ${finished} finalizados` },
-      { label: "Coste total", value: formatCost(m.totals.costUsd), hint: "nominal: en plan Pro cuenta como cuota, no como factura" },
-      { label: "Coste medio", value: formatCost(m.totals.runs ? m.totals.costUsd / m.totals.runs : 0), hint: "por flujo" },
-      { label: "Tokens", value: formatTokens(m.totals.tokens), hint: "entrada + salida + caché" },
+      { label: "Tokens", value: formatTokens(m.totals.tokens), hint: "uso registrado por Nexura" },
+      { label: "Tokens por flujo", value: formatTokens(m.totals.runs ? m.totals.tokens / m.totals.runs : 0), hint: "media de todos los flujos" },
       {
         label: "Vueltas",
         value: m.loops.avgImplementPerRun ? m.loops.avgImplementPerRun.toFixed(1) : "—",
@@ -70,9 +82,10 @@ export class MetricsPage {
     ];
   });
 
-  protected readonly steps = computed(() => bars(this.metrics()?.byStep ?? [], (row) => row.costUsd));
-  protected readonly profiles = computed(() => bars(this.metrics()?.byProfile ?? [], (row) => row.costUsd));
-  protected readonly daysSeries = computed(() => bars(this.metrics()?.byDay ?? [], (row) => row.costUsd));
+  protected readonly steps = computed(() => bars(this.metrics()?.byStep ?? [], (row) => row.tokens));
+  protected readonly agents = computed(() => bars(this.metrics()?.byAgent ?? [], (row) => row.tokens));
+  protected readonly profiles = computed(() => bars(this.metrics()?.byProfile ?? [], (row) => row.tokens));
+  protected readonly daysSeries = computed(() => bars(this.metrics()?.byDay ?? [], (row) => row.tokens));
   protected readonly classify = computed(() => this.metrics()?.classify);
 
   protected dayLabel(day: string): string {
