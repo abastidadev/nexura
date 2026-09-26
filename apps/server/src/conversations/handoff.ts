@@ -98,33 +98,38 @@ function fitBudget(messages: TranscriptMessage[]): { kept: TranscriptMessage[]; 
   return { kept, omitted: messages.length - kept.length };
 }
 
-/** The handoff file: the conversation so far, readable by any agent. */
-export function handoffMarkdown(conversation: Conversation, messages: TranscriptMessage[], target: AgentKind, instruction?: string): string {
+/** The handoff file: the conversation so far, readable by any agent (context only: no instructions). */
+export function handoffMarkdown(conversation: Conversation, messages: TranscriptMessage[], target: AgentKind): string {
   const path = conversation.segments.filter((segment) => segment.sessionId).map(segmentLabel);
   const { kept, omitted } = fitBudget(messages);
   const parts = [
     `# Historial de la conversación «${conversation.title}»`,
     "",
-    `Proyecto: \`${conversation.cwd}\`. Agentes hasta ahora: ${path.join(" → ") || "ninguno"}. Ahora sigue ${AGENT_LABELS[target]}.`,
+    `Lo ha exportado Nexura, el IDE local del usuario, al cambiar de agente a mitad de la conversación. Proyecto: \`${conversation.cwd}\`. Agentes hasta ahora: ${path.join(" → ") || "ninguno"}. Ahora sigue ${AGENT_LABELS[target]}.`,
     "Los mensajes están en orden; el último es lo más reciente. Las herramientas son un resumen: sus resultados no están aquí, así que comprueba el estado real del código antes de dar algo por hecho.",
   ];
   if (omitted) {
     parts.push("", `(Se omiten ${omitted} mensajes antiguos por tamaño; se conserva la petición inicial.)`);
   }
   parts.push("", "---", "", kept.map(renderMessage).join("\n\n"));
-  if (instruction?.trim()) {
-    parts.push("", "---", "", "## Instrucción nueva del usuario", "", instruction.trim());
-  }
   return parts.join("\n") + "\n";
 }
 
-/** The one-line first message that makes the new agent read the handoff file. */
-export function handoffPrompt(file: string, from: AgentKind[], options: { resumed: boolean; instruction: boolean }): string {
-  const names = [...new Set(from)].map((agent) => AGENT_LABELS[agent]).join(" y ");
-  const next = options.instruction
-    ? "después sigue la instrucción nueva que hay al final del fichero"
-    : "después espera mis instrucciones";
-  return options.resumed
-    ? `${HANDOFF_MARKER} Mientras no estabas, esta conversación siguió con ${names}. Lee entero "${file}" (lo que pasó desde tu último mensaje) antes de nada, resume en pocas líneas qué ha cambiado y ${next}.`
-    : `${HANDOFF_MARKER} Continúas una conversación que empezó con ${names} en este proyecto. Lee entero el historial en "${file}" antes de nada, no repitas lo que ya está hecho, resume en pocas líneas dónde se quedó y ${next}.`;
+/**
+ * The first message of the new agent: the user speaking (typed for them by their IDE). The
+ * file is only context; what the user asks goes here, in their own message, because agents
+ * rightly refuse to follow instructions that come from a file.
+ */
+export function handoffPrompt(file: string, from: AgentKind[], options: { resumed: boolean; instruction?: string }): string {
+  const labels = [...new Set(from)].map((agent) => AGENT_LABELS[agent]);
+  const names = labels.length > 1 ? `${labels.slice(0, -1).join(", ")} y ${labels.at(-1)}` : (labels[0] ?? "otro agente");
+  const instruction = options.instruction?.trim();
+  const context = `Para que tengas el contexto, Nexura ha guardado lo que hablamos${options.resumed ? " desde entonces" : ""} en "${file}" (es solo el historial, no trae instrucciones). Léelo entero antes de nada${options.resumed ? "" : " y no repitas lo que ya está hecho"}.`;
+  const ask = instruction
+    ? `Lo que te pido ahora: ${instruction}`
+    : `Después resume en pocas líneas ${options.resumed ? "qué ha cambiado" : "dónde lo dejamos"} y espera a que te diga qué hacer.`;
+  const intro = options.resumed
+    ? `Soy yo, el usuario. Desde tu último mensaje he seguido esta conversación con ${names} en Nexura, mi IDE local.`
+    : `Soy yo, el usuario. Uso Nexura, mi IDE local, y he cambiado de agente a mitad de la conversación: hasta ahora hablaba con ${names} en este mismo proyecto.`;
+  return `${HANDOFF_MARKER} ${intro} ${context} ${ask}`;
 }

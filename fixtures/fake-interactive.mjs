@@ -129,7 +129,7 @@ function answer(agent, text) {
     const file = /"([^"]+\.md)"/.exec(text)?.[1];
     const history = file && existsSync(file) ? readFileSync(file, "utf8") : "";
     const messages = (history.match(/^### /gm) ?? []).length;
-    const instruction = history.includes("## Instrucción nueva del usuario");
+    const instruction = text.includes("Lo que te pido ahora:");
     return `He leído el historial (${messages} mensajes${instruction ? ", con una instrucción nueva" : ""}). Sigo donde se quedó.`;
   }
   return `fake-${agent} recibió: «${text}»`;

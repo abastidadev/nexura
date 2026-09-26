@@ -177,10 +177,60 @@ function readClaude(lines: Json[], collector: Collector): void {
   }
 }
 
+function codexItemText(item: Json): string {
+  return ((item.content ?? []) as Json[])
+    .map((part) => part.text)
+    .filter((text): text is string => typeof text === "string")
+    .join("\n");
+}
+
+/** The command as typed (`parsed_cmd`), not the shell wrapper around it (`pwsh -Command …`). */
+function codexCommand(item: Json): string {
+  const parsed = Array.isArray(item.parsed_cmd) ? (item.parsed_cmd as Json[]).map((part) => part.cmd).filter((cmd) => typeof cmd === "string") : [];
+  if (parsed.length) {
+    return parsed.join(" && ");
+  }
+  return Array.isArray(item.command) ? String(item.command.at(-1) ?? "") : String(item.command ?? "");
+}
+
+/** Codex CLI 0.15x: every piece of a turn is an `item_completed` event (UserMessage, AgentMessage, CommandExecution…). */
+function readCodexItem(item: Json, ts: string, collector: Collector): void {
+  switch (item.type) {
+    case "UserMessage":
+      collector.user(codexItemText(item), ts);
+      break;
+    case "AgentMessage":
+      collector.assistant(codexItemText(item), [], ts);
+      break;
+    case "CommandExecution":
+      collector.assistant("", [toolLabel("shell", { command: codexCommand(item) })], ts);
+      break;
+    case "FileChange":
+      collector.assistant("", [`Edit ${Object.keys((item.changes ?? {}) as Json).join(", ")}`], ts);
+      break;
+    case "McpToolCall":
+      collector.assistant("", [toolLabel(`mcp__${item.server}__${item.tool}`, item.arguments)], ts);
+      break;
+    case "WebSearch":
+      collector.assistant("", [toolLabel("WebSearch", { query: item.query })], ts);
+      break;
+  }
+}
+
 function readCodex(lines: Json[], collector: Collector): void {
+  // A rollout has either the item events (CLI 0.15x) or the older user_message/agent_message ones (and the IDE extension's).
+  const items = lines.some(
+    (line) => line.type === "event_msg" && line.payload?.type === "item_completed" && ["UserMessage", "AgentMessage"].includes(line.payload.item?.type),
+  );
   for (const line of lines) {
     const ts = String(line.timestamp ?? "");
     const payload = (line.payload ?? {}) as Json;
+    if (items) {
+      if (line.type === "event_msg" && payload.type === "item_completed" && payload.item) {
+        readCodexItem(payload.item as Json, ts, collector);
+      }
+      continue;
+    }
     if (line.type === "event_msg") {
       if (payload.type === "user_message") {
         collector.user(String(payload.message ?? ""), ts);

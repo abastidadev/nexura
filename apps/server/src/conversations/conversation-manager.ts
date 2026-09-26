@@ -313,10 +313,10 @@ export class ConversationManager extends EventEmitter {
     const handOver = (source: Conversation, messages: TranscriptMessage[], resumed: boolean): ConversationSegment["handoff"] => {
       const file = join(this.folder(id), `handoff-${conversation.segments.length + 1}.md`);
       mkdirSync(dirname(file), { recursive: true });
-      writeFileSync(file, handoffMarkdown(source, messages, agent, prompt));
+      writeFileSync(file, handoffMarkdown(source, messages, agent));
       addDirs.push(dirname(file));
       const from = [...new Set(messages.map((message) => message.agent))];
-      prompt = handoffPrompt(file, from, { resumed, instruction: Boolean(prompt) });
+      prompt = handoffPrompt(file, from, { resumed, instruction: prompt });
       return { file, messages: messages.length, from };
     };
 
@@ -509,7 +509,8 @@ export class ConversationManager extends EventEmitter {
       return false;
     }
     const first = conversation.segments.find((segment) => segment.sessionId);
-    if (!first) {
+    // A fork starts with a handoff prompt: the agent would title the session after it ("Nexura traspaso").
+    if (!first || first.handoff) {
       return false;
     }
     let title = sessionTitle(first.agent, first.sessionId!, conversation.cwd, this.homes);

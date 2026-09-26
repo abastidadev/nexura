@@ -6,7 +6,7 @@ import type { AgentKind, Conversation, TranscriptMessage } from "@nexura/shared"
 import type { Pty, PtyOptions } from "../terminal/pty.ts";
 import { ConversationManager, type ClientSocket } from "./conversation-manager.ts";
 import { ConversationStore } from "./conversation-store.ts";
-import { conversationHistory, HANDOFF_MARKER, handoffMarkdown, planHandoff } from "./handoff.ts";
+import { conversationHistory, HANDOFF_MARKER, handoffMarkdown, handoffPrompt, planHandoff } from "./handoff.ts";
 import { interactiveArgs } from "./interactive-args.ts";
 import { claudeProjectSlug, findCodexSession, readTranscript, sessionTitle, type SessionHomes } from "./transcripts.ts";
 
@@ -131,6 +131,29 @@ describe("transcripts", () => {
     expect(sessionTitle("codex", "c1", cwd, homes)).toBe("Añadir tests");
   });
 
+  it("codex CLI 0.157: item_completed events, not the response_items that repeat them", () => {
+    const file = join(homes.codex, "sessions", "2026", "09", "26", "rollout-2026-09-26T13-36-03-c2.jsonl");
+    const item = (ts: string, value: object): void => line(file, { timestamp: ts, type: "event_msg", payload: { type: "item_completed", item: value } });
+    line(file, { type: "session_meta", payload: { id: "c2", cwd } });
+    line(file, { type: "response_item", payload: { type: "message", role: "user", content: [{ type: "input_text", text: "<environment_context>" }] } });
+    item("t1", { type: "UserMessage", id: "u", content: [{ type: "text", text: "lee el traspaso" }] });
+    item("t2", { type: "AgentMessage", id: "a1", content: [{ type: "Text", text: "Leeré el traspaso." }], phase: "commentary" });
+    line(file, { timestamp: "t2", type: "response_item", payload: { type: "message", role: "assistant", content: [{ type: "output_text", text: "Leeré el traspaso." }] } });
+    line(file, { timestamp: "t3", type: "response_item", payload: { type: "custom_tool_call", name: "exec", input: "const xs = await tools.exec_command(…)" } });
+    item("t3", {
+      type: "CommandExecution",
+      command: ["C:\\pwsh.exe", "-NoProfile", "-Command", "Get-Content -Raw handoff-2.md"],
+      parsed_cmd: [{ type: "read", cmd: "Get-Content -Raw handoff-2.md", name: "handoff-2.md" }],
+    });
+    item("t4", { type: "FileChange", changes: { "src/a.ts": { type: "update" } } });
+    item("t5", { type: "AgentMessage", id: "a2", content: [{ type: "Text", text: "PERA" }], phase: "final_answer" });
+
+    expect(readTranscript("codex", "c2", cwd, homes).map((message) => [message.role, message.text, message.tools])).toEqual([
+      ["user", "lee el traspaso", undefined],
+      ["assistant", "Leeré el traspaso.\n\nPERA", ["shell Get-Content -Raw handoff-2.md", "Edit src/a.ts"]],
+    ]);
+  });
+
   it("copilot: user and assistant messages with their tool requests", () => {
     const file = join(homes.copilot, "session-state", "p1", "events.jsonl");
     line(file, { type: "session.start", data: { sessionId: "p1" } });
@@ -193,16 +216,18 @@ describe("handoff", () => {
     expect(planHandoff(talk, "copilot", history)).toEqual({ messages: history });
   });
 
-  it("the file keeps the first request and the latest messages, plus the new instruction", () => {
+  it("the file keeps the first request and the latest messages, and no instructions", () => {
     const long = "x".repeat(7000);
     const messages = [message("claude", "s1", "user", "petición inicial", "2026-09-26T10:00:00Z"), ...Array.from({ length: 40 }, (_, index) => message("claude", "s1", "assistant", `${index} ${long}`, "2026-09-26T10:01:00Z"))];
-    const markdown = handoffMarkdown(conversation([{ agent: "claude", sessionId: "s1", model: "opus", effort: "", mode: "default", startedAt: "" }]), messages, "codex", "ahora los tests");
+    const markdown = handoffMarkdown(conversation([{ agent: "claude", sessionId: "s1", model: "opus", effort: "", mode: "default", startedAt: "" }]), messages, "codex");
     expect(markdown).toContain("Claude Code (opus)");
     expect(markdown).toContain("petición inicial");
     expect(markdown).toContain("39 x");
     expect(markdown).not.toContain("\n0 x");
     expect(markdown).toMatch(/Se omiten \d+ mensajes antiguos/);
-    expect(markdown.trimEnd().endsWith("ahora los tests")).toBe(true);
+    expect(markdown).toContain("IDE local del usuario");
+    expect(handoffPrompt("h.md", ["claude", "codex", "copilot", "codex"], { resumed: false })).toContain("con Claude Code, Codex y Copilot en");
+    expect(handoffPrompt("h.md", ["codex"], { resumed: true, instruction: "  di KIWI " })).toMatch(/con Codex en Nexura.*Lo que te pido ahora: di KIWI$/);
   });
 });
 
@@ -334,7 +359,9 @@ describe("ConversationManager", () => {
     expect(handoff).toMatchObject({ messages: 2, from: ["claude"] });
     const file = readFileSync(handoff.file, "utf8");
     expect(file).toContain("arregla el login");
-    expect(file).toContain("ahora los tests");
+    // What the user asks goes in their own message; the file is only context.
+    expect(file).not.toContain("ahora los tests");
+    expect(codexPrompt).toContain("Lo que te pido ahora: ahora los tests");
     expect(codexPrompt).toContain(handoff.file);
 
     say("codex", "codex-1", codexPrompt, "He leído el historial", new Date().toISOString());
@@ -347,7 +374,7 @@ describe("ConversationManager", () => {
     const back = await manager.start(created.id, { agent: "claude" });
     const claudeAgain = ptys[2]!;
     expect(flag(claudeAgain, "--resume")).toBe(claudeSession);
-    expect(claudeAgain.args[0]).toContain("Mientras no estabas");
+    expect(claudeAgain.args[0]).toContain("Desde tu último mensaje");
     const second = readFileSync(back.segments[2]!.handoff!.file, "utf8");
     expect(second).toContain("tests añadidos");
     // Claude already has its own part (the title is its first message).
@@ -378,6 +405,10 @@ describe("ConversationManager", () => {
     expect(fork).toMatchObject({ cwd, repo: "demo", title: "Nueva conversación (copia)" });
     expect(fork.segments[0]!.handoff?.messages).toBe(2);
     expect(flag(ptys[1]!, "-i")).toContain(HANDOFF_MARKER);
+    // Its agent titles the session after the handoff prompt: the fork keeps its own title.
+    say("copilot", fork.segments[0]!.sessionId!, flag(ptys[1]!, "-i")!, "leído", new Date().toISOString());
+    await manager.stop(fork.id);
+    expect(manager.get(fork.id).title).toBe("Nueva conversación (copia)");
   });
 
   it("follows the agent's title until the user renames it", async () => {
