@@ -5,3 +5,4 @@ data/
 *.log
 .angular/
 config/repos.json
+.playwright-mcp/
