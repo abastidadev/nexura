@@ -37,8 +37,8 @@ function asValue(text: string): string {
  * Arguments of the interactive CLI (its TUI, not `-p`/`exec`) for one launch of a conversation.
  *  - claude:  `claude [prompt] --model --effort <mode> --session-id|--resume --add-dir --name`
  *             (the prompt goes first: `--add-dir` is variadic and would swallow it).
- *  - codex:   `codex [resume <id>] -m -c model_reasoning_effort <mode> --no-alt-screen [prompt]`
- *             (inline mode keeps the terminal scrollback).
+ *  - codex:   `codex [resume <id>] -m -c model_reasoning_effort <mode> --no-alt-screen --no-daemon [prompt]`
+ *             (inline mode keeps the terminal scrollback; no background server, see below).
  *  - copilot: `copilot --model --reasoning-effort <mode> --session-id|--resume --add-dir [-i prompt]`
  */
 export function interactiveArgs(options: InteractiveOptions): string[] {
@@ -75,7 +75,10 @@ export function interactiveArgs(options: InteractiveOptions): string[] {
       if (options.effort) {
         args.push("-c", `model_reasoning_effort=${JSON.stringify(options.effort)}`);
       }
-      args.push(...modeFlags, "--no-alt-screen");
+      // --no-daemon: by default the TUI hands the work to a shared background app-server with no
+      // console, and on Windows every MCP server and command it starts pops up its own terminal
+      // window. In-process, they share the PTY's console like any child.
+      args.push(...modeFlags, "--no-alt-screen", "--no-daemon");
       if (options.resume) {
         args.push(options.resume);
       }
