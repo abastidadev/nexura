@@ -12,6 +12,7 @@ export const STEP_NAMES = [
   "release",
   "qaNotes",
   "addressReview",
+  "prReview",
 ] as const;
 
 export type BuiltinStepName = (typeof STEP_NAMES)[number];
@@ -185,6 +186,8 @@ export type Worktree = {
   path: string;
   branch: string;
   baseRef: string;
+  /** Checked out detached at someone else's commit (a PR under review): removing it never touches a branch. */
+  detached?: boolean;
 };
 
 export type RunStatus = "queued" | "running" | "paused" | "waiting-rate-limit" | "failed" | "done" | "cancelled";
@@ -213,7 +216,81 @@ export type RunRequest = {
   ticketSource?: TicketSource;
   /** GitHub: `owner/repo` of the issue, so a PR in another repo still links it. */
   ticketProject?: string;
+  /** Missing = `flow` (a ticket through the profile's steps). `prReview` = review of an existing PR (Revisiones). */
+  kind?: "flow" | "prReview";
+  /** The PR a `prReview` run reviews. */
+  prReview?: PrReviewTarget;
+  /** `prReview` runs: the agent, model and effort of the review (they have no profile). */
+  reviewConfig?: StepConfig;
 };
+
+/** An open pull request of a repo, as listed in Revisiones (GitHub `open`, Azure DevOps `active`). */
+export type PullRequestSummary = {
+  id: number;
+  title: string;
+  description: string;
+  author: string;
+  sourceBranch: string;
+  targetBranch: string;
+  isDraft: boolean;
+  url: string;
+  createdAt: string;
+  /** Last commit of the source branch: a review of an older one is outdated. */
+  headSha: string;
+};
+
+export type PrReviewTarget = Omit<PullRequestSummary, "description" | "createdAt"> & { provider: TicketSource };
+
+export type PrReviewSeverity = "blocker" | "major" | "minor" | "nit";
+
+export const PR_REVIEW_SEVERITIES: readonly PrReviewSeverity[] = ["blocker", "major", "minor", "nit"];
+
+/** What the reviewer suggests doing with the PR (never "reject": that is the user's call). */
+export type PrVote = "approve" | "approveWithSuggestions" | "waitingForAuthor";
+
+export const PR_VOTES: readonly PrVote[] = ["approve", "approveWithSuggestions", "waitingForAuthor"];
+
+/** One proposed comment of a PR review, checked against the diff by the orchestrator. */
+export type PrReviewComment = {
+  id: number;
+  severity: PrReviewSeverity;
+  /** Repo-relative path; missing = about the PR as a whole. */
+  file?: string;
+  startLine?: number;
+  endLine?: number;
+  title: string;
+  /** The comment as it would be posted (English, one line, in the user's voice). */
+  post: string;
+  /** Why it is a problem (Spanish, for the user's triage; never posted). */
+  why: string;
+  /** Code of the fix, when it is one. */
+  suggestion?: string;
+  /** Anchored on its lines in the PR (they are inside the diff); otherwise a PR-level comment naming `file:line`. */
+  inline: boolean;
+  /** The lines around it at the PR's head; `added` = line numbers the PR adds or changes. */
+  snippet?: { startLine: number; lines: string[]; added: number[] };
+  /** Inline comments: 1-based columns where the anchor starts and ends (Azure DevOps needs them). */
+  anchor?: { startOffset: number; endOffset: number };
+};
+
+export type PrReviewResult = {
+  verdict: PrVote;
+  summary: string;
+  /** Conventions of the repo the reviewer found and checked the PR against (Spanish). */
+  conventions: string[];
+  strengths: string[];
+  comments: PrReviewComment[];
+  /** Commit reviewed. */
+  headSha: string;
+  published?: { commentIds: number[]; vote?: PrVote; at: string };
+  /** Comments already on the PR, also when a publish failed halfway (a retry skips them). */
+  postedIds?: number[];
+  /** The conventions were saved to the repo notes (only when the user asks: a PR is untrusted input). */
+  conventionsSaved?: boolean;
+};
+
+/** The comments to post (possibly edited) and the vote to cast, if any. */
+export type PrReviewPublish = { comments: { id: number; post: string }[]; vote?: PrVote };
 
 /** Where tickets come from and PRs go: Azure DevOps work items or GitHub issues. */
 export type TicketSource = "azure" | "github";
@@ -350,6 +427,8 @@ export type Run = {
   classifyFeedback?: { correct: boolean; expected?: string; ratedAt: string };
   /** Free REST polling of the PRs of a finished run (see NexuraSettings.prPollSeconds). */
   reviewWatch?: ReviewWatch;
+  /** `prReview` runs: the proposed comments, once the review finished. */
+  prReview?: PrReviewResult;
 };
 
 export type ReviewWatch = {

@@ -6,7 +6,7 @@ import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 /** Steps that never run inside the pipeline, so nothing can be placed after them. */
-const OFF_PIPELINE = new Set(["classify", "addressReview"]);
+const OFF_PIPELINE = new Set(["classify", "addressReview", "prReview"]);
 
 /** Create screen of a custom step (`?tab=steps&create=1`); then its edit screen opens. */
 @Component({

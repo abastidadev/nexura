@@ -17,10 +17,21 @@ export function parseRemote(url: string): RepoRemote | undefined {
   return github ? { provider: "github", ...github } : undefined;
 }
 
+/**
+ * The URL as configured first, then as git resolves it (`url.<base>.insteadOf` applied): an
+ * alias like `gh:owner/repo` only parses once resolved, while a mirror or a local copy
+ * that stands in for the real remote (the /try-fake sandbox) only parses as configured.
+ */
 export async function repoRemoteOf(repoPath: string): Promise<RepoRemote | undefined> {
-  try {
-    return parseRemote(await git(repoPath, ["remote", "get-url", "origin"]));
-  } catch {
-    return undefined;
+  for (const args of [["config", "--get", "remote.origin.url"], ["remote", "get-url", "origin"]]) {
+    try {
+      const remote = parseRemote(await git(repoPath, args));
+      if (remote) {
+        return remote;
+      }
+    } catch {
+      // No origin: try the next form, then give up.
+    }
   }
+  return undefined;
 }

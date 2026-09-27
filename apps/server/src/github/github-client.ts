@@ -4,7 +4,29 @@ import { promisify } from "node:util";
 
 const execFile = promisify(execFileCallback);
 
-const API_ROOT = "https://api.github.com";
+const GITHUB_API = "https://api.github.com";
+
+/**
+ * `NEXURA_GITHUB_API_URL` points it at the fake GitHub of /try-fake (fixtures/fake-github.mjs).
+ * Only a loopback address is accepted: the user's GitHub token goes with every request.
+ */
+function apiRoot(): string {
+  const override = process.env.NEXURA_GITHUB_API_URL?.trim();
+  if (!override) {
+    return GITHUB_API;
+  }
+  try {
+    const host = new URL(override).hostname;
+    if (host === "127.0.0.1" || host === "localhost" || host === "[::1]") {
+      return override.replace(/\/+$/, "");
+    }
+  } catch {
+    // Not a URL: ignored like any other address.
+  }
+  return GITHUB_API;
+}
+
+const API_ROOT = apiRoot();
 const API_VERSION = "2022-11-28";
 const TOKEN_TTL_MS = 30 * 60_000;
 /** `gh` on PATH, or where its Windows installer puts it. */

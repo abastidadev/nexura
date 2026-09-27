@@ -19,7 +19,10 @@ export const TEMPLATE_VARIABLES: { name: string; help: string }[] = [
   { name: "repoMap", help: "mapa del repo desde git (gratis, cacheado por commit)" },
   { name: "repoNotes", help: "convenciones aprendidas en tickets anteriores" },
   { name: "memory", help: "memoria compartida del ticket y del repo; vacía si el paso no tiene memoria" },
-  { name: "threads", help: "hilos activos de la PR (solo addressReview)" },
+  { name: "threads", help: "hilos activos de la PR (solo addressReview y prReview)" },
+  { name: "pr", help: "la PR revisada: número, autor, ramas y commit (solo prReview)" },
+  { name: "changedFiles", help: "ficheros que cambia la PR, con git diff --name-status (solo prReview)" },
+  { name: "baseRef", help: "rama destino de la PR, para git diff <baseRef>...HEAD (solo prReview)" },
   { name: "output.enrich", help: "salida JSON de enrich" },
   { name: "output.plan", help: "salida JSON de plan" },
 ];
@@ -87,7 +90,7 @@ export class StepsEditor {
   /** Where a custom step can go: any pipeline step except itself. */
   protected readonly anchors = computed(() =>
     orderSteps(this.steps())
-      .filter((step) => step.name !== this.name() && step.name !== "classify" && step.name !== "addressReview")
+      .filter((step) => step.name !== this.name() && !["classify", "addressReview", "prReview"].includes(step.name))
       .map((step) => ({ name: step.name, label: stepLabel(step.name) })),
   );
   protected readonly draft = linkedSignal<Draft>(() => toDraft(this.step()));

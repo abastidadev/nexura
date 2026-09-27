@@ -12,6 +12,7 @@ description: Starts Nexura (UI + API) with FAKE agents (claude, codex, copilot) 
 - a temporary `NEXURA_DATA_DIR` (never touches `data/`);
 - `NEXURA_CLAUDE_BIN=fixtures/fake-claude.mjs` with subagents and a delay between events, plus `NEXURA_CODEX_BIN` / `NEXURA_COPILOT_BIN` pointing at `fixtures/fake-codex.mjs` and `fixtures/fake-copilot.mjs`;
 - `NEXURA_TRUST_WORKTREES=0` (never touches `~/.claude.json`);
+- a **fake GitHub** for **Revisiones**. The sandbox's `origin` is `https://github.com/nexura-fake/sandbox.git`, but `url.<bare>.insteadOf` sends git to a local bare repo. That repo has two PRs (`refs/pull/1/head` and `refs/pull/2/head`). The API is `fixtures/fake-github.mjs` on `<port>+1` (`NEXURA_GITHUB_API_URL`, `GH_TOKEN=fake`). What gets published (reviews, PRs) is appended to `<temp>/state/github-posts.jsonl`;
 - `CLAUDE_CONFIG_DIR`, `CODEX_HOME` and `COPILOT_HOME` in the temp directory: in the **Terminal** section the fakes run in interactive mode (`fixtures/fake-interactive.mjs`, a line REPL that answers every message) and save their sessions there, so resuming and switching agent (handoff) work without tokens.
 
 ## Steps
@@ -24,8 +25,9 @@ description: Starts Nexura (UI + API) with FAKE agents (claude, codex, copilot) 
    ```
    The first output line shows the URL and the temp directory.
 3. Open `http://localhost:<port>` (with the Playwright MCP if available) and create a flow on the **sandbox** repo. The fake claude creates `done.txt` in `implement`, so the `npm run check` QA check passes.
-4. Optional fake variables (see the header of `fixtures/fake-steps.mjs`, shared by the three fakes): `FAKE_REVIEW_REJECTS=1` (codeReview rejects once), `FAKE_FAIL_MARKER=<text>` (enrich fails if the prompt contains it).
-5. To see a flow that mixes agents, create a profile in Configuración → Perfiles with some steps on Codex or Copilot (and, with the blind review, judge B on another agent). Do not add it to `config/profiles/` by hand: that folder is tracked.
-6. When done, stop the background process.
+4. To try **Revisiones**, open `/reviews`, pick `sandbox`, tick both PRs and click *Revisar*. The fake `prReview` answers with three comments plus one on a file that does not exist, which the orchestrator must drop. Publish some and check `github-posts.jsonl`.
+5. Optional fake variables (see the header of `fixtures/fake-steps.mjs`, shared by the three fakes): `FAKE_REVIEW_REJECTS=1` (codeReview rejects once), `FAKE_FAIL_MARKER=<text>` (enrich fails if the prompt contains it).
+6. To see a flow that mixes agents, create a profile in Configuración → Perfiles with some steps on Codex or Copilot (and, with the blind review, judge B on another agent). Do not add it to `config/profiles/` by hand: that folder is tracked.
+7. When done, stop the background process.
 
 Do not use port 4310: the user's real Nexura usually runs there.

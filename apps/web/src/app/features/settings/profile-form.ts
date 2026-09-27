@@ -75,11 +75,11 @@ export class ProfileForm {
   protected readonly message = signal<{ ok: boolean; text: string } | null>(null);
   protected readonly busy = signal(false);
 
-  /** Every step with a definition except classify (it only runs in "auto"). */
+  /** Every step with a definition except classify (it only runs in "auto") and prReview (Revisiones picks its model per review). */
   protected readonly rows = computed<Row[]>(() => {
     const draft = this.draft();
     return orderSteps(this.store.config()?.steps ?? [])
-      .filter((step) => step.name !== "classify")
+      .filter((step) => step.name !== "classify" && step.name !== "prReview")
       .map((step) => ({
         name: step.name,
         label: stepLabel(step.name),

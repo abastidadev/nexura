@@ -1,0 +1,162 @@
+<aside class="flex w-56 shrink-0 flex-col border-r border-border bg-surface" aria-label="Repos">
+  <h2 class="px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Repos</h2>
+  <nav class="min-h-0 flex-1 overflow-y-auto pb-2">
+    @for (repo of repos(); track repo.name) {
+      @let provider = providers.hasValue() ? providers.value()[repo.name] : undefined;
+      <button
+        type="button"
+        class="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-md px-2 py-1.5 text-left"
+        [class]="repo.name === selectedRepo() ? 'bg-surface-3' : 'hover:bg-surface-2'"
+        [attr.aria-current]="repo.name === selectedRepo() ? 'page' : null"
+        (click)="selectRepo(repo.name)"
+      >
+        <span class="min-w-0 flex-1">
+          <span class="block truncate font-medium">{{ repo.name }}</span>
+          <span class="block truncate text-[11px] text-muted">{{ provider ? sourceLabels[provider] : provider === null ? "sin GitHub ni Azure" : "…" }}</span>
+        </span>
+      </button>
+    } @empty {
+      <p class="px-3 py-6 text-center text-[12px] text-muted">No hay repos. Añádelos en Configuración → Repos.</p>
+    }
+  </nav>
+</aside>
+
+<section class="flex w-[26rem] shrink-0 flex-col border-r border-border" aria-label="Pull requests">
+  <div class="flex flex-col gap-2 border-b border-border p-3">
+    <div class="flex items-center gap-2">
+      <input
+        class="min-w-0 flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-1 outline-none focus:border-accent"
+        type="search"
+        placeholder="Filtrar por #, título, autor, rama…"
+        aria-label="Filtrar PRs"
+        [value]="query()"
+        (input)="query.set($any($event.target).value)"
+      />
+      <button type="button" class="rounded px-2 py-1 text-muted hover:bg-surface-3 hover:text-fg" title="Recargar PRs" (click)="pullRequests.reload()">⟳</button>
+    </div>
+    <div class="flex flex-wrap items-center gap-1.5 text-[12px]">
+      <select class="rounded border border-border bg-surface-2 px-1.5 py-1" aria-label="Agente que revisa" (change)="setAgent($any($event.target).value)">
+        @for (option of agentKinds; track option) {
+          <option [value]="option" [selected]="option === reviewer().agent">{{ agentLabels[option] }}</option>
+        }
+      </select>
+      <nx-model-picker [models]="models()" [value]="reviewer().model" label="Modelo que revisa" (valueChange)="patchReviewer({ model: $event })" />
+      <select class="rounded border border-border bg-surface-2 px-1.5 py-1" aria-label="Esfuerzo" (change)="patchReviewer({ effort: $any($event.target).value })">
+        @for (option of efforts; track option) {
+          <option [value]="option" [selected]="option === reviewer().effort">{{ option }}</option>
+        }
+      </select>
+      <span class="flex-1"></span>
+      <button
+        type="button"
+        class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+        [disabled]="selected().size === 0 || starting()"
+        (click)="reviewSelected()"
+      >
+        {{ starting() ? "Lanzando…" : "Revisar (" + selected().size + ")" }}
+      </button>
+    </div>
+    @if (error(); as message) {
+      <p class="rounded-md border border-err bg-err-soft px-2.5 py-1.5 text-[12px] text-err" role="alert">{{ message }}</p>
+    }
+  </div>
+
+  <div class="min-h-0 flex-1 overflow-y-auto">
+    @if (!selectedRepo()) {
+      <p class="px-3 py-8 text-center text-muted">Elige un repo.</p>
+    } @else if (pullRequests.isLoading()) {
+      <p class="px-3 py-8 text-center text-muted">Consultando las PRs de {{ selectedRepo() }}…</p>
+    } @else if (pullRequests.error()) {
+      <p class="m-3 rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">{{ prError() }}</p>
+    } @else if (rows().length === 0) {
+      <p class="px-3 py-8 text-center text-muted">{{ query() ? "Ninguna PR coincide con el filtro." : "No hay PRs abiertas en este repo." }}</p>
+    } @else {
+      <ul class="divide-y divide-border">
+        @for (row of rows(); track row.pr.id) {
+          <li class="flex items-start gap-2 px-3 py-2" [class]="row.last && row.last.id === run() ? 'bg-surface-3' : 'hover:bg-surface-2'">
+            <input
+              type="checkbox"
+              class="mt-1 size-4 shrink-0 accent-(--nx-accent)"
+              [checked]="selected().has(row.pr.id)"
+              [disabled]="row.reviewing"
+              [attr.aria-label]="'Seleccionar la PR ' + row.pr.id"
+              (change)="toggle(row.pr.id, $any($event.target).checked)"
+            />
+            <button type="button" class="min-w-0 flex-1 text-left" [disabled]="!row.last" (click)="openRow(row)">
+              <span class="flex items-baseline gap-1.5">
+                <span class="shrink-0 font-mono text-[12px] text-muted">#{{ row.pr.id }}</span>
+                <span class="truncate font-medium">{{ row.pr.title }}</span>
+              </span>
+              <span class="block truncate text-[11px] text-muted">
+                {{ row.pr.author }} · <span class="font-mono">{{ row.pr.sourceBranch }} → {{ row.pr.targetBranch }}</span>
+              </span>
+              <span class="mt-1 flex flex-wrap items-center gap-1.5">
+                @if (row.pr.isDraft) {
+                  <span class="rounded bg-surface-3 px-1.5 text-[10px] text-fg-soft">borrador</span>
+                }
+                @if (row.status) {
+                  <nx-status-pill [tone]="row.status.tone" [label]="row.status.label" [live]="row.status.live" />
+                }
+                @if (row.comments !== undefined) {
+                  <span class="text-[11px] text-muted">{{ row.comments }} comentario(s)</span>
+                }
+                @if (row.last?.prReview?.published) {
+                  <span class="text-[11px] text-ok">publicada</span>
+                }
+                @if (row.outdated) {
+                  <span class="rounded bg-warn-soft px-1.5 text-[10px] text-warn" title="La PR tiene commits nuevos desde la última revisión">desactualizada</span>
+                }
+                @if (row.last && unseen(row.last)) {
+                  <span class="size-2 rounded-full bg-accent" title="Revisión nueva sin ver" aria-label="Sin ver"></span>
+                }
+              </span>
+            </button>
+            <button
+              type="button"
+              class="shrink-0 rounded-md border border-border px-2 py-0.5 text-[12px] hover:bg-surface-3 disabled:opacity-40"
+              [disabled]="row.reviewing || starting()"
+              [attr.title]="row.last ? 'Revisar otra vez el estado actual' : 'Revisar esta PR'"
+              (click)="review([row.pr.id])"
+            >
+              {{ row.reviewing ? "Revisando…" : row.last ? "Otra vez" : "Revisar" }}
+            </button>
+          </li>
+        }
+      </ul>
+    }
+
+    @if (olderReviews().length) {
+      <h3 class="border-t border-border px-3 pt-3 pb-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Revisiones de PRs ya cerradas</h3>
+      <ul class="pb-2">
+        @for (older of olderReviews(); track older.id) {
+          <li>
+            <button
+              type="button"
+              class="flex w-full items-center gap-2 px-3 py-1.5 text-left"
+              [class]="older.id === run() ? 'bg-surface-3' : 'hover:bg-surface-2'"
+              (click)="openReview(older)"
+            >
+              <span class="shrink-0 font-mono text-[12px] text-muted">#{{ older.request.prReview?.id }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ older.request.prReview?.title }}</span>
+              <nx-status-pill [tone]="reviewStatus(older).tone" [label]="reviewStatus(older).label" />
+            </button>
+          </li>
+        }
+      </ul>
+    }
+  </div>
+</section>
+
+<section class="flex min-w-0 flex-1 flex-col" aria-label="Revisión">
+  @if (selectedRun(); as current) {
+    <nx-pr-review-view class="h-full" [run]="current" [currentHead]="selectedHead()" (rereview)="rereview()" (deleted)="afterDelete()" />
+  } @else {
+    <div class="m-auto max-w-md px-6 text-center text-muted">
+      <p class="text-[15px] font-medium text-fg">Revisión de PRs</p>
+      <p class="mt-2">
+        Marca una o varias PRs y pulsa «Revisar». Cada una se revisa por separado, con el código de la PR y las convenciones del propio repo, y te avisa al terminar.
+      </p>
+      <p class="mt-2 text-[12px]">Nada se publica en la PR hasta que eliges los comentarios y pulsas «Publicar».</p>
+    </div>
+  }
+</section>

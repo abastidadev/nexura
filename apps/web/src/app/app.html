@@ -57,6 +57,20 @@
       </a>
     }
     <a
+      routerLink="/reviews"
+      routerLinkActive="!text-fg border-accent"
+      class="flex items-center gap-1.5 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
+      title="Revisa PRs abiertas de tus repos (GitHub o Azure DevOps)"
+    >
+      Revisiones
+      @if (store.activeReviews()) {
+        <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info" [attr.title]="store.activeReviews() + ' revisión(es) en marcha'">{{ store.activeReviews() }}</span>
+      }
+      @if (store.unseenReviews().length) {
+        <span class="rounded-full bg-accent-strong px-1.5 text-[10px] font-semibold text-white" [attr.title]="store.unseenReviews().length + ' revisión(es) terminada(s) sin ver'">{{ store.unseenReviews().length }}</span>
+      }
+    </a>
+    <a
       routerLink="/terminal"
       routerLinkActive="!text-fg border-accent"
       class="flex items-center gap-1.5 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
@@ -106,6 +120,17 @@
     >
       {{ store.notificationsEnabled() ? "🔔" : "🔕" }}
     </button>
+    <button
+      type="button"
+      class="rounded px-1 text-muted hover:text-fg"
+      [class.!text-accent]="notifier.soundEnabled()"
+      [attr.aria-pressed]="notifier.soundEnabled()"
+      [attr.title]="notifier.soundEnabled() ? 'Sonido al terminar activado' : 'Activar sonido al terminar'"
+      aria-label="Sonido al terminar"
+      (click)="notifier.toggleSound()"
+    >
+      {{ notifier.soundEnabled() ? "🔊" : "🔇" }}
+    </button>
     <a routerLink="/config" routerLinkActive="!text-fg" class="text-muted hover:text-fg" aria-label="Configuración" title="Configuración">⚙</a>
     <span
       class="flex items-center gap-1.5 text-[11px]"
@@ -142,7 +167,7 @@
         <button
           type="button"
           class="min-w-0 flex-1 text-left"
-          [disabled]="!toast.runId"
+          [disabled]="!toast.runId && !toast.link"
           (click)="openToast(toast)"
         >
           <span class="block truncate font-medium">{{ toast.title }}</span>

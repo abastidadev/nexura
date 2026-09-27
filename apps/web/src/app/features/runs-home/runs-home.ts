@@ -3,7 +3,7 @@ import { Router, RouterLink } from "@angular/router";
 import type { Run } from "@nexura/shared";
 import { elapsedMs, formatCost, formatDuration, RUN_STATUS, stepLabel } from "../../core/format";
 import { apiError } from "../../core/api";
-import { NexuraStore } from "../../core/nexura-store";
+import { isPrReview, NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 
 type RunRow = {
@@ -36,7 +36,11 @@ export class RunsHome {
   protected readonly totalCost = computed(() => formatCost(this.store.runs().reduce((sum, run) => sum + run.totalCostUsd, 0)));
   protected readonly rows = computed<RunRow[]>(() => {
     const now = this.store.now();
-    return this.store.runs().map((run) => this.toRow(run, now));
+    // PR reviews live in Revisiones.
+    return this.store
+      .runs()
+      .filter((run) => !isPrReview(run))
+      .map((run) => this.toRow(run, now));
   });
 
   protected readonly deleting = signal<string | null>(null);

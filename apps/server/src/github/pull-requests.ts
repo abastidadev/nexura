@@ -1,7 +1,73 @@
-import type { CreatedPr, PrDraft, ReviewReply, ReviewThread, Worktree } from "@nexura/shared";
+import type { CreatedPr, PrDraft, PrVote, PullRequestSummary, ReviewReply, ReviewThread, Worktree } from "@nexura/shared";
+import { isInlinePost, type ReviewPost } from "../forge/review-post.ts";
 import { git, stripAttribution } from "../workspace/git.ts";
 import { githubGraphql, githubRequest } from "./github-client.ts";
 import { repoApiPath, type GithubRepo } from "./repo-remote.ts";
+
+type ApiPull = {
+  number: number;
+  title: string;
+  body?: string | null;
+  user?: { login?: string } | null;
+  head: { ref: string; sha: string };
+  base: { ref: string };
+  draft?: boolean;
+  html_url: string;
+  created_at: string;
+};
+
+/** Open PRs of the repo, newest first (up to 100). No tokens. */
+export async function listOpenPrs(remote: GithubRepo): Promise<PullRequestSummary[]> {
+  const pulls = await githubRequest<ApiPull[]>(`${repoApiPath(remote)}/pulls?state=open&sort=created&direction=desc&per_page=100`);
+  return pulls.map((pull) => ({
+    id: pull.number,
+    title: pull.title,
+    description: pull.body ?? "",
+    author: pull.user?.login ?? "",
+    sourceBranch: pull.head.ref,
+    targetBranch: pull.base.ref,
+    isDraft: Boolean(pull.draft),
+    url: pull.html_url,
+    createdAt: pull.created_at,
+    headSha: pull.head.sha,
+  }));
+}
+
+/** GitHub has no "approved with suggestions": it is an approval that carries the comments. */
+const REVIEW_EVENT: Record<PrVote, string> = { approve: "APPROVE", approveWithSuggestions: "APPROVE", waitingForAuthor: "REQUEST_CHANGES" };
+
+/**
+ * Posts one review on the reviewed commit: the anchored comments on their lines, the PR-level
+ * ones in its body, and the vote as its event (COMMENT when there is none).
+ */
+export async function postReview(remote: GithubRepo, prId: number, headSha: string, posts: ReviewPost[], vote?: PrVote): Promise<void> {
+  const inline = posts.filter(isInlinePost);
+  const general = posts.filter((post) => !isInlinePost(post)).map((post) => post.body);
+  const event = vote ? REVIEW_EVENT[vote] : "COMMENT";
+  // GitHub requires a body to request changes; a comment-only review needs something to say.
+  const body = general.join("\n\n") || (event === "REQUEST_CHANGES" ? "Please see the inline comments." : "");
+  if (event === "COMMENT" && !body && inline.length === 0) {
+    return;
+  }
+  await githubRequest(`${repoApiPath(remote)}/pulls/${prId}/reviews`, {
+    method: "POST",
+    body: {
+      commit_id: headSha,
+      event,
+      ...(body ? { body } : {}),
+      comments: inline.map((post) => {
+        const end = post.endLine && post.endLine > post.startLine ? post.endLine : post.startLine;
+        return {
+          path: post.path,
+          line: end,
+          side: "RIGHT",
+          ...(end > post.startLine ? { start_line: post.startLine, start_side: "RIGHT" } : {}),
+          body: post.body,
+        };
+      }),
+    },
+  });
+}
 
 /** GitHub rejects PR bodies above this many characters. */
 const PR_BODY_MAX = 65_000;
@@ -77,7 +143,7 @@ async function reviewThreads(remote: GithubRepo, prId: number): Promise<ApiThrea
  * which is also what a reply is posted to. Conversation comments have no resolved state,
  * so they are not tracked. No tokens.
  */
-export async function getActiveThreads(remote: GithubRepo, worktree: Worktree, pr: CreatedPr): Promise<ReviewThread[]> {
+export async function getActiveThreads(remote: GithubRepo, worktree: Pick<Worktree, "repo">, pr: Pick<CreatedPr, "id">): Promise<ReviewThread[]> {
   return (await reviewThreads(remote, pr.id))
     .filter((thread) => !thread.isResolved && thread.comments.nodes.length > 0)
     .map((thread) => ({

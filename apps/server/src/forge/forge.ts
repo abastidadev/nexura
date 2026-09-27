@@ -1,9 +1,10 @@
-import type { CreatedPr, PrDraft, ReviewReply, ReviewThread, RunRequest, Worktree } from "@nexura/shared";
+import type { CreatedPr, PrDraft, PrVote, PullRequestSummary, ReviewReply, ReviewThread, RunRequest, Worktree } from "@nexura/shared";
 import * as azurePrs from "../azure/pull-requests.ts";
 import * as azureThreads from "../azure/pr-threads.ts";
 import * as githubPrs from "../github/pull-requests.ts";
-import { git, stripAttribution } from "../workspace/git.ts";
+import { assertOwnWorktree, git, stripAttribution } from "../workspace/git.ts";
 import { repoRemoteOf, type RepoRemote } from "./remote.ts";
+import type { ReviewPost } from "./review-post.ts";
 
 /**
  * Pull requests and their review threads, on whichever provider the repo's origin remote
@@ -72,6 +73,7 @@ export async function buildPrDraft(
 
 /** Pushes the branch and opens the PR on the repo's provider, linking the ticket. */
 export async function pushAndCreatePr(worktree: Worktree, draft: PrDraft): Promise<CreatedPr> {
+  assertOwnWorktree(worktree);
   const remote = await requireRemote(worktree);
   return remote.provider === "azure"
     ? azurePrs.pushAndCreatePr(remote, worktree, draft)
@@ -84,8 +86,44 @@ export async function getPrStatus(worktree: Worktree, prId: number): Promise<str
   return remote.provider === "azure" ? azurePrs.getPrStatus(remote, prId) : githubPrs.getPrStatus(remote, prId);
 }
 
+/** Open PRs of the repo (GitHub `open`, Azure DevOps `active`), newest first. No tokens. */
+export async function listPullRequests(repo: Pick<Worktree, "repo" | "repoPath">): Promise<PullRequestSummary[]> {
+  const remote = await requireRemote(repo);
+  return remote.provider === "azure" ? azurePrs.listActivePrs(remote) : githubPrs.listOpenPrs(remote);
+}
+
+/**
+ * Posts the approved comments of a review, then the vote if one was chosen. GitHub takes it
+ * all as one review on the reviewed commit; Azure DevOps as one thread per comment plus the
+ * reviewer's vote. Nothing is signed: the text goes out as written, minus attribution lines.
+ * `onPosted` hears of every comment once it is on the PR, so a failure halfway (Azure posts
+ * them one by one) is not posted twice on retry.
+ */
+export async function publishReview(
+  repo: Pick<Worktree, "repo" | "repoPath">,
+  pr: { id: number; headSha: string },
+  posts: ReviewPost[],
+  vote?: PrVote,
+  onPosted: (post: ReviewPost) => void = () => undefined,
+): Promise<void> {
+  const remote = await requireRemote(repo);
+  const clean = posts.map((post) => ({ ...post, body: stripAttribution(post.body).trim() })).filter((post) => post.body);
+  if (remote.provider === "github") {
+    await githubPrs.postReview(remote, pr.id, pr.headSha, clean, vote);
+    clean.forEach(onPosted);
+    return;
+  }
+  for (const post of clean) {
+    await azureThreads.createThread(remote, pr.id, post);
+    onPosted(post);
+  }
+  if (vote) {
+    await azurePrs.vote(remote, pr.id, vote);
+  }
+}
+
 /** Active (unresolved) comment threads of a PR. */
-export async function getActiveThreads(worktree: Worktree, pr: CreatedPr): Promise<ReviewThread[]> {
+export async function getActiveThreads(worktree: Pick<Worktree, "repo" | "repoPath">, pr: Pick<CreatedPr, "id">): Promise<ReviewThread[]> {
   const remote = await requireRemote(worktree);
   return remote.provider === "azure"
     ? azureThreads.getActiveThreads(remote, worktree, pr)
@@ -99,6 +137,7 @@ export async function replyToThread(worktree: Worktree, prId: number, reply: Rev
 }
 
 export async function pushBranch(worktree: Worktree): Promise<void> {
+  assertOwnWorktree(worktree);
   await git(worktree.path, ["push", "origin", worktree.branch]);
 }
 

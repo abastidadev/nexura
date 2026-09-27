@@ -2,6 +2,7 @@ import { Component, computed, inject, signal, type OnInit } from "@angular/core"
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
 import { RUN_STATUS, TONE_CLASSES, type Tone } from "./core/format";
 import { NexuraStore, type Toast } from "./core/nexura-store";
+import { Notifier } from "./core/notifier";
 import { QuotaMeter } from "./shared/quota-meter";
 
 @Component({
@@ -13,6 +14,7 @@ import { QuotaMeter } from "./shared/quota-meter";
 export class App implements OnInit {
   private readonly router = inject(Router);
   protected readonly store = inject(NexuraStore);
+  protected readonly notifier = inject(Notifier);
   protected readonly loadError = signal<string | null>(null);
   protected readonly toastBorder: Record<Tone, string> = {
     ok: "border-ok",
@@ -99,9 +101,7 @@ export class App implements OnInit {
 
   protected openToast(toast: Toast): void {
     this.store.dismissToast(toast.id);
-    if (toast.runId) {
-      this.store.openRun(toast.runId);
-    }
+    this.store.openToast(toast);
   }
 
   public ngOnInit(): void {

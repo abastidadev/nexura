@@ -47,6 +47,7 @@ const ROLE_ACCESSORY: Record<string, Accessory> = {
   implement: "headphones",
   codeReview: "glasses",
   addressReview: "glasses",
+  prReview: "glasses",
   enrich: "beanie",
   qaNotes: "cap",
 };

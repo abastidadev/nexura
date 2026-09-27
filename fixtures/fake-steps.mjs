@@ -90,6 +90,52 @@ export function stepAnswer({ step, count, prompt, hasSchema }) {
       };
       break;
     }
+    case "prReview": {
+      // Comments on the first changed file of the prompt's `--name-status` list, one on the PR
+      // itself and one on a file that does not exist (the orchestrator must drop it).
+      const changed = [...prompt.matchAll(/^[ACMRT]\d*\t(?:[^\t\n]+\t)?([^\t\n]+)$/gm)].map((match) => match[1]);
+      const file = changed[0] ?? "README.md";
+      output = {
+        verdict: "waitingForAuthor",
+        summary: `fake: revisados ${changed.length} fichero(s)`,
+        conventions: ["Los módulos exportan funciones con nombre"],
+        strengths: ["Cambio pequeño y enfocado"],
+        comments: [
+          {
+            severity: "nit",
+            file,
+            startLine: 1,
+            endLine: 1,
+            title: "Nombre poco claro",
+            post: "Rename to greetUser",
+            why: "El resto del repo nombra las funciones con verbo + objeto.",
+            suggestion: "",
+          },
+          {
+            severity: "major",
+            file,
+            startLine: 1,
+            endLine: 2,
+            title: "Falta validar la entrada",
+            post: "Should we validate the input here — before using it?",
+            why: "Si llega vacío, la función devuelve un saludo sin nombre y nadie se entera.",
+            suggestion: 'if (!name) throw new Error("name required");',
+          },
+          {
+            severity: "minor",
+            file: "",
+            startLine: 0,
+            endLine: 0,
+            title: "La PR no tiene descripción",
+            post: "Could you add a short description to the PR?",
+            why: "Sin descripción cuesta saber qué pretende el cambio.",
+            suggestion: "",
+          },
+          { severity: "blocker", file: "nope/ghost.ts", startLine: 3, endLine: 3, title: "Inventado", post: "ghost", why: "no existe", suggestion: "" },
+        ],
+      };
+      break;
+    }
     case "qaNotes":
       output = {
         summary: "fake",

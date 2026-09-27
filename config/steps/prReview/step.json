@@ -1,0 +1,9 @@
+{
+  "kind": "claude",
+  "tools": ["Read", "Glob", "Grep", "Skill", "Agent"],
+  "allowedTools": [],
+  "disallowedTools": [],
+  "mcpServers": [],
+  "memory": "read",
+  "timeoutMs": 1200000
+}

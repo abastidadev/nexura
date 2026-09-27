@@ -46,6 +46,7 @@ export const STEP_LABELS: Record<string, string> = {
   release: "Release",
   qaNotes: "Notas QA",
   addressReview: "Responder PR",
+  prReview: "Revisar PR",
 };
 
 /** Labels of the custom steps, registered whenever the config is (re)loaded. */

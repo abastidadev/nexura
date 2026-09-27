@@ -190,7 +190,8 @@ export class TerminalSessions {
     element.addEventListener(
       "paste",
       (event) => {
-        const images = imageFiles(event.clipboardData);
+        // Text copied from Office, Teams or a web page carries a picture of itself too: text wins.
+        const images = event.clipboardData?.getData("text/plain") ? [] : imageFiles(event.clipboardData);
         if (images.length) {
           event.preventDefault();
           event.stopPropagation();

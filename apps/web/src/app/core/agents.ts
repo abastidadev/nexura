@@ -82,7 +82,7 @@ export function plannedSteps(run: Run, config: AgentConfig | null): PlannedStep[
   const profile = config.profiles.find((candidate) => candidate.name === run.resolvedProfile);
   for (const { name } of orderSteps(config.steps)) {
     const step = profile?.steps[name];
-    if (name !== "classify" && name !== "addressReview" && step?.enabled) {
+    if (name !== "classify" && name !== "addressReview" && name !== "prReview" && step?.enabled) {
       const builtin = config.steps.find((definition) => definition.name === name)?.kind === "builtin";
       result.push({ name, detail: builtin ? "sin LLM" : modelDetail(step), agent: builtin ? undefined : agentOf(step), model: builtin ? undefined : step.model, builtin });
     }

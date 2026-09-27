@@ -12,6 +12,7 @@ import {
   type FlowProfile,
   type NewConversation,
   type NexuraSettings,
+  type PrReviewPublish,
   type RepoConfig,
   type RetryOptions,
   type RunRequest,
@@ -37,6 +38,7 @@ import { rejectReason } from "./request-guard.ts";
 import { AzureError } from "../azure/azure-client.ts";
 import { ConversationManager } from "../conversations/conversation-manager.ts";
 import { ConversationStore } from "../conversations/conversation-store.ts";
+import { listPullRequests } from "../forge/forge.ts";
 import { repoRemoteOf } from "../forge/remote.ts";
 import { listTickets, loadTicket, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
 import { GithubError } from "../github/github-client.ts";
@@ -47,7 +49,7 @@ import { detectAgents } from "../runner/agents.ts";
 import { accountUsage } from "../runner/account-usage.ts";
 import { claudeInventory } from "../workspace/claude-inventory.ts";
 import { projectOf } from "../memory/memory-store.ts";
-import type { Orchestrator } from "../orchestrator/orchestrator.ts";
+import type { Orchestrator, PrReviewRequest } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { TerminalServer } from "../terminal/terminal-server.ts";
 import { readRepoNotes, saveRepoNotes } from "../workspace/repo-context.ts";
@@ -260,6 +262,42 @@ export function createApiServer(
       throw new HttpError(404, `Repo desconocido: ${name}`);
     }
     return { provider: (await repoRemoteOf(repo.path))?.provider ?? null };
+  });
+
+  /** Open PRs of a repo, on whichever provider its origin lives (Revisiones). Zero tokens. */
+  route("GET", "/api/repos/:name/pull-requests", async ([name]) => {
+    const repo = loadConfig().repos.find((candidate) => candidate.name === name);
+    if (!repo) {
+      throw new HttpError(404, `Repo desconocido: ${name}`);
+    }
+    try {
+      return await listPullRequests({ repo: repo.name, repoPath: repo.path });
+    } catch (error) {
+      throw upstreamError(error);
+    }
+  });
+  /** Queues the review of one PR; nothing is posted until publish-review. */
+  route("POST", "/api/pr-reviews", async (_params, body) => {
+    try {
+      return await orchestrator.startPrReview(body as PrReviewRequest);
+    } catch (error) {
+      throw error instanceof AzureError || error instanceof GithubError ? upstreamError(error) : error;
+    }
+  });
+  /** Posts the comments the user picked (edited text) and the vote. */
+  route("POST", "/api/runs/:id/publish-review", async ([id], body) => {
+    requireRun(id!);
+    try {
+      return await orchestrator.publishPrReview(id!, body as PrReviewPublish);
+    } catch (error) {
+      throw error instanceof AzureError || error instanceof GithubError ? upstreamError(error) : error;
+    }
+  });
+
+  /** Saves the conventions a review found to the repo notes (the user's call: they come from reading a PR). */
+  route("POST", "/api/runs/:id/learn-conventions", ([id]) => {
+    requireRun(id!);
+    return orchestrator.learnPrReviewConventions(id!);
   });
 
   /** Skills, subagents and MCP servers that `claude` finds in a repo (read from files, no tokens). */

@@ -5,7 +5,7 @@ import { stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 const MS_PER_MINUTE = 60_000;
-const ON_DEMAND: Record<string, string> = { classify: "modo Automático", addressReview: "a mano, desde la PR" };
+const ON_DEMAND: Record<string, string> = { classify: "modo Automático", addressReview: "a mano, desde la PR", prReview: "desde Revisiones" };
 
 @Component({
   selector: "nx-steps-list",

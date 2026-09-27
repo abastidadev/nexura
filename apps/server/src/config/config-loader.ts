@@ -159,10 +159,13 @@ export type StepDefinitionUpdate = Pick<StepDefinition, "tools" | "allowedTools"
 
 const list = (values: unknown): string[] => (Array.isArray(values) ? values.map((value) => String(value).trim()).filter(Boolean) : []);
 
+/** Steps launched on their own, never in a flow's sequence: a custom step cannot go after them. */
+const OFF_PIPELINE: ReadonlySet<string> = new Set(["classify", "addressReview", "prReview"]);
+
 /** Label/description/after of a custom step, validated against the steps that exist. */
 function customMetadata(name: string, update: Partial<StepDefinition>, configDir: string): Pick<StepDefinition, "custom" | "label" | "description" | "after"> {
   const after = String(update.after ?? "").trim();
-  const others = [...loadSteps(configDir).keys()].filter((step) => step !== name && step !== "classify" && step !== "addressReview");
+  const others = [...loadSteps(configDir).keys()].filter((step) => step !== name && !OFF_PIPELINE.has(step));
   if (!others.includes(after)) {
     throw new Error(`"Después de" tiene que ser uno de los pasos del flujo (${others.join(", ")})`);
   }

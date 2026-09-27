@@ -1,6 +1,6 @@
 import { execFile, spawn } from "node:child_process";
-import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, statSync, symlinkSync, unlinkSync } from "node:fs";
-import { dirname, isAbsolute, join, relative, resolve } from "node:path";
+import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSync, rmdirSync, rmSync, statSync, symlinkSync, unlinkSync } from "node:fs";
+import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { RepoConfig, Worktree } from "@nexura/shared";
 import { forgetWorktree, trustWorktree } from "./claude-trust.ts";
@@ -8,8 +8,13 @@ import { forgetWorktree, trustWorktree } from "./claude-trust.ts";
 const exec = promisify(execFile);
 
 export async function git(cwd: string, args: string[]): Promise<string> {
+  return (await gitRaw(cwd, args)).trim();
+}
+
+/** stdout as is: a file's content keeps its leading blank lines and indentation (line numbers depend on them). */
+export async function gitRaw(cwd: string, args: string[]): Promise<string> {
   const { stdout } = await exec("git", args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true });
-  return stdout.trim();
+  return stdout;
 }
 
 async function refExists(cwd: string, ref: string): Promise<boolean> {
@@ -58,6 +63,86 @@ export async function createWorktree(repo: RepoConfig, runId: string, branchName
   copyLocalClaudeConfig(repo.path, path);
   trustWorktree(path, repo.path);
   return { repo: repo.name, repoPath: repo.path, path, branch, baseRef };
+}
+
+/** Where a review keeps the PR's head: outside refs/heads, so it is never one of the user's branches. */
+function reviewRef(worktreePath: string): string {
+  return `refs/nexura/review/${basename(worktreePath)}`;
+}
+
+/**
+ * Configuration the coding agents load from the directory they run in: settings (hooks,
+ * permissions, env), skills, agents, commands, MCP servers and instructions of Claude Code,
+ * Codex and Copilot, at the root or nested.
+ */
+const AGENT_CONFIG_PATH =
+  /(^|\/)(\.claude|\.codex)\/|(^|\/)(CLAUDE|CLAUDE\.local|AGENTS)\.md$|^\.mcp\.json$|^\.vscode\/mcp\.json$|^\.github\/(copilot-instructions\.md$|instructions\/|prompts\/|agents\/|hooks\/|copilot\/)/i;
+
+export function isAgentConfigPath(file: string): boolean {
+  return AGENT_CONFIG_PATH.test(file);
+}
+
+/**
+ * A PR must not configure the agent that reviews it: whoever opened it (a fork, anyone)
+ * could add a hook, widen the permissions or point the CLI at another API. Every such file
+ * the PR adds or changes goes back to how the base branch has it (or away, if the base does
+ * not have it): the reviewer follows the conventions already merged, and still sees the PR's
+ * changes to them in the diff. Returns the files reset.
+ */
+export async function neutralizeAgentConfig(worktreePath: string, baseRef: string): Promise<string[]> {
+  const base = await git(worktreePath, ["merge-base", baseRef, "HEAD"]);
+  const touched = (await git(worktreePath, ["-c", "core.quotepath=false", "diff", "--name-only", "--no-renames", base, "HEAD"]))
+    .split(/\r?\n/)
+    .filter((file) => file && isAgentConfigPath(file));
+  for (const file of touched) {
+    const inBase = await git(worktreePath, ["cat-file", "-e", `${base}:${file}`]).then(
+      () => true,
+      () => false,
+    );
+    if (inBase) {
+      await git(worktreePath, ["checkout", base, "--", file]);
+    } else {
+      rmSync(join(worktreePath, file), { force: true });
+    }
+  }
+  return touched;
+}
+
+/**
+ * Checks out the head of an open PR, detached, in `<repo>.worktrees/nexura-<runId>`: GitHub
+ * serves it as `refs/pull/<id>/head` (forks included), Azure DevOps from its source branch.
+ * The target branch is fetched too, so `git diff <baseRef>...HEAD` is exactly the PR's diff.
+ * The agent configuration comes from the base branch (see neutralizeAgentConfig), then the
+ * local Claude files of the main checkout, as for any run. No node_modules: a review only reads.
+ */
+export async function createPrWorktree(
+  repo: RepoConfig,
+  runId: string,
+  pr: { id: number; provider: "azure" | "github"; sourceBranch: string; targetBranch: string },
+): Promise<{ worktree: Worktree; neutralized: string[] }> {
+  const path = join(`${repo.path}.worktrees`, `nexura-${runId}`);
+  const source = pr.provider === "github" ? `refs/pull/${pr.id}/head` : `refs/heads/${pr.sourceBranch}`;
+  const baseRef = `origin/${pr.targetBranch}`;
+  await git(repo.path, [
+    "fetch",
+    "--quiet",
+    "--no-tags",
+    "origin",
+    `+${source}:${reviewRef(path)}`,
+    `+refs/heads/${pr.targetBranch}:refs/remotes/${baseRef}`,
+  ]);
+  const worktree: Worktree = { repo: repo.name, repoPath: repo.path, path, branch: pr.sourceBranch, baseRef, detached: true };
+  try {
+    await git(repo.path, ["worktree", "add", "--detach", path, reviewRef(path)]);
+    const neutralized = await neutralizeAgentConfig(path, baseRef);
+    copyLocalClaudeConfig(repo.path, path);
+    trustWorktree(path, repo.path);
+    return { worktree, neutralized };
+  } catch (error) {
+    // Nothing references the review ref or a half-made worktree: do not leave them behind.
+    await removeWorktree(worktree).catch(() => undefined);
+    throw error;
+  }
 }
 
 /**
@@ -284,15 +369,20 @@ export async function removeWorktree(worktree: Worktree, deleteBranch = false): 
     }
   }
   forgetWorktree(worktree.path);
+  if (worktree.detached) {
+    // A reviewed PR: its branch belongs to someone else (and may match a local one of the user's).
+    await git(worktree.repoPath, ["update-ref", "-d", reviewRef(worktree.path)]).catch(() => undefined);
+    return;
+  }
   if ((await refExists(worktree.repoPath, `refs/heads/${worktree.branch}`)) && (deleteBranch || !(await hasOwnCommits(worktree)))) {
     await git(worktree.repoPath, ["branch", "-D", worktree.branch]);
   }
 }
 
-const ATTRIBUTION_LINE = /^\s*(co-authored-by|claude-session)\s*:|generated with \[?claude code/i;
+const ATTRIBUTION_LINE = /^\s*(co-authored-by|claude-session)\s*:|generated (with|by) \[?(claude code|codex|(github )?copilot)/i;
 
 /**
- * Drops attribution lines (Co-Authored-By, Claude-Session, "Generated with Claude Code")
+ * Drops attribution lines (Co-Authored-By, Claude-Session, "Generated with Claude Code/Codex/Copilot")
  * that a model may add to a commit message or PR description: Nexura never signs the
  * user's commits or PRs.
  */
@@ -304,8 +394,16 @@ export function stripAttribution(text: string): string {
     .trimEnd();
 }
 
+/** A reviewed PR's checkout is someone else's code (and its `branch` may match a local branch of the user's): never commit or push from it. */
+export function assertOwnWorktree(worktree: Worktree): void {
+  if (worktree.detached) {
+    throw new Error(`${worktree.path} es el checkout de una PR en revisión: Nexura no hace commits ni push desde ahí`);
+  }
+}
+
 /** Stages everything and commits. Returns the new SHA, or undefined when there was nothing to commit. */
 export async function commitAll(worktree: Worktree, message: string): Promise<string | undefined> {
+  assertOwnWorktree(worktree);
   message = stripAttribution(message) || "chore: nexura changes";
   await git(worktree.path, ["add", "-A"]);
   // Belt and braces: never commit the node_modules junction, even if a repo does not ignore it.

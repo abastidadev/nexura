@@ -3,35 +3,36 @@ import { Router } from "@angular/router";
 import type { Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage } from "@nexura/shared";
 import { setCustomStepLabels, stepLabel, type Tone } from "./format";
 import { Api, type NexuraConfigView, type StoredEvent } from "./api";
+import { Notifier, type Chime } from "./notifier";
+import { readStorage, writeStorage } from "./storage";
+
+export { readStorage, writeStorage };
 
 const TABS_KEY = "nexura.tabs";
 const THEME_KEY = "nexura.theme";
 const RECONNECT_MS = 2000;
 const CLOCK_MS = 1000;
 const NOTIFY_KEY = "nexura.notifications";
+const UNSEEN_REVIEWS_KEY = "nexura.unseenReviews";
 const TOAST_MS = 8000;
 const MAX_TOASTS = 4;
 
-export type Toast = { id: number; title: string; body: string; tone: Tone; runId?: string };
+/** Where clicking a toast (or its system notification) takes the user. */
+export type ToastLink = { path: string[]; queryParams?: Record<string, string> };
+
+export type Toast = { id: number; title: string; body: string; tone: Tone; runId?: string; link?: ToastLink };
+
+/** A PR review run (Revisiones) rather than a ticket flow. */
+export function isPrReview(run: Run): boolean {
+  return run.request.kind === "prReview";
+}
+
+/** Revisiones, on the review's repo and run. */
+export function reviewLink(run: Run): ToastLink {
+  return { path: ["/reviews"], queryParams: { repo: run.request.repos[0] ?? "", run: run.id } };
+}
 
 export type Theme = "dark" | "light";
-
-export function readStorage<T>(key: string, fallback: T): T {
-  try {
-    const value = localStorage.getItem(key);
-    return value ? (JSON.parse(value) as T) : fallback;
-  } catch {
-    return fallback;
-  }
-}
-
-export function writeStorage(key: string, value: unknown): void {
-  try {
-    localStorage.setItem(key, JSON.stringify(value));
-  } catch {
-    // Storage unavailable (private mode): the UI still works, it just forgets tabs.
-  }
-}
 
 function mergeEvents(current: StoredEvent[], incoming: StoredEvent[]): StoredEvent[] {
   const bySeq = new Map(current.map((item) => [item.seq, item]));
@@ -46,6 +47,7 @@ function mergeEvents(current: StoredEvent[], incoming: StoredEvent[]): StoredEve
 export class NexuraStore {
   private readonly api = inject(Api);
   private readonly router = inject(Router);
+  private readonly notifier = inject(Notifier);
   private toastSeq = 0;
   private readonly runsById = signal<Record<string, Run>>({});
   private readonly conversationsById = signal<Record<string, Conversation>>({});
@@ -65,6 +67,8 @@ export class NexuraStore {
   public readonly notificationsEnabled = signal<boolean>(readStorage<boolean>(NOTIFY_KEY, false));
   /** Runs waiting for the user (paused on a breakpoint or an approval). */
   public readonly needsAttention = computed(() => this.runs().filter((run) => run.status === "paused").length);
+  /** PR reviews that finished while the user was not looking at them. */
+  public readonly unseenReviews = signal<string[]>(readStorage<string[]>(UNSEEN_REVIEWS_KEY, []));
 
   public readonly runs = computed(() =>
     Object.values(this.runsById()).sort((a, b) => b.createdAt.localeCompare(a.createdAt)),
@@ -75,7 +79,11 @@ export class NexuraStore {
   );
   public readonly runningConversations = computed(() => this.conversations().filter((conversation) => conversation.status === "running").length);
   public readonly activeCount = computed(
-    () => this.runs().filter((run) => ["running", "queued", "waiting-rate-limit", "paused"].includes(run.status)).length,
+    () => this.runs().filter((run) => !isPrReview(run) && ["running", "queued", "waiting-rate-limit", "paused"].includes(run.status)).length,
+  );
+  /** PR reviews queued or running (Revisiones tab). */
+  public readonly activeReviews = computed(
+    () => this.runs().filter((run) => isPrReview(run) && ["running", "queued", "waiting-rate-limit"].includes(run.status)).length,
   );
 
   public constructor() {
@@ -87,12 +95,9 @@ export class NexuraStore {
     });
     effect(() => writeStorage(TABS_KEY, this.openTabs()));
     effect(() => writeStorage(NOTIFY_KEY, this.notificationsEnabled()));
-    // "(n) " prefix on the page title while runs wait for the user; the route title stays.
-    effect(() => {
-      const waiting = this.needsAttention();
-      const base = document.title.replace(/^\(\d+\) /, "");
-      document.title = waiting ? `(${waiting}) ${base}` : base;
-    });
+    effect(() => writeStorage(UNSEEN_REVIEWS_KEY, this.unseenReviews()));
+    // "(n)" on the tab title and the favicon while something waits for the user.
+    effect(() => this.notifier.attention.set(this.needsAttention() + this.unseenReviews().length));
     effect(() => {
       const theme = this.theme();
       document.documentElement.classList.toggle("light", theme === "light");
@@ -116,8 +121,9 @@ export class NexuraStore {
     if (quota) {
       this.quota.set(quota);
     }
-    // Drop tabs of runs that no longer exist.
-    this.openTabs.update((tabs) => tabs.filter((id) => runs.some((run) => run.id === id)));
+    // Drop tabs of runs that no longer exist (and of reviews: they live in Revisiones).
+    this.openTabs.update((tabs) => tabs.filter((id) => runs.some((run) => run.id === id && !isPrReview(run))));
+    this.unseenReviews.update((ids) => ids.filter((id) => runs.some((run) => run.id === id)));
   }
 
   public async reloadConfig(): Promise<void> {
@@ -188,9 +194,17 @@ export class NexuraStore {
     this.forgetRun(id);
   }
 
+  /** The user opened the finished review: it no longer counts as waiting. */
+  public markReviewSeen(id: string): void {
+    if (this.unseenReviews().includes(id)) {
+      this.unseenReviews.update((ids) => ids.filter((candidate) => candidate !== id));
+    }
+  }
+
   private forgetRun(id: string): void {
     this.runsById.update(({ [id]: _removed, ...rest }) => rest);
     this.closeTab(id);
+    this.markReviewSeen(id);
     if (this.router.url.startsWith(`/runs/${id}`)) {
       void this.router.navigate(["/"]);
     }
@@ -213,8 +227,26 @@ export class NexuraStore {
   }
 
   public openRun(runId: string): void {
+    const run = this.runsById()[runId];
+    if (run && isPrReview(run)) {
+      this.follow(reviewLink(run));
+      return;
+    }
     this.openTab(runId);
     void this.router.navigate(["/runs", runId]);
+  }
+
+  /** Goes where a toast points: its link, else its run. */
+  public openToast(toast: Omit<Toast, "id">): void {
+    if (toast.link) {
+      this.follow(toast.link);
+    } else if (toast.runId) {
+      this.openRun(toast.runId);
+    }
+  }
+
+  private follow(link: ToastLink): void {
+    void this.router.navigate(link.path, { queryParams: link.queryParams });
   }
 
   /** In-app toast always; system notification too when the page is not in front. */
@@ -222,16 +254,21 @@ export class NexuraStore {
     const toast = { ...message, id: ++this.toastSeq };
     this.toasts.update((toasts) => [...toasts, toast].slice(-MAX_TOASTS));
     setTimeout(() => this.dismissToast(toast.id), TOAST_MS);
-    const inBackground = document.visibilityState !== "visible" || !document.hasFocus();
-    if (this.notificationsEnabled() && inBackground && "Notification" in window && Notification.permission === "granted") {
-      const notification = new Notification(message.title, { body: message.body, tag: message.runId });
+    if (this.notificationsEnabled() && this.notifier.inBackground() && "Notification" in window && Notification.permission === "granted") {
+      // Shown by the OS (on Windows, a toast of the notification centre). Nexura plays its own chime.
+      const notification = new Notification(message.title, { body: message.body, tag: message.runId, silent: this.notifier.soundEnabled() });
       notification.onclick = () => {
         window.focus();
-        if (message.runId) {
-          this.openRun(message.runId);
-        }
+        notification.close();
+        this.openToast(message);
       };
     }
+  }
+
+  /** Chime and blinking tab title together with the toast. */
+  private alert(chime: Chime, message: Omit<Toast, "id">): void {
+    this.notifier.alert(chime, `${chime === "err" ? "✖" : chime === "warn" ? "⏸" : "✔"} ${message.title}`);
+    this.toast(message);
   }
 
   public toggleTheme(): void {
@@ -240,16 +277,20 @@ export class NexuraStore {
 
   /** Turns a status change into a notification when it needs (or informs) the user. */
   private announce(run: Run): void {
+    if (isPrReview(run)) {
+      this.announceReview(run);
+      return;
+    }
     const firstLine = run.request.ticketText.split("\n")[0] ?? run.id;
     const title = run.request.ticketId ? `#${run.request.ticketId} · ${firstLine}` : firstLine;
     const step = run.steps.at(-1);
     const failedStep = step ? stepLabel(step.step) : "";
     switch (run.status) {
       case "done":
-        this.toast({ title, body: `Terminado · ${run.pullRequests?.length ? "PR creada" : "ramas en local"}`, tone: "ok", runId: run.id });
+        this.alert("ok", { title, body: `Terminado · ${run.pullRequests?.length ? "PR creada" : "ramas en local"}`, tone: "ok", runId: run.id });
         break;
       case "failed":
-        this.toast({ title, body: `Falló en ${failedStep}: ${run.error ?? ""}`.slice(0, 180), tone: "err", runId: run.id });
+        this.alert("err", { title, body: `Falló en ${failedStep}: ${run.error ?? ""}`.slice(0, 180), tone: "err", runId: run.id });
         break;
       case "paused": {
         const pending = run.pendingStep;
@@ -258,12 +299,33 @@ export class NexuraStore {
           : pending?.replies
             ? "Revisa las respuestas a la revisión antes de publicarlas."
             : `Pausado antes de ${pending ? stepLabel(pending.step) : "el siguiente paso"}.`;
-        this.toast({ title, body, tone: "warn", runId: run.id });
+        this.alert("warn", { title, body, tone: "warn", runId: run.id });
         break;
       }
       case "waiting-rate-limit":
         this.toast({ title, body: "Esperando a que se libere la cuota del plan.", tone: "warn", runId: run.id });
         break;
+    }
+  }
+
+  /** A finished review counts as unseen until opened, unless the user is already looking at it. */
+  private announceReview(run: Run): void {
+    const target = run.request.prReview;
+    const title = target ? `PR #${target.id} · ${target.title}` : (run.request.ticketText.split("\n")[0] ?? run.id);
+    const link = reviewLink(run);
+    if (run.status === "done") {
+      const comments = run.prReview?.comments ?? [];
+      const important = comments.filter((comment) => comment.severity === "blocker" || comment.severity === "major").length;
+      const body = comments.length
+        ? `Revisada · ${comments.length} comentario(s)${important ? `, ${important} importante(s)` : ""}`
+        : "Revisada · sin comentarios";
+      const watching = !this.notifier.inBackground() && this.router.url.includes(`run=${run.id}`);
+      if (!watching && !run.prReview?.published && !this.unseenReviews().includes(run.id)) {
+        this.unseenReviews.update((ids) => [...ids, run.id]);
+      }
+      this.alert("ok", { title, body, tone: important ? "warn" : "ok", runId: run.id, link });
+    } else if (run.status === "failed") {
+      this.alert("err", { title, body: `Falló la revisión: ${run.error ?? ""}`.slice(0, 180), tone: "err", runId: run.id, link });
     }
   }
 

@@ -4,6 +4,10 @@ import { firstValueFrom } from "rxjs";
 import type {
   AgentAccountUsage,
   AgentInfo,
+  AgentKind,
+  Effort,
+  PrReviewPublish,
+  PullRequestSummary,
   ClaudeInventory,
   Conversation,
   ConversationChange,
@@ -31,6 +35,9 @@ import type {
 } from "@nexura/shared";
 
 export type StoredEvent = { seq: number; ts: string; event: NexuraEvent };
+
+/** What Revisiones sends to review one PR (the server's PrReviewRequest). */
+export type PrReviewRequest = { repo: string; prId: number; agent?: AgentKind; model?: string; effort?: Effort };
 
 export type StepDefinitionView = StepDefinition & { promptTemplate?: string; schema?: object };
 
@@ -172,6 +179,24 @@ export class Api {
     return firstValueFrom(this.http.get<{ provider: TicketSource | null }>(`/api/repos/${encodeURIComponent(repo)}/remote`)).then(
       (response) => response.provider,
     );
+  }
+
+  /** Open PRs of a repo on its provider (Revisiones). */
+  public listPullRequests(repo: string): Promise<PullRequestSummary[]> {
+    return firstValueFrom(this.http.get<PullRequestSummary[]>(`/api/repos/${encodeURIComponent(repo)}/pull-requests`));
+  }
+
+  public startPrReview(request: PrReviewRequest): Promise<Run> {
+    return firstValueFrom(this.http.post<Run>("/api/pr-reviews", request));
+  }
+
+  public publishPrReview(runId: string, publish: PrReviewPublish): Promise<Run> {
+    return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/publish-review`, publish));
+  }
+
+  /** Adds the conventions a review found to the repo notes. */
+  public learnConventions(runId: string): Promise<Run> {
+    return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/learn-conventions`, {}));
   }
 
   /** Native folder dialog on the Nexura machine; "" when cancelled. */

@@ -17,6 +17,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/run-view/run-view").then((m) => m.RunView),
   },
   {
+    path: "reviews",
+    title: "Nexura · Revisión de PRs",
+    loadComponent: () => import("./features/pr-reviews/pr-reviews").then((m) => m.PrReviewsPage),
+  },
+  {
     path: "terminal",
     title: "Nexura · Terminal",
     loadComponent: () => import("./features/terminal/terminal-page").then((m) => m.TerminalPage),

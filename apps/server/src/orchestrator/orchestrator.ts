@@ -1,10 +1,13 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
+import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import {
   AGENT_KINDS,
   AGENT_LABELS,
   AGENT_MODELS,
   agentOf,
+  PR_VOTES,
   DEFAULT_SETTINGS,
   orderSteps,
   type AgentKind,
@@ -14,6 +17,8 @@ import {
   type NexuraEvent,
   type NexuraSettings,
   type PrDraft,
+  type PrReviewPublish,
+  type PrReviewTarget,
   type QuotaInfo,
   type RetryOptions,
   type ReviewReply,
@@ -31,12 +36,23 @@ import { Ledger } from "../ledger/ledger.ts";
 import { asJsonBlock, renderTemplate } from "../prompt/render.ts";
 import { AgentProcess } from "../runner/agent-process.ts";
 import type { RunStore } from "../store/run-store.ts";
-import { commitAll, createWorktree, removeWorktree, slugify } from "../workspace/git.ts";
+import { commitAll, createPrWorktree, createWorktree, git, gitRaw, removeWorktree, slugify } from "../workspace/git.ts";
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
 import { isMemoryWrite, MEMORY_SERVER, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
 import { resolveMcpServers } from "../workspace/claude-inventory.ts";
 import { projectOf, type NewObservation } from "../memory/memory-store.ts";
-import { buildPrDraft, getActiveThreads, pushAndCreatePr, pushBranch, replyToThread, threadsToText } from "../forge/forge.ts";
+import {
+  buildPrDraft,
+  getActiveThreads,
+  listPullRequests,
+  publishReview,
+  pushAndCreatePr,
+  pushBranch,
+  replyToThread,
+  requireRemote,
+  threadsToText,
+} from "../forge/forge.ts";
+import { normalizePrReview, normalizeReviewPath, parseDiffHunks, reviewPosts, type PrReviewOutput } from "./pr-review.ts";
 import { mergeJudgments, type CodeReviewOutput, type ReviewIssue } from "./blind-review.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
 
@@ -60,6 +76,26 @@ function checkOverrides(options: RetryOptions, fallbackAgent: AgentKind): void {
   }
 }
 
+/** Where the prReview step finds the PR's diff and commits (inside its worktree, removed with it). */
+const PR_REVIEW_DIR = ".nexura-review";
+
+/** `{{pr}}` of the prReview step. */
+function prReviewText(target: PrReviewTarget, headSha: string, neutralized: string[]): string {
+  return [
+    `- **PR #${target.id}**: ${target.title}${target.isDraft ? " (borrador)" : ""}`,
+    `- Autor: ${target.author || "desconocido"}`,
+    `- Ramas: \`${target.sourceBranch}\` → \`${target.targetBranch}\``,
+    `- Commit revisado: \`${headSha}\``,
+    `- ${target.provider === "github" ? "GitHub" : "Azure DevOps"}: ${target.url}`,
+    `- Diff completo: \`${PR_REVIEW_DIR}/pr.diff\`; commits: \`${PR_REVIEW_DIR}/commits.txt\``,
+    ...(neutralized.length
+      ? [
+          `- La PR cambia configuración de agentes (${neutralized.join(", ")}): en tu checkout está la versión de \`${target.targetBranch}\`; sus cambios se ven en el diff y se revisan como el resto.`,
+        ]
+      : []),
+  ].join("\n");
+}
+
 type RunContext = {
   cancelled: boolean;
   process?: AgentProcess;
@@ -80,8 +116,14 @@ type StepContext = {
 };
 
 /** Steps that never run in the profile sequence: they are launched on demand. */
-const ON_DEMAND_STEPS: ReadonlySet<StepName> = new Set(["classify", "addressReview"]);
+const ON_DEMAND_STEPS: ReadonlySet<StepName> = new Set(["classify", "addressReview", "prReview"]);
 const DEFAULT_ADDRESS_REVIEW: StepConfig = { agent: "claude", model: "sonnet", effort: "medium", enabled: true };
+/** Reviewing someone else's PR reads a lot of code: a strong model by default, overridable per review. */
+export const DEFAULT_PR_REVIEW: StepConfig = { agent: "claude", model: "sonnet", effort: "high", enabled: true };
+const EFFORTS: readonly string[] = ["low", "medium", "high", "xhigh"];
+
+/** What Revisiones sends to review one PR. */
+export type PrReviewRequest = { repo: string; prId: number; agent?: AgentKind; model?: string; effort?: StepConfig["effort"] };
 
 type StepOutcome = { stepRun: StepRun; rateLimitedUntil?: number };
 
@@ -101,6 +143,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   private readonly contexts = new Map<string, RunContext>();
   private readonly waiting: (() => void)[] = [];
   private readonly eventSeq = new Map<string, number>();
+  /** PR reviews whose comments are being posted (a double click must not post them twice). */
+  private readonly publishing = new Set<string>();
   private running = 0;
   private quota?: QuotaInfo;
   private settings: NexuraSettings;
@@ -202,11 +246,14 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     run.error = undefined;
     this.persist(run);
     this.contexts.set(runId, { cancelled: false });
-    void this.schedule(runId, () =>
-      last?.step === "addressReview"
+    void this.schedule(runId, () => {
+      if (run.request.kind === "prReview") {
+        return this.executePrReview(run, options);
+      }
+      return last?.step === "addressReview"
         ? this.executeAddressReview(run, options)
-        : this.execute(run, last ? { step: last.step, options } : undefined),
-    );
+        : this.execute(run, last ? { step: last.step, options } : undefined);
+    });
     return run;
   }
 
@@ -254,6 +301,167 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     this.persist(run);
     this.contexts.set(runId, { cancelled: false });
     void this.schedule(runId, () => this.executeAddressReview(run));
+    return run;
+  }
+
+  /**
+   * Queues the review of an open PR of a configured repo (Revisiones). It runs like any flow
+   * (same concurrency, events, cancel and retry) with the single prReview step; nothing is
+   * posted to the PR until the user publishes the comments they pick.
+   */
+  public async startPrReview(input: PrReviewRequest): Promise<Run> {
+    const repo = this.config.repos.find((candidate) => candidate.name === input.repo);
+    if (!repo) {
+      throw new Error(`Repositorio no configurado en repos.json: ${String(input.repo)}`);
+    }
+    const prId = Number(input.prId);
+    if (!Number.isInteger(prId) || prId <= 0) {
+      throw new Error(`Número de PR no válido: ${String(input.prId)}`);
+    }
+    checkOverrides({ agent: input.agent, model: input.model }, agentOf(DEFAULT_PR_REVIEW));
+    if (input.effort !== undefined && !EFFORTS.includes(input.effort)) {
+      throw new Error(`Esfuerzo desconocido: ${String(input.effort)}`);
+    }
+    const agent = input.agent ?? agentOf(DEFAULT_PR_REVIEW);
+    const reviewConfig: StepConfig = {
+      agent,
+      model: input.model ?? (agent === agentOf(DEFAULT_PR_REVIEW) ? DEFAULT_PR_REVIEW.model : AGENT_MODELS[agent][0]!),
+      effort: input.effort ?? DEFAULT_PR_REVIEW.effort,
+      enabled: true,
+    };
+    const reviewing = [...this.contexts.keys()].some((id) => {
+      const active = this.store.getRun(id)?.request;
+      return active?.kind === "prReview" && active.repos[0] === repo.name && active.prReview?.id === prId;
+    });
+    if (reviewing) {
+      throw new Error(`Ya hay una revisión en curso de la PR #${prId}`);
+    }
+
+    const location = { repo: repo.name, repoPath: repo.path };
+    const remote = await requireRemote(location);
+    const pr = (await listPullRequests(location)).find((candidate) => candidate.id === prId);
+    if (!pr) {
+      throw new Error(`La PR #${prId} no está abierta en ${repo.name}`);
+    }
+    const target: PrReviewTarget = {
+      id: pr.id,
+      title: pr.title,
+      author: pr.author,
+      sourceBranch: pr.sourceBranch,
+      targetBranch: pr.targetBranch,
+      isDraft: pr.isDraft,
+      url: pr.url,
+      headSha: pr.headSha,
+      provider: remote.provider,
+    };
+    const run: Run = {
+      id: randomUUID().slice(0, 8),
+      request: {
+        kind: "prReview",
+        ticketText: [pr.title, pr.description.trim()].filter(Boolean).join("\n\n"),
+        repos: [repo.name],
+        tasks: [],
+        prompt: "",
+        profile: "prReview",
+        stepByStep: false,
+        prReview: target,
+        reviewConfig,
+      },
+      status: "queued",
+      createdAt: new Date().toISOString(),
+      steps: [],
+      worktrees: [],
+      totalCostUsd: 0,
+    };
+    this.persist(run);
+    this.contexts.set(run.id, { cancelled: false });
+    void this.schedule(run.id, () => this.executePrReview(run));
+    return run;
+  }
+
+  /**
+   * Posts the comments the user picked (with their edited text) and the vote, once. Only
+   * comments of the review can be posted, anchored where the review put them. The PR is
+   * checked again first: no vote on commits nobody reviewed, and on Azure DevOps (whose
+   * threads anchor to the latest iteration) no anchoring on lines that may have moved.
+   */
+  public async publishPrReview(runId: string, publish: PrReviewPublish): Promise<Run> {
+    const run = this.requireRun(runId);
+    const target = run.request.prReview;
+    const review = run.prReview;
+    if (run.request.kind !== "prReview" || !target || !review) {
+      throw new Error("Este flujo no es una revisión de PR terminada");
+    }
+    if (this.contexts.has(runId) || this.publishing.has(runId)) {
+      throw new Error("La revisión está en marcha o publicándose");
+    }
+    if (review.published) {
+      throw new Error("Esta revisión ya se publicó en la PR");
+    }
+    if (publish.vote !== undefined && !PR_VOTES.includes(publish.vote)) {
+      throw new Error(`Voto desconocido: ${String(publish.vote)}`);
+    }
+    const repo = this.config.repos.find((candidate) => candidate.name === run.request.repos[0]);
+    if (!repo) {
+      throw new Error(`Repositorio no configurado en repos.json: ${run.request.repos[0]}`);
+    }
+    const location = { repo: repo.name, repoPath: repo.path };
+    // Comments a failed publish already left on the PR are not posted again.
+    const already = new Set(review.postedIds ?? []);
+    const selection = (Array.isArray(publish.comments) ? publish.comments : []).filter((item) => !already.has(item.id));
+
+    this.publishing.add(runId);
+    try {
+      const current = (await listPullRequests(location)).find((candidate) => candidate.id === target.id);
+      if (!current) {
+        throw new Error(`La PR #${target.id} ya no está abierta`);
+      }
+      const moved = Boolean(current.headSha) && current.headSha !== review.headSha;
+      if (moved && publish.vote) {
+        throw new Error(
+          `La PR #${target.id} tiene commits nuevos desde la revisión: no se vota sobre código sin revisar. Vuelve a revisarla o publica los comentarios sin voto.`,
+        );
+      }
+      const provider = (await requireRemote(location)).provider;
+      // GitHub pins the review to the reviewed commit; Azure DevOps would anchor on the new one.
+      const posts = reviewPosts(review, selection, !(moved && provider === "azure"));
+      if (posts.length === 0 && !publish.vote) {
+        throw new Error("Elige al menos un comentario o un voto");
+      }
+      await publishReview(location, { id: target.id, headSha: review.headSha }, posts, publish.vote, (post) => {
+        if (post.commentId !== undefined) {
+          review.postedIds = [...(review.postedIds ?? []), post.commentId];
+          this.persist(run);
+        }
+      });
+    } finally {
+      this.publishing.delete(runId);
+    }
+    const posted = new Set(review.postedIds ?? []);
+    review.published = {
+      commentIds: review.comments.filter((comment) => posted.has(comment.id)).map((comment) => comment.id),
+      vote: publish.vote,
+      at: new Date().toISOString(),
+    };
+    this.persist(run);
+    return run;
+  }
+
+  /**
+   * Adds the conventions a review found to the repo notes, which later steps (with write
+   * access) read. Only on the user's word: they come from reading a PR anyone may open.
+   */
+  public learnPrReviewConventions(runId: string): Run {
+    const run = this.requireRun(runId);
+    const review = run.prReview;
+    if (run.request.kind !== "prReview" || !review) {
+      throw new Error("Este flujo no es una revisión de PR terminada");
+    }
+    if (review.conventions.length && !review.conventionsSaved) {
+      learnRepoNotes(run.request.repos[0]!, review.conventions);
+    }
+    review.conventionsSaved = true;
+    this.persist(run);
     return run;
   }
 
@@ -1085,6 +1293,139 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         return original ? { ...original, reply: edited.reply.trim() || original.reply, action: edited.action } : undefined;
       })
       .filter((reply): reply is ReviewReply => reply !== undefined);
+  }
+
+  // ---------------------------------------------------------------- PR review
+
+  /**
+   * Checks out the PR's head, gives the reviewer the diff's scope, the threads already open
+   * (so it does not repeat a human) and what Nexura knows of the repo, then checks its answer
+   * against the diff. The worktree is always removed at the end: a retry checks the PR out again.
+   */
+  private async executePrReview(initial: Run, options?: RetryOptions): Promise<void> {
+    const run = this.store.getRun(initial.id) ?? initial;
+    const context = this.contexts.get(run.id)!;
+    const target = run.request.prReview!;
+    if (context.cancelled) {
+      run.status = "cancelled";
+      this.releaseContext(run.id, context);
+      this.persist(run);
+      return;
+    }
+    run.status = "running";
+    run.error = undefined;
+    this.persist(run);
+    const ledger = new Ledger(run.id);
+    // What ends the run once the worktree is gone; unset = a step failed and already failed the run.
+    let finish: (() => void) | undefined;
+    try {
+      const repo = this.config.repos.find((candidate) => candidate.name === run.request.repos[0]);
+      if (!repo) {
+        throw new Error(`Repositorio no configurado en repos.json: ${run.request.repos[0]}`);
+      }
+      let neutralized: string[] = [];
+      if (run.worktrees.length === 0) {
+        const checkout = await createPrWorktree(repo, run.id, target);
+        run.worktrees.push(checkout.worktree);
+        neutralized = checkout.neutralized;
+        this.persist(run);
+      }
+      const worktree = run.worktrees[0]!;
+      const headSha = await git(worktree.path, ["rev-parse", "HEAD"]);
+      const range = `${worktree.baseRef}...HEAD`;
+      // The PR's .gitattributes must not pick a diff driver or textconv program of the user's.
+      const diffArgs = ["-c", "core.quotepath=false", "diff", "--no-ext-diff", "--no-textconv", "-M"];
+      const nameStatus = await git(worktree.path, [...diffArgs, "--name-status", range]);
+      const changedFiles = new Set(
+        nameStatus
+          .split(/\r?\n/)
+          .filter(Boolean)
+          .flatMap((line) => line.split("\t").slice(1)),
+      );
+      const diff = await gitRaw(worktree.path, [...diffArgs, "--no-color", range]);
+      const hunks = parseDiffHunks(diff);
+      // The reviewer has no shell (git's options can write files or run programs): it reads the diff here.
+      const reviewDir = join(worktree.path, PR_REVIEW_DIR);
+      // Whatever the PR put there goes first (a symlink would send the writes outside the checkout).
+      rmSync(reviewDir, { recursive: true, force: true });
+      mkdirSync(reviewDir);
+      writeFileSync(join(reviewDir, "pr.diff"), diff);
+      writeFileSync(join(reviewDir, "commits.txt"), await gitRaw(worktree.path, ["log", "--no-color", "--format=%h %an: %s", `${worktree.baseRef}..HEAD`]));
+      ledger.append(
+        "prReview",
+        [
+          `PR #${target.id} (${target.sourceBranch} → ${target.targetBranch}) @ ${headSha.slice(0, 8)}: ${changedFiles.size} fichero(s).`,
+          neutralized.length ? `Configuración de agentes que trae la PR, sustituida por la de ${target.targetBranch}: ${neutralized.join(", ")}.` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      );
+
+      let threads = "";
+      try {
+        threads = threadsToText(await getActiveThreads(worktree, { id: target.id }));
+      } catch (error) {
+        ledger.append("prReview", `No se pudieron leer los hilos abiertos: ${error instanceof Error ? error.message : String(error)}`);
+      }
+      const stepContext: StepContext = {
+        outputs: new Map(),
+        ledger,
+        extraVars: {
+          ...(await this.repoContextVars(run)),
+          pr: prReviewText(target, headSha, neutralized),
+          changedFiles: nameStatus,
+          threads: threads || "Ninguno.",
+          baseRef: worktree.baseRef,
+        },
+      };
+      const stepRun = await this.runWithRateLimit(run, context, "prReview", run.request.reviewConfig ?? DEFAULT_PR_REVIEW, stepContext, options);
+      if (!stepRun) {
+        return;
+      }
+
+      const output = stepRun.structuredOutput as PrReviewOutput;
+      const files = new Map<string, string[] | undefined>();
+      for (const comment of output.comments ?? []) {
+        const file = comment.file ? normalizeReviewPath(comment.file) : "";
+        if (file && !files.has(file)) {
+          // From git, never from disk: a path the model made up cannot leave the repo.
+          files.set(file, await gitRaw(worktree.path, ["show", `HEAD:${file}`]).then((text) => text.replace(/\r?\n$/, "").split(/\r?\n/), () => undefined));
+        }
+      }
+      const result = normalizePrReview(output, { headSha, changedFiles, hunks, readFile: (path) => files.get(path) });
+      run.prReview = result;
+      const bySeverity = ["blocker", "major", "minor", "nit"]
+        .map((severity) => [severity, result.comments.filter((comment) => comment.severity === severity).length] as const)
+        .filter(([, count]) => count > 0)
+        .map(([severity, count]) => `${count} ${severity}`)
+        .join(", ");
+      const dropped = (output.comments?.length ?? 0) - result.comments.length;
+      this.recordEvent(run, stepRun, {
+        kind: "text",
+        text: [
+          `Revisión lista: ${result.comments.length} comentario(s)${bySeverity ? ` (${bySeverity})` : ""}, veredicto ${result.verdict}.`,
+          dropped > 0 ? `Descartados ${dropped} comentario(s) vacíos o sobre ficheros que no existen en la PR.` : "",
+        ]
+          .filter(Boolean)
+          .join("\n"),
+      });
+      ledger.append("prReview", `${result.verdict}: ${result.summary}\n${result.comments.length} comentario(s) propuestos.`);
+      finish = () => this.finishRun(run, context);
+    } catch (error) {
+      finish =
+        error instanceof CancelledError || context.cancelled
+          ? () => {
+              run.status = "cancelled";
+              run.resumesAt = undefined;
+              this.releaseContext(run.id, context);
+              this.persist(run);
+            }
+          : () => this.fail(run, `prReview: ${error instanceof Error ? error.message : String(error)}`);
+    } finally {
+      // Before announcing the end: whoever waits for it may retry (a fresh checkout) or delete the run.
+      await this.removeWorktrees(run, false).catch(() => undefined);
+      finish?.();
+    }
   }
 
   private finishRun(run: Run, context: RunContext): void {
