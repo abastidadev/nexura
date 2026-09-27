@@ -23,6 +23,16 @@ if (!args.includes("-p")) {
   await interactive("claude", args);
   process.exit(0);
 }
+if (args[args.indexOf("-p") + 1] === "/usage") {
+  process.stdout.write(JSON.stringify({
+    result: "Current session: 0% used\nCurrent week (all models): 0% used",
+    is_error: false,
+    num_turns: 0,
+    duration_api_ms: 0,
+    usage: { input_tokens: 0, output_tokens: 0, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 },
+  }));
+  process.exit(0);
+}
 const lines = createInterface({ input: process.stdin })[Symbol.asyncIterator]();
 async function nextMessage() {
   const { value, done } = await lines.next();

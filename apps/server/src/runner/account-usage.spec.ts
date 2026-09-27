@@ -1,4 +1,5 @@
-import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -50,6 +51,18 @@ describe("Claude account usage", () => {
     } finally {
       if (previous === undefined) delete process.env.NEXURA_CLAUDE_BIN;
       else process.env.NEXURA_CLAUDE_BIN = previous;
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it("answers /usage in the shared fake CLI without creating unknown.txt", () => {
+    const dir = mkdtempSync(join(tmpdir(), "nexura-fake-usage-"));
+    try {
+      const bin = join(import.meta.dirname, "..", "..", "..", "..", "fixtures", "fake-claude.mjs");
+      const output = execFileSync(process.execPath, [bin, "-p", "/usage", "--output-format", "json"], { cwd: dir, encoding: "utf8" });
+      expect(parseClaudeUsage(output)?.windows.map((window) => window.usedPercent)).toEqual([0, 0]);
+      expect(existsSync(join(dir, "unknown.txt"))).toBe(false);
+    } finally {
       rmSync(dir, { recursive: true, force: true });
     }
   });
