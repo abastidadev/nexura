@@ -239,7 +239,20 @@ export type PullRequestSummary = {
   headSha: string;
 };
 
-export type PrReviewTarget = Omit<PullRequestSummary, "description" | "createdAt"> & { provider: TicketSource };
+/** Where Nexura stands on an open PR of the configured repos. */
+export type InboxPrState = "pending" | "outdated" | "reviewing" | "ready" | "published";
+
+/** What needs the user from the providers (Panel). Read over REST: zero tokens. */
+export type DashboardInbox = {
+  /** Open PRs of other people (the ones the flows opened are left out). */
+  pullRequests: (PullRequestSummary & { repo: string; state: InboxPrState; reviewRunId?: string })[];
+  /** Open tickets of each project, `mine` = assigned to the user; `runId` = a flow already took it (the latest one). */
+  tickets: (WorkItemSummary & { source: TicketSource; mine: boolean; runId?: string; runStatus?: RunStatus })[];
+  /** Repos or providers that could not be read (Spanish). */
+  errors: { scope: string; message: string }[];
+};
+
+export type PrReviewTarget =Omit<PullRequestSummary, "description" | "createdAt"> & { provider: TicketSource };
 
 export type PrReviewSeverity = "blocker" | "major" | "minor" | "nit";
 
@@ -474,10 +487,24 @@ export type Metrics = {
   /** `agent` is null for builtin steps (no LLM). */
   byStep: { step: string; agent: AgentKind | null; model: string; runs: number; failed: number; costUsd: number; avgCostUsd: number; avgTurns: number; tokens: number }[];
   byAgent: { agent: AgentKind; runs: number; failed: number; tokens: number }[];
+  /** LLM steps only, most tokens first. */
+  byModel: { agent: AgentKind; model: string; runs: number; tokens: number }[];
+  tokenSplit: { input: number; output: number; cacheRead: number; cacheCreation: number };
+  /** Commits left by the flows' release step (its latest successful execution per run). */
+  commits: {
+    total: number;
+    /** Runs that produced at least one commit. */
+    runs: number;
+    /** Pull requests created by the flows. */
+    prs: number;
+    /** Conventional Commits type (`feat`, `fix`...), or "otros" when the subject has none. */
+    byType: { type: string; count: number }[];
+    recent: { runId: string; repo: string; sha: string; subject: string; type: string; createdAt: string }[];
+  };
   byProfile: { profile: string; runs: number; done: number; costUsd: number; avgCostUsd: number; tokens: number }[];
   /** Implement executions per run: >1 means review/QA sent the work back. */
   loops: { avgImplementPerRun: number; runsWithLoops: number };
-  byDay: { day: string; runs: number; costUsd: number; tokens: number }[];
+  byDay: { day: string; runs: number; done: number; costUsd: number; tokens: number }[];
   classify: { rated: number; correct: number; mistakes: { runId: string; chosen: string; expected?: string; reason?: string }[] };
 };
 

@@ -183,6 +183,18 @@ export class RunStore {
        FROM step_runs WHERE status != 'skipped' AND COALESCE(json_extract(data, '$.kind'), 'claude') != 'builtin'
        GROUP BY 1 ORDER BY tokens DESC`,
     );
+    const byModel = all<Metrics["byModel"][number]>(
+      `SELECT COALESCE(json_extract(data, '$.agent'), 'claude') AS agent, model, COUNT(*) AS runs, SUM(${tokens}) AS tokens
+       FROM step_runs WHERE status != 'skipped' AND COALESCE(json_extract(data, '$.kind'), 'claude') != 'builtin'
+       GROUP BY 1, 2 ORDER BY tokens DESC, runs DESC`,
+    );
+    const tokenSplit = one<Metrics["tokenSplit"]>(
+      `SELECT COALESCE(SUM(json_extract(data, '$.usage.inputTokens')), 0) AS input,
+         COALESCE(SUM(json_extract(data, '$.usage.outputTokens')), 0) AS output,
+         COALESCE(SUM(json_extract(data, '$.usage.cacheReadTokens')), 0) AS cacheRead,
+         COALESCE(SUM(json_extract(data, '$.usage.cacheCreationTokens')), 0) AS cacheCreation
+       FROM step_runs`,
+    );
     const byProfile = all<Metrics["byProfile"][number]>(
       `SELECT COALESCE(profile, 'sin decidir') AS profile, COUNT(*) AS runs, SUM(status = 'done') AS done,
          SUM(total_cost_usd) AS costUsd, AVG(total_cost_usd) AS avgCostUsd,
@@ -194,7 +206,7 @@ export class RunStore {
       `SELECT COUNT(*) AS n FROM step_runs WHERE step = 'implement' AND status = 'succeeded' GROUP BY run_id`,
     );
     const byDay = all<Metrics["byDay"][number]>(
-      `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS runs, SUM(total_cost_usd) AS costUsd,
+      `SELECT substr(created_at, 1, 10) AS day, COUNT(*) AS runs, SUM(status = 'done') AS done, SUM(total_cost_usd) AS costUsd,
          (SELECT COALESCE(SUM(${tokens}), 0) FROM step_runs WHERE run_id IN
            (SELECT id FROM runs AS day_runs WHERE substr(day_runs.created_at, 1, 10) = substr(runs.created_at, 1, 10))) AS tokens
        FROM runs WHERE created_at >= ? GROUP BY 1 ORDER BY 1`,
@@ -217,6 +229,9 @@ export class RunStore {
       totals,
       byStep,
       byAgent,
+      byModel,
+      tokenSplit,
+      commits: this.commitMetrics(),
       byProfile,
       loops: {
         avgImplementPerRun: implementCounts.length
@@ -226,6 +241,47 @@ export class RunStore {
       },
       byDay,
       classify: { rated: rated.length, correct: rated.length - mistakes.length, mistakes },
+    };
+  }
+
+  /** Commits from each run's latest successful release (its output lists them as `git log --oneline`). */
+  private commitMetrics(): Metrics["commits"] {
+    const releases = this.db
+      .prepare(
+        `SELECT s.run_id AS runId, r.created_at AS createdAt, json_extract(s.data, '$.structuredOutput') AS output
+         FROM step_runs AS s JOIN runs AS r ON r.id = s.run_id
+         WHERE s.step = 'release' AND s.status = 'succeeded'
+           AND s.seq = (SELECT MAX(seq) FROM step_runs WHERE run_id = s.run_id AND step = 'release' AND status = 'succeeded')
+         ORDER BY r.created_at DESC`,
+      )
+      .all() as { runId: string; createdAt: string; output: string | null }[];
+    const commits: Metrics["commits"]["recent"] = [];
+    const runs = new Set<string>();
+    for (const release of releases) {
+      const output = release.output ? (JSON.parse(release.output) as { branches?: { repo: string; commits?: string[] }[] }) : {};
+      for (const branch of output.branches ?? []) {
+        for (const line of branch.commits ?? []) {
+          const [sha = "", ...rest] = line.split(" ");
+          const subject = rest.join(" ");
+          const type = /^([a-z]+)(\([^)]*\))?!?:/.exec(subject)?.[1] ?? "otros";
+          commits.push({ runId: release.runId, repo: branch.repo, sha, subject, type, createdAt: release.createdAt });
+          runs.add(release.runId);
+        }
+      }
+    }
+    const types = new Map<string, number>();
+    for (const commit of commits) {
+      types.set(commit.type, (types.get(commit.type) ?? 0) + 1);
+    }
+    const prs = this.db
+      .prepare(`SELECT COALESCE(SUM(json_array_length(data, '$.pullRequests')), 0) AS n FROM runs WHERE json_type(data, '$.pullRequests') = 'array'`)
+      .get() as { n: number };
+    return {
+      total: commits.length,
+      runs: runs.size,
+      prs: prs.n,
+      byType: [...types].map(([type, count]) => ({ type, count })).sort((a, b) => b.count - a.count),
+      recent: commits.slice(0, 8),
     };
   }
 

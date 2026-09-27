@@ -47,6 +47,7 @@ export class App implements OnInit {
   };
 
   protected readonly primaryNav: NavItem[] = [
+    { path: "/panel", label: "Panel", icon: "dashboard" },
     { path: "/", label: "Flujos", icon: "flows" },
     { path: "/reviews", label: "Revisiones", icon: "reviews" },
     { path: "/terminal", label: "Terminal", icon: "terminal" },

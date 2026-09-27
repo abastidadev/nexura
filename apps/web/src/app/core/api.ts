@@ -14,6 +14,7 @@ import type {
   ConversationImage,
   ConversationUpdate,
   FlowProfile,
+  DashboardInbox,
   Metrics,
   NexuraEvent,
   MemoryObservation,
@@ -249,6 +250,11 @@ export class Api {
 
   public accountUsage(refresh = false): Promise<AgentAccountUsage> {
     return firstValueFrom(this.http.get<AgentAccountUsage>("/api/metrics/account-usage", { params: refresh ? { refresh: 1 } : {} }));
+  }
+
+  /** Open PRs to review and the user's tickets across the configured repos (Panel). */
+  public dashboardInbox(): Promise<DashboardInbox> {
+    return firstValueFrom(this.http.get<DashboardInbox>("/api/dashboard/inbox"));
   }
 
   public metrics(days = 14): Promise<Metrics> {

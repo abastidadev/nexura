@@ -39,6 +39,7 @@ import { AzureError } from "../azure/azure-client.ts";
 import { ConversationManager } from "../conversations/conversation-manager.ts";
 import { ConversationStore } from "../conversations/conversation-store.ts";
 import { listPullRequests } from "../forge/forge.ts";
+import { loadInbox } from "../forge/inbox.ts";
 import { repoRemoteOf } from "../forge/remote.ts";
 import { listTickets, loadTicket, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
 import { GithubError } from "../github/github-client.ts";
@@ -368,6 +369,8 @@ export function createApiServer(
       throw new HttpError(404, `No existe la observación ${id}`);
     }
   });
+  /** Panel: open PRs to review and the user's tickets across the configured repos (REST, zero tokens). */
+  route("GET", "/api/dashboard/inbox", () => loadInbox(loadConfig().repos, store.listRuns(500)));
   route("GET", "/api/metrics/cost-by-step", () => store.costByStep());
   route("GET", "/api/metrics", (_params, _body, url) => store.metrics(Number(url.searchParams.get("days")) || undefined));
   route("GET", "/api/metrics/account-usage", (_params, _body, url) => accountUsage(url.searchParams.has("refresh")));

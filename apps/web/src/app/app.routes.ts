@@ -7,6 +7,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/runs-home/runs-home").then((m) => m.RunsHome),
   },
   {
+    path: "panel",
+    title: "Nexura · Panel",
+    loadComponent: () => import("./features/dashboard/dashboard").then((m) => m.DashboardPage),
+  },
+  {
     path: "new",
     title: "Nexura · Nuevo flujo",
     loadComponent: () => import("./features/new-run/new-run").then((m) => m.NewRun),

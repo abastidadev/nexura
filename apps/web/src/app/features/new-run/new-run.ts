@@ -1,4 +1,4 @@
-import { Component, computed, inject, linkedSignal, resource, signal } from "@angular/core";
+import { Component, computed, effect, inject, input, linkedSignal, resource, signal, untracked } from "@angular/core";
 import { Router } from "@angular/router";
 import { orderSteps, type FlowProfile, type TaskItem, type TicketDetails, type TicketSource } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
@@ -28,6 +28,12 @@ export class NewRun {
   private readonly api = inject(Api);
   private readonly router = inject(Router);
   protected readonly store = inject(NexuraStore);
+
+  /** `/new?ticket=15&source=github&repo=nexura` (from the Panel) opens the form with that ticket loaded. */
+  public readonly ticket = input<string>();
+  public readonly source = input<string>();
+  public readonly repo = input<string>();
+  private prefilled = false;
 
   protected readonly ticketId = signal("");
   protected readonly ticketText = signal("");
@@ -65,6 +71,34 @@ export class NewRun {
     computation: (provider, previous) => provider ?? previous?.value ?? "azure",
   });
   protected readonly sourceLabel = computed(() => SOURCE_LABELS[this.ticketSource()]);
+
+  public constructor() {
+    effect(() => {
+      const id = this.ticket();
+      const repos = this.repos();
+      if (this.prefilled || !id || repos.length === 0) {
+        return;
+      }
+      const repo = this.repo();
+      if (repo && repos.some((candidate) => candidate.name === repo) && this.selectedRepos()[0] !== repo) {
+        this.selectedRepos.set([repo]);
+        return;
+      }
+      // The source follows the repo's provider: wait for it so it does not overwrite the requested one.
+      if (this.repoProvider.isLoading()) {
+        return;
+      }
+      this.prefilled = true;
+      const source = this.source();
+      untracked(() => {
+        if (source === "azure" || source === "github") {
+          this.setSource(source);
+        }
+        this.ticketId.set(id);
+        void this.loadTicket();
+      });
+    });
+  }
 
   protected setSource(source: TicketSource): void {
     if (source !== this.ticketSource()) {

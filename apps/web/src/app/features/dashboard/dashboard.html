@@ -1,0 +1,334 @@
+<div class="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-7 md:px-8 md:py-9">
+  <div class="flex flex-wrap items-end justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight md:text-[1.75rem]">Panel</h1>
+      <p class="mt-1 text-sm text-muted">Lo que te toca hacer y el resumen de tus flujos: PRs, tickets, tokens, modelos y commits.</p>
+    </div>
+    <div class="nx-seg" role="radiogroup" aria-label="Rango de días de la actividad">
+      @for (range of ranges; track range) {
+        <button
+          type="button"
+          role="radio"
+          [class]="days() === range ? 'nx-seg-on' : ''"
+          [attr.aria-checked]="days() === range"
+          (click)="days.set(range)"
+        >
+          {{ range }} días
+        </button>
+      }
+    </div>
+  </div>
+
+  @if (data.error()) {
+    <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">No se pudo cargar el panel. Comprueba que el servidor de Nexura sigue en marcha.</p>
+  }
+
+  <section class="flex flex-col gap-2" aria-labelledby="attention">
+    <h2 id="attention" class="font-semibold">Necesita tu atención</h2>
+    @for (item of attention(); track item.key) {
+      <a
+        [routerLink]="item.link"
+        [queryParams]="item.queryParams"
+        class="flex items-center gap-3 rounded-lg border border-border bg-surface px-4 py-3 hover:bg-surface-2"
+      >
+        <span class="inline-flex size-8 shrink-0 items-center justify-center rounded-full" [class]="toneClasses[item.tone].bg + ' ' + toneClasses[item.tone].text">
+          <nx-icon [name]="item.icon" [size]="16" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="truncate font-medium">{{ item.title }}</div>
+          <div class="truncate text-sm text-muted">{{ item.detail }}</div>
+        </div>
+        <span class="shrink-0 text-sm text-accent">Abrir</span>
+      </a>
+    } @empty {
+      <p class="flex items-center gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-fg-soft">
+        <span class="inline-flex text-ok"><nx-icon name="done" [size]="16" /></span>
+        Nada pendiente: ningún flujo espera tu aprobación, no hay fallos recientes ni comentarios nuevos en tus PRs.
+      </p>
+    }
+  </section>
+
+  <section class="flex flex-col gap-3" aria-labelledby="inbox">
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div>
+        <h2 id="inbox" class="font-semibold">PRs y tickets</h2>
+        <p class="text-sm text-muted">De GitHub y Azure DevOps, en los repos configurados. La consulta no gasta tokens.</p>
+      </div>
+      <button type="button" class="nx-btn nx-btn-sm" [disabled]="inboxData.isLoading()" (click)="inboxRefresh.update((n) => n + 1)">
+        <nx-icon name="refresh" [size]="14" />Actualizar
+      </button>
+    </div>
+
+    @if (inboxData.error()) {
+      <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-sm text-err" role="alert">No se pudieron cargar las PRs ni los tickets. Pulsa Actualizar para intentarlo de nuevo.</p>
+    }
+    @for (error of inbox()?.errors ?? []; track error.scope) {
+      <p class="rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-sm text-warn" role="alert"><strong>{{ error.scope }}:</strong> {{ error.message }}</p>
+    }
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="font-medium">PRs por revisar <span class="font-mono text-sm text-muted">{{ toReview().length }}</span></h3>
+          <a routerLink="/reviews" class="text-sm text-accent hover:underline">Ir a Revisiones</a>
+        </div>
+        @if (inboxData.isLoading() && !inbox()) {
+          <p class="text-sm text-muted" role="status">Cargando…</p>
+        } @else {
+          @for (pr of toReview(); track pr.repo + pr.id) {
+            <a [routerLink]="['/reviews']" [queryParams]="{ repo: pr.repo }" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium"><span class="font-mono text-muted">#{{ pr.id }}</span> {{ pr.title }}</div>
+                <div class="truncate text-xs text-muted">{{ pr.repo }} · {{ pr.author }}{{ pr.isDraft ? " · borrador" : "" }}</div>
+              </div>
+              <nx-status-pill [tone]="prState[pr.state].tone" [label]="prState[pr.state].label" />
+            </a>
+          } @empty {
+            <p class="text-sm text-muted">No hay PRs de otros pendientes de revisar.</p>
+          }
+        }
+      </div>
+
+      <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
+        <h3 class="font-medium">PRs revisadas por Nexura <span class="font-mono text-sm text-muted">{{ reviewed().length }}</span></h3>
+        @if (inboxData.isLoading() && !inbox()) {
+          <p class="text-sm text-muted" role="status">Cargando…</p>
+        } @else {
+          @for (pr of reviewed(); track pr.repo + pr.id) {
+            <a [routerLink]="['/reviews']" [queryParams]="{ repo: pr.repo, run: pr.reviewRunId }" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium"><span class="font-mono text-muted">#{{ pr.id }}</span> {{ pr.title }}</div>
+                <div class="truncate text-xs text-muted">{{ pr.repo }} · {{ pr.author }}</div>
+              </div>
+              <nx-status-pill [tone]="prState[pr.state].tone" [label]="prState[pr.state].label" [live]="pr.state === 'reviewing'" />
+            </a>
+          } @empty {
+            <p class="text-sm text-muted">Ninguna PR abierta revisada todavía.</p>
+          }
+        }
+      </div>
+
+      <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
+        <div class="flex items-center justify-between gap-2">
+          <h3 class="font-medium">
+            Tickets abiertos <span class="font-mono text-sm text-muted">{{ pendingTickets().length }}</span>
+            @if (mineCount()) {
+              <span class="text-sm font-normal text-muted"> · {{ mineCount() }} tuyos</span>
+            }
+          </h3>
+          <a routerLink="/new" class="text-sm text-accent hover:underline">Nuevo flujo</a>
+        </div>
+        @if (inboxData.isLoading() && !inbox()) {
+          <p class="text-sm text-muted" role="status">Cargando…</p>
+        } @else {
+          <div class="-mr-2 flex max-h-96 flex-col gap-2 overflow-y-auto pr-2">
+            @for (ticket of pendingTickets(); track ticket.source + ticket.id) {
+              <a
+                [routerLink]="ticket.runId ? ['/runs', ticket.runId] : ['/new']"
+                [queryParams]="ticket.runId ? null : ticket.newRunParams"
+                [attr.title]="ticket.runId ? 'Abrir su flujo' : 'Crear un flujo con este ticket'"
+                class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3"
+              >
+                <div class="min-w-0 flex-1">
+                  <div class="truncate text-sm font-medium"><span class="font-mono text-muted">#{{ ticket.id }}</span> {{ ticket.title }}</div>
+                  <div class="truncate text-xs text-muted">
+                    @if (ticket.mine) {
+                      <span class="font-medium text-accent">Asignado a ti</span> ·
+                    }
+                    {{ ticket.type }} · {{ ticket.project }}{{ ticket.labels?.length ? " · " + ticket.labels!.join(", ") : "" }}
+                  </div>
+                </div>
+                <nx-status-pill [tone]="ticket.badge.tone" [label]="ticket.badge.label" [live]="ticket.badge.live" />
+              </a>
+            } @empty {
+              <p class="text-sm text-muted">No hay tickets abiertos en los proyectos de tus repos.</p>
+            }
+          </div>
+        }
+      </div>
+
+      <div class="flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
+        <h3 class="font-medium">Tus PRs abiertas <span class="font-mono text-sm text-muted">{{ myPrs().length }}</span></h3>
+        @for (pr of myPrs(); track pr.runId + pr.repo + pr.id) {
+          <a [routerLink]="['/runs', pr.runId]" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-sm font-medium"><span class="font-mono text-muted">#{{ pr.id }}</span> {{ pr.title }}</div>
+              <div class="truncate text-xs text-muted">{{ pr.repo }}</div>
+            </div>
+            @if (pr.threads > 0) {
+              <nx-status-pill tone="info" [label]="pr.threads + ' comentario(s)'" />
+            } @else {
+              <nx-status-pill tone="muted" label="Sin comentarios" />
+            }
+          </a>
+        } @empty {
+          <p class="text-sm text-muted">Ningún flujo tiene PRs abiertas.</p>
+        }
+      </div>
+    </div>
+  </section>
+
+  @if (metrics(); as m) {
+    <h2 class="-mb-2 font-semibold">Estadísticas</h2>
+    <section class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-6" aria-label="Resumen">
+      @for (tile of tiles(); track tile.label) {
+        <div class="rounded-lg border border-border bg-surface p-3">
+          <div class="flex items-center gap-1.5 text-xs font-medium text-muted">
+            <span class="inline-flex" [class]="tile.text"><nx-icon [name]="tile.icon" [size]="14" /></span>
+            {{ tile.label }}
+          </div>
+          <div class="mt-1 text-2xl leading-tight font-semibold tracking-tight tabular-nums">{{ tile.value }}</div>
+          <div class="mt-0.5 text-xs text-muted">{{ tile.hint }}</div>
+        </div>
+      }
+    </section>
+
+    @if (m.totals.runs === 0) {
+      <section class="rounded-lg border border-border bg-surface p-6 text-center">
+        <h2 class="font-semibold">Aún no hay flujos</h2>
+        <p class="mt-1 text-sm text-muted">Cuando lances flujos, aquí verás su estado, los tokens que gastan y los commits que dejan.</p>
+        <a routerLink="/new" class="nx-btn nx-btn-primary nx-btn-sm mt-4 inline-flex"><nx-icon name="plus" [size]="16" />Nuevo flujo</a>
+      </section>
+    } @else {
+      <div class="grid gap-6 lg:grid-cols-5">
+        <section class="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 lg:col-span-2" aria-labelledby="flow-status">
+          <div class="flex items-center justify-between gap-3">
+            <h2 id="flow-status" class="font-semibold">Estado de los flujos</h2>
+            <a routerLink="/" class="text-sm text-accent hover:underline">Ver todos</a>
+          </div>
+          <div class="flex h-3 gap-0.5 overflow-hidden rounded" role="img" [attr.aria-label]="m.totals.runs + ' flujos por estado'">
+            @for (part of statusBar(); track part.key) {
+              @if (part.count > 0) {
+                <div [class]="part.dot" [style.width.%]="part.percent" [attr.title]="part.label + ': ' + part.count"></div>
+              }
+            }
+          </div>
+          <ul class="grid grid-cols-2 gap-x-4 gap-y-1 text-sm">
+            @for (part of statusBar(); track part.key) {
+              <li class="flex items-center gap-2">
+                <span class="size-2 rounded-full" [class]="part.dot" aria-hidden="true"></span>
+                <span class="text-fg-soft">{{ part.label }}</span>
+                <span class="ml-auto font-mono tabular-nums">{{ part.count }}</span>
+              </li>
+            }
+          </ul>
+
+          <h3 class="mt-2 text-sm font-medium text-muted">En marcha ahora</h3>
+          @for (run of activeRuns(); track run.id) {
+            <a [routerLink]="['/runs', run.id]" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
+              <div class="min-w-0 flex-1">
+                <div class="truncate text-sm font-medium">
+                  @if (run.ticketId) {
+                    <span class="font-mono text-muted">#{{ run.ticketId }}</span>
+                  }
+                  {{ run.title }}
+                </div>
+                <div class="text-xs text-muted">Paso: {{ run.step }}</div>
+              </div>
+              <nx-status-pill [tone]="run.status.tone" [label]="run.status.label" [live]="run.status.live" />
+            </a>
+          } @empty {
+            <p class="text-sm text-muted">No hay flujos en marcha.</p>
+          }
+        </section>
+
+        <section class="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 lg:col-span-3" aria-labelledby="tokens-day">
+          <div>
+            <h2 id="tokens-day" class="font-semibold">Tokens por día</h2>
+            <p class="text-sm text-muted">
+              {{ formatTokens(rangeTokens()) }} tokens en {{ rangeRuns() }} flujo(s) durante los últimos {{ days() }} días. Pasa el ratón por una barra para ver el detalle.
+            </p>
+          </div>
+          <div class="flex h-44 items-end gap-1 border-b border-border-strong" role="img" [attr.aria-label]="'Tokens por día en los últimos ' + days() + ' días'">
+            @for (day of daySeries(); track day.day) {
+              <div class="group flex h-full min-w-0 flex-1 flex-col justify-end" [attr.title]="tokensTitle(day)">
+                <span class="mb-1 text-center font-mono text-2xs text-muted opacity-0 group-hover:opacity-100">{{ day.tokens ? formatTokens(day.tokens) : "" }}</span>
+                <div class="rounded-t bg-accent group-hover:bg-accent-strong" [style.height.%]="day.percent"></div>
+              </div>
+            }
+          </div>
+          <div class="flex gap-1">
+            @for (day of daySeries(); track day.day) {
+              <span class="min-w-0 flex-1 overflow-visible text-center text-2xs whitespace-nowrap text-muted">{{ day.showLabel ? day.label : "" }}</span>
+            }
+          </div>
+        </section>
+      </div>
+
+      <div class="grid gap-6 lg:grid-cols-2">
+        <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-model">
+          <h2 id="by-model" class="font-semibold">Tokens por modelo</h2>
+          <p class="mb-3 text-sm text-muted">Pasos con LLM de todos los flujos.</p>
+          <ul class="flex flex-col gap-2.5">
+            @for (row of models(); track row.agent + row.model) {
+              <li class="grid grid-cols-[minmax(0,11rem)_1fr_4rem] items-center gap-3 text-sm">
+                <div class="min-w-0">
+                  <div class="truncate font-mono">{{ row.model }}</div>
+                  <div class="text-xs text-muted">{{ agentLabels[row.agent] }} · {{ row.runs }} ejec.</div>
+                </div>
+                <div class="h-2 rounded bg-surface-3"><div class="h-2 rounded bg-accent" [style.width.%]="row.percent"></div></div>
+                <span class="text-right font-mono tabular-nums">{{ formatTokens(row.tokens) }}</span>
+              </li>
+            } @empty {
+              <li class="text-sm text-muted">Todavía no hay pasos con LLM.</li>
+            }
+          </ul>
+        </section>
+
+        <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="token-kinds">
+          <h2 id="token-kinds" class="font-semibold">Tokens por tipo</h2>
+          <p class="mb-3 text-sm text-muted">Cómo se reparten los {{ formatTokens(m.totals.tokens) }} tokens. Un buen uso de la caché abarata los flujos.</p>
+          <ul class="flex flex-col gap-2.5">
+            @for (row of tokenKinds(); track row.label) {
+              <li class="grid grid-cols-[minmax(0,11rem)_1fr_4rem] items-center gap-3 text-sm">
+                <div class="min-w-0">
+                  <div class="truncate">{{ row.label }}</div>
+                  <div class="truncate text-xs text-muted">{{ row.hint }}</div>
+                </div>
+                <div class="h-2 rounded bg-surface-3" [attr.title]="row.percent.toFixed(1) + ' %'"><div class="h-2 rounded bg-accent" [style.width.%]="row.percent"></div></div>
+                <span class="text-right font-mono tabular-nums">{{ formatTokens(row.value) }}</span>
+              </li>
+            }
+          </ul>
+        </section>
+      </div>
+
+      <div class="grid gap-6 lg:grid-cols-5">
+        <section class="rounded-lg border border-border bg-surface p-4 lg:col-span-2" aria-labelledby="commit-types">
+          <h2 id="commit-types" class="font-semibold">Commits por tipo</h2>
+          <p class="mb-3 text-sm text-muted">Según el prefijo del mensaje (<code class="font-mono">feat</code>, <code class="font-mono">fix</code>…).</p>
+          <ul class="flex flex-col gap-2.5">
+            @for (row of commitTypes(); track row.type) {
+              <li class="grid grid-cols-[5rem_1fr_2.5rem] items-center gap-3 text-sm">
+                <span class="font-mono">{{ row.type }}</span>
+                <div class="h-2 rounded bg-surface-3"><div class="h-2 rounded bg-accent" [style.width.%]="row.percent"></div></div>
+                <span class="text-right font-mono tabular-nums">{{ row.count }}</span>
+              </li>
+            } @empty {
+              <li class="text-sm text-muted">Ningún flujo ha llegado todavía al paso de release.</li>
+            }
+          </ul>
+        </section>
+
+        <section class="rounded-lg border border-border bg-surface p-4 lg:col-span-3" aria-labelledby="recent-commits">
+          <h2 id="recent-commits" class="mb-3 font-semibold">Últimos commits</h2>
+          <ul class="flex flex-col">
+            @for (commit of recentCommits(); track commit.runId + commit.repo + commit.sha) {
+              <li class="border-b border-border last:border-b-0">
+                <a [routerLink]="['/runs', commit.runId]" class="flex items-baseline gap-3 rounded px-1 py-2 text-sm hover:bg-surface-2">
+                  <span class="font-mono text-xs text-muted">{{ commit.sha }}</span>
+                  <span class="min-w-0 flex-1 truncate" [attr.title]="commit.subject">{{ commit.subject }}</span>
+                  <span class="shrink-0 text-xs text-muted">{{ commit.repo }}</span>
+                </a>
+              </li>
+            } @empty {
+              <li class="text-sm text-muted">Sin commits todavía.</li>
+            }
+          </ul>
+        </section>
+      </div>
+    }
+  } @else if (data.isLoading()) {
+    <p class="text-muted" role="status">Cargando…</p>
+  }
+</div>
