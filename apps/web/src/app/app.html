@@ -1,64 +1,233 @@
+<a class="nx-skip-link" href="#main" (click)="skipToMain($event)">Saltar al contenido</a>
+
 <div class="flex h-full min-h-0 flex-col lg:flex-row">
-  <aside class="flex shrink-0 flex-col border-b border-border bg-surface lg:w-56 lg:border-r lg:border-b-0" aria-label="Navegación principal">
-    <a routerLink="/" class="flex h-16 items-center gap-3 px-5" aria-label="Nexura, inicio">
-      <span class="flex size-9 items-center justify-center rounded-xl bg-accent-strong text-lg font-bold text-white shadow-lg shadow-accent/15">N</span>
-      <span><span class="block text-[16px] font-bold tracking-tight">Nexura<span class="text-accent">.</span></span><span class="block text-[10px] font-semibold tracking-[.16em] text-muted">by abastidadev</span></span>
-    </a>
-    <nav class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:items-stretch lg:overflow-y-auto lg:pt-5" aria-label="Secciones">
-      <span class="hidden px-3 pb-2 text-[10px] font-bold tracking-[.16em] text-muted uppercase lg:block">Principal</span>
-      <a routerLink="/" routerLinkActive="nx-nav-active" [routerLinkActiveOptions]="{ exact: true }" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">▦</span><span>Flujos</span>@if (store.activeCount()) { <span class="ml-auto rounded-md bg-info-soft px-1.5 text-[10px] font-semibold text-info">{{ store.activeCount() }}</span> }</a>
-      <a routerLink="/reviews" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">◇</span><span>Revisiones</span>@if (store.unseenReviews().length) { <span class="ml-auto rounded-md bg-accent-soft px-1.5 text-[10px] font-semibold text-accent">{{ store.unseenReviews().length }}</span> }</a>
-      <a routerLink="/terminal" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">⌘</span><span>Terminal</span>@if (store.runningConversations()) { <span class="ml-auto size-2 rounded-full bg-ok nx-pulse" aria-label="Conversaciones activas"></span> }</a>
-      <a routerLink="/agents" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">✦</span><span>Agentes</span>@if (workingAgents()) { <span class="ml-auto size-2 rounded-full bg-info nx-pulse" aria-label="Agentes trabajando"></span> }</a>
-      <span class="hidden px-3 pt-7 pb-2 text-[10px] font-bold tracking-[.16em] text-muted uppercase lg:block">Análisis y ajustes</span>
-      <a routerLink="/metrics" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">▥</span><span>Métricas</span></a>
-      <a routerLink="/config" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">⚙</span><span>Configuración</span></a>
+  <aside
+    class="relative flex shrink-0 flex-col border-b border-border bg-surface lg:border-r lg:border-b-0"
+    [class.lg:w-60]="!collapsed()"
+    [class.lg:w-17]="collapsed()"
+    aria-label="Navegación principal"
+  >
+    <div class="flex h-14 items-center gap-3 px-4 lg:h-16" [class.lg:justify-center]="collapsed()" [class.lg:px-0]="collapsed()">
+      <a routerLink="/" class="flex min-w-0 items-center gap-2.5 rounded-lg" aria-label="Nexura, ir a Flujos">
+        <span class="relative flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-fg text-bg" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18V6l12 12V6" /></svg>
+          <span class="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-surface bg-accent-strong"></span>
+        </span>
+        <span class="min-w-0" [class.lg:hidden]="collapsed()">
+          <span class="block text-md leading-tight font-semibold tracking-tight">Nexura</span>
+          <span class="block text-2xs leading-tight text-muted">por abastidadev</span>
+        </span>
+      </a>
+      <a routerLink="/new" class="nx-btn nx-btn-primary nx-btn-sm ml-auto lg:hidden"><nx-icon name="plus" [size]="16" />Nuevo flujo</a>
+    </div>
+
+    <div class="hidden px-3 pb-2 lg:block">
+      <a
+        routerLink="/new"
+        class="nx-btn nx-btn-primary w-full"
+        [class.!px-0]="collapsed()"
+        [attr.aria-label]="collapsed() ? 'Nuevo flujo' : null"
+        [attr.title]="collapsed() ? 'Nuevo flujo' : null"
+      >
+        <nx-icon name="plus" [size]="17" /><span [class.lg:hidden]="collapsed()">Nuevo flujo</span>
+      </a>
+    </div>
+
+    <nav class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-3 pb-2 lg:flex-col lg:items-stretch lg:overflow-x-visible lg:overflow-y-auto lg:pt-3" aria-label="Secciones">
+      <span class="nx-eyebrow hidden px-3 pb-1.5 lg:block" [class.lg:!hidden]="collapsed()">Trabajo</span>
+      @for (item of primaryNav; track item.path) {
+        <a
+          [routerLink]="item.path"
+          routerLinkActive="nx-nav-active"
+          ariaCurrentWhenActive="page"
+          [routerLinkActiveOptions]="{ exact: item.path === '/' }"
+          class="nx-nav-link"
+          [class.lg:justify-center]="collapsed()"
+          [attr.title]="collapsed() ? item.label : null"
+        >
+          <span class="nx-nav-icon"><nx-icon [name]="item.icon" /></span>
+          <span [class.lg:sr-only]="collapsed()">{{ item.label }}</span>
+          @switch (item.path) {
+            @case ("/") {
+              @if (store.activeCount()) {
+                <span class="ml-auto rounded-md bg-info-soft px-1.5 text-2xs font-semibold text-info tabular-nums" [class.lg:hidden]="collapsed()">
+                  {{ store.activeCount() }}<span class="sr-only"> en curso</span>
+                </span>
+              }
+            }
+            @case ("/reviews") {
+              @if (store.unseenReviews().length) {
+                <span class="ml-auto rounded-md bg-accent-soft px-1.5 text-2xs font-semibold text-accent tabular-nums" [class.lg:hidden]="collapsed()">
+                  {{ store.unseenReviews().length }}<span class="sr-only"> sin ver</span>
+                </span>
+              }
+            }
+            @case ("/terminal") {
+              @if (store.runningConversations()) {
+                <span class="ml-auto size-2 rounded-full bg-ok nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="Conversaciones activas"></span>
+              }
+            }
+            @case ("/agents") {
+              @if (workingAgents()) {
+                <span class="ml-auto size-2 rounded-full bg-info nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="Agentes trabajando"></span>
+              }
+            }
+          }
+        </a>
+      }
+      <span class="nx-eyebrow hidden px-3 pt-6 pb-1.5 lg:block" [class.lg:!hidden]="collapsed()">Sistema</span>
+      <span class="hidden lg:block lg:pt-4" [class.lg:!hidden]="!collapsed()" aria-hidden="true"></span>
+      @for (item of systemNav; track item.path) {
+        <a
+          [routerLink]="item.path"
+          routerLinkActive="nx-nav-active"
+          ariaCurrentWhenActive="page"
+          class="nx-nav-link"
+          [class.lg:justify-center]="collapsed()"
+          [attr.title]="collapsed() ? item.label : null"
+        >
+          <span class="nx-nav-icon"><nx-icon [name]="item.icon" /></span>
+          <span [class.lg:sr-only]="collapsed()">{{ item.label }}</span>
+        </a>
+      }
     </nav>
-    <div class="hidden border-t border-border p-3 lg:block">
-      <a routerLink="/new" class="flex items-center justify-center gap-2 rounded-xl bg-accent-strong px-3 py-2.5 font-semibold text-white shadow-lg shadow-accent/15 transition hover:brightness-110"><span class="text-lg leading-none">+</span> Nuevo flujo</a>
-      <div class="mt-4 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2.5">
-        <span class="flex items-center gap-2 text-[11px] text-fg-soft"><span class="size-2 rounded-full" [class]="store.connected() ? 'bg-ok' : 'bg-err nx-pulse'"></span>{{ store.connected() ? "Sistema conectado" : "Sin conexión" }}</span>
-        <button type="button" class="rounded-md px-1.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" [attr.aria-label]="store.theme() === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'" (click)="store.toggleTheme()">{{ store.theme() === "dark" ? "☀" : "☾" }}</button>
+
+    <div class="hidden flex-col gap-2 border-t border-border p-3 lg:flex">
+      <div class="flex items-center gap-2 px-1 text-xs" [class.justify-center]="collapsed()" role="status">
+        <span class="size-2 shrink-0 rounded-full" [class]="store.connected() ? 'bg-ok' : 'bg-err nx-pulse'" aria-hidden="true"></span>
+        <span [class.sr-only]="collapsed()" class="text-fg-soft">{{ store.connected() ? "Conectado" : "Sin conexión" }}</span>
+      </div>
+      <div class="flex items-center gap-1" [class.flex-col]="collapsed()">
+        <button type="button" class="nx-icon-btn" [attr.aria-label]="themeLabel()" [attr.title]="themeLabel()" (click)="store.cycleTheme()">
+          <nx-icon [name]="themeIcon()" />
+        </button>
+        <button
+          type="button"
+          class="nx-icon-btn"
+          [class.ml-auto]="!collapsed()"
+          [attr.aria-label]="collapsed() ? 'Expandir la barra lateral' : 'Contraer la barra lateral'"
+          [attr.title]="collapsed() ? 'Expandir la barra lateral' : 'Contraer la barra lateral'"
+          [attr.aria-expanded]="!collapsed()"
+          (click)="toggleCollapsed()"
+        >
+          <nx-icon [name]="collapsed() ? 'chevronRight' : 'sidebar'" />
+        </button>
       </div>
     </div>
   </aside>
+
   <div class="flex min-h-0 min-w-0 flex-1 flex-col">
-    <header class="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface/80 px-4 backdrop-blur-sm md:px-6">
-      <div class="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
-        <span class="text-[10px] font-bold tracking-[.15em] text-muted uppercase">En curso</span>
-        <nav class="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Flujos abiertos">
-          @for (tab of tabs(); track tab.id) {
-            <a [routerLink]="['/runs', tab.id]" routerLinkActive="!border-accent !bg-accent-soft !text-fg" class="group relative flex max-w-48 cursor-grab items-center gap-2 rounded-lg border border-transparent px-2.5 py-1.5 text-[12px] text-muted hover:bg-surface-2 hover:text-fg" [class.opacity-40]="dragging() === tab.id" [attr.title]="tab.status.label + ' · arrastra para reordenar'" draggable="true" (dragstart)="onDragStart($event, tab.id)" (dragover)="onDragOver($event, tab.id)" (dragleave)="onDragLeave(tab.id)" (drop)="onDrop($event, tab.id)" (dragend)="onDragEnd()">
-              @if (dropTarget()?.id === tab.id) { <span class="pointer-events-none absolute inset-y-1 w-0.5 rounded bg-accent" [class]="dropTarget()!.side === 'before' ? '-left-px' : '-right-px'" aria-hidden="true"></span> }
-              <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.status.live" aria-hidden="true"></span><span class="truncate">{{ tab.label }}</span>
-              @if (tab.comments) { <span class="rounded-md bg-info-soft px-1 text-[10px] text-info">{{ tab.comments }}</span> }
-              <button type="button" class="rounded px-1 text-muted hover:bg-surface-3 hover:text-fg" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">×</button>
-            </a>
-          }
-        </nav>
+    <header class="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-bg px-3 md:px-5 lg:h-14">
+      <div class="hidden min-w-0 flex-1 items-center gap-3 lg:flex">
+        @if (tabs().length) {
+          <nav class="flex min-w-0 items-center gap-1 overflow-x-auto py-1" aria-label="Flujos abiertos">
+            @for (tab of tabs(); track tab.id) {
+              <a
+                [routerLink]="['/runs', tab.id]"
+                routerLinkActive="!border-border-strong !bg-surface !text-fg shadow-sm"
+                ariaCurrentWhenActive="page"
+                class="group relative flex h-9 max-w-56 shrink-0 cursor-grab items-center gap-2 rounded-lg border border-transparent pr-1 pl-3 text-sm text-fg-soft hover:bg-surface-2 hover:text-fg"
+                [class.opacity-40]="dragging() === tab.id"
+                [attr.title]="tab.title + ' · ' + tab.status.label + ' · arrastra para reordenar'"
+                draggable="true"
+                (dragstart)="onDragStart($event, tab.id)"
+                (dragover)="onDragOver($event, tab.id)"
+                (dragleave)="onDragLeave(tab.id)"
+                (drop)="onDrop($event, tab.id)"
+                (dragend)="onDragEnd()"
+              >
+                @if (dropTarget()?.id === tab.id) {
+                  <span class="pointer-events-none absolute inset-y-1 w-0.5 rounded bg-accent" [class]="dropTarget()!.side === 'before' ? '-left-px' : '-right-px'" aria-hidden="true"></span>
+                }
+                <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.status.live" aria-hidden="true"></span>
+                <span class="truncate">{{ tab.label }}</span>
+                <span class="sr-only">, {{ tab.status.label }}</span>
+                @if (tab.comments) {
+                  <span class="rounded-md bg-info-soft px-1.5 text-2xs font-semibold text-info tabular-nums">{{ tab.comments }}<span class="sr-only"> comentarios</span></span>
+                }
+                <button type="button" class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-3 hover:text-fg" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">
+                  <nx-icon name="x" [size]="14" />
+                </button>
+              </a>
+            }
+          </nav>
+        } @else {
+          <span class="text-sm text-muted">Los flujos que abras aparecerán aquí como pestañas.</span>
+        }
       </div>
-      <a routerLink="/new" class="flex items-center gap-1.5 rounded-lg bg-accent-strong px-3 py-1.5 font-semibold text-white lg:hidden">+ Nuevo flujo</a>
-      <div class="ml-auto flex shrink-0 items-center gap-2 md:gap-3">
+      <div class="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
         <nx-quota-meter class="hidden md:block" />
-        <span class="mx-1 hidden h-5 w-px bg-border md:block"></span>
-        <button type="button" class="nx-toolbar-button" [class.!text-accent]="store.notificationsEnabled()" [attr.aria-pressed]="store.notificationsEnabled()" [attr.title]="store.notificationsEnabled() ? 'Notificaciones activadas' : 'Activar notificaciones'" aria-label="Notificaciones del sistema" (click)="store.toggleNotifications()">{{ store.notificationsEnabled() ? "🔔" : "🔕" }}</button>
-        <button type="button" class="nx-toolbar-button" [class.!text-accent]="notifier.soundEnabled()" [attr.aria-pressed]="notifier.soundEnabled()" [attr.title]="notifier.soundEnabled() ? 'Sonido activado' : 'Activar sonido'" aria-label="Sonido al terminar" (click)="notifier.toggleSound()">{{ notifier.soundEnabled() ? "🔊" : "🔇" }}</button>
-        <button type="button" class="nx-toolbar-button lg:hidden" [attr.aria-label]="store.theme() === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'" (click)="store.toggleTheme()">{{ store.theme() === "dark" ? "☀" : "☾" }}</button>
+        <span class="mx-1 hidden h-5 w-px bg-border md:block" aria-hidden="true"></span>
+        <button
+          type="button"
+          class="nx-icon-btn"
+          [attr.aria-pressed]="store.notificationsEnabled()"
+          [attr.title]="store.notificationsEnabled() ? 'Notificaciones del sistema activadas' : 'Activar notificaciones del sistema'"
+          aria-label="Notificaciones del sistema"
+          (click)="store.toggleNotifications()"
+        >
+          <nx-icon [name]="store.notificationsEnabled() ? 'bell' : 'bellOff'" />
+        </button>
+        <button
+          type="button"
+          class="nx-icon-btn"
+          [attr.aria-pressed]="notifier.soundEnabled()"
+          [attr.title]="notifier.soundEnabled() ? 'Sonido activado' : 'Activar sonido al terminar'"
+          aria-label="Sonido al terminar"
+          (click)="notifier.toggleSound()"
+        >
+          <nx-icon [name]="notifier.soundEnabled() ? 'volume' : 'volumeOff'" />
+        </button>
+        <button type="button" class="nx-icon-btn lg:hidden" [attr.aria-label]="themeLabel()" [attr.title]="themeLabel()" (click)="store.cycleTheme()">
+          <nx-icon [name]="themeIcon()" />
+        </button>
       </div>
     </header>
+
     @if (tabs().length) {
-      <nav class="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-surface px-3 py-1 lg:hidden" aria-label="Flujos abiertos">
+      <nav class="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-bg px-3 py-1.5 lg:hidden" aria-label="Flujos abiertos">
         @for (tab of tabs(); track tab.id) {
-          <a [routerLink]="['/runs', tab.id]" routerLinkActive="!bg-accent-soft !text-accent" class="flex max-w-40 shrink-0 items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted"><span class="size-1.5 rounded-full" [class]="tab.dot"></span><span class="truncate">{{ tab.label }}</span><button type="button" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">×</button></a>
+          <a
+            [routerLink]="['/runs', tab.id]"
+            routerLinkActive="!bg-surface-2 !text-fg"
+            ariaCurrentWhenActive="page"
+            class="flex h-9 max-w-44 shrink-0 items-center gap-2 rounded-lg pr-1 pl-2.5 text-xs text-fg-soft"
+          >
+            <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" aria-hidden="true"></span>
+            <span class="truncate">{{ tab.label }}</span>
+            <button type="button" class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">
+              <nx-icon name="x" [size]="14" />
+            </button>
+          </a>
         }
       </nav>
     }
-    @if (loadError(); as error) { <div class="border-b border-err bg-err-soft px-4 py-2 text-err" role="alert">{{ error }}</div> }
-    <main class="min-h-0 flex-1"><router-outlet /></main>
+
+    @if (loadError(); as error) {
+      <div class="flex items-center gap-2 border-b border-err/40 bg-err-soft px-4 py-2.5 text-err" role="alert">
+        <nx-icon name="alert" [size]="17" /><span>{{ error }}</span>
+      </div>
+    } @else if (showDisconnected()) {
+      <div class="flex items-center gap-2 border-b border-warn/40 bg-warn-soft px-4 py-2 text-sm text-warn" role="status">
+        <nx-icon name="wifiOff" [size]="16" /><span>Se perdió la conexión con el servidor. Reintentando…</span>
+      </div>
+    }
+
+    <main id="main" tabindex="-1" class="min-h-0 flex-1 outline-none"><router-outlet /></main>
   </div>
 </div>
-<div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2" aria-live="polite">
+
+<div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2" aria-live="polite">
   @for (toast of store.toasts(); track toast.id) {
-    <div class="pointer-events-auto rounded-xl border bg-surface p-3 shadow-xl" [class]="toastBorder[toast.tone]" role="status"><div class="flex items-start gap-2"><button type="button" class="min-w-0 flex-1 text-left" [disabled]="!toast.runId && !toast.link" (click)="openToast(toast)"><span class="block truncate font-medium">{{ toast.title }}</span><span class="block text-[12px] text-fg-soft">{{ toast.body }}</span></button><button type="button" class="text-muted hover:text-fg" aria-label="Cerrar aviso" (click)="store.dismissToast(toast.id)">×</button></div></div>
+    <div class="nx-rise pointer-events-auto flex items-start gap-3 overflow-hidden rounded-xl border border-border bg-surface p-3 pl-4 shadow-[0_18px_40px_-16px_rgb(var(--nx-shadow)/0.55)]" role="status">
+      <span class="mt-1 size-2.5 shrink-0 rounded-full" [class]="toastDot[toast.tone]" aria-hidden="true"></span>
+      <button type="button" class="min-w-0 flex-1 rounded-md text-left" [disabled]="!toast.runId && !toast.link" (click)="openToast(toast)">
+        <span class="block font-semibold">{{ toast.title }}</span>
+        <span class="mt-0.5 block text-sm text-fg-soft">{{ toast.body }}</span>
+      </button>
+      <button type="button" class="nx-icon-btn -mt-1 -mr-1" aria-label="Cerrar aviso" (click)="store.dismissToast(toast.id)">
+        <nx-icon name="x" [size]="16" />
+      </button>
+    </div>
   }
 </div>

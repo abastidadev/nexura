@@ -15,7 +15,7 @@ const NODE_MODULES_LABELS: Record<string, string> = { link: "enlazados", install
         rama <code class="font-mono">&lt;prefijo&gt;/&lt;ticket&gt;-&lt;título&gt;</code> desde la rama base.
       </p>
       <a
-        class="shrink-0 rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90"
+        class="nx-btn nx-btn-primary shrink-0"
         routerLink="/config"
         [queryParams]="{ tab: 'repos', create: 1 }"
       >
@@ -28,7 +28,7 @@ const NODE_MODULES_LABELS: Record<string, string> = { link: "enlazados", install
     } @else {
       <div class="overflow-hidden rounded-lg border border-border bg-surface">
         <table class="w-full border-collapse text-left">
-          <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+          <thead class="border-b border-border text-xs text-muted">
             <tr>
               <th class="px-4 py-2 font-medium">Nombre</th>
               <th class="px-4 py-2 font-medium">Ruta</th>
@@ -44,22 +44,22 @@ const NODE_MODULES_LABELS: Record<string, string> = { link: "enlazados", install
                 <td class="px-4 py-2.5">
                   <a class="font-medium hover:text-accent hover:underline" routerLink="/config" [queryParams]="{ tab: 'repos', edit: repo.name }">{{ repo.name }}</a>
                 </td>
-                <td class="max-w-[360px] truncate px-4 py-2.5 font-mono text-[12px] text-fg-soft" [attr.title]="repo.path">{{ repo.path }}</td>
-                <td class="px-4 py-2.5 font-mono text-[12px]">{{ (repo.branchPrefix || "feat") + "/… ← " + repo.baseBranch }}</td>
-                <td class="px-4 py-2.5 text-[12px] text-fg-soft" [attr.title]="repo.checks.join('\\n')">
+                <td class="max-w-[360px] truncate px-4 py-2.5 font-mono text-sm text-fg-soft" [attr.title]="repo.path">{{ repo.path }}</td>
+                <td class="px-4 py-2.5 font-mono text-sm">{{ (repo.branchPrefix || "feat") + "/… ← " + repo.baseBranch }}</td>
+                <td class="px-4 py-2.5 text-sm text-fg-soft" [attr.title]="repo.checks.join('\\n')">
                   {{ repo.checks.length ? repo.checks.length + " check(s)" : "—" }}
                 </td>
-                <td class="px-4 py-2.5 text-[12px] text-fg-soft">{{ nodeModules[repo.nodeModules ?? "link"] }}</td>
+                <td class="px-4 py-2.5 text-sm text-fg-soft">{{ nodeModules[repo.nodeModules ?? "link"] }}</td>
                 <td class="px-4 py-2.5 text-right whitespace-nowrap">
                   <a
-                    class="rounded-md border border-border px-2.5 py-1 text-[12px] hover:bg-surface-3"
+                    class="nx-btn nx-btn-sm"
                     routerLink="/config"
                     [queryParams]="{ tab: 'repos', edit: repo.name }"
                     >Editar</a
                   >
                   <button
                     type="button"
-                    class="ml-1 rounded-md px-2.5 py-1 text-[12px] text-err hover:bg-err-soft disabled:opacity-40"
+                    class="nx-btn nx-btn-sm nx-btn-ghost text-err! hover:bg-err-soft! ml-1"
                     [disabled]="busy()"
                     (click)="remove(repo.name)"
                   >

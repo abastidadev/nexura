@@ -9,9 +9,9 @@ export type Snippet = { startLine: number; lines: string[]; added: number[] };
 @Component({
   selector: "nx-code-snippet",
   template: `
-    <div class="overflow-x-auto rounded-md border border-border bg-surface-2 font-mono text-[12px] leading-5">
+    <div class="overflow-x-auto rounded-md border border-border bg-surface-2 font-mono text-sm leading-5">
       @if (file()) {
-        <div class="border-b border-border px-3 py-1 text-[11px] text-muted">{{ file() }}</div>
+        <div class="border-b border-border px-3 py-1 text-xs text-muted">{{ file() }}</div>
       }
       <table class="w-full border-collapse">
         <tbody>

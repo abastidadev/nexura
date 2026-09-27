@@ -9,13 +9,13 @@ import { NexuraStore } from "../../core/nexura-store";
   selector: "nx-memory-browser",
   template: `
     <section class="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4">
-      <p class="text-[12px] text-muted">
+      <p class="text-sm text-muted">
         Lo que han guardado los pasos, Nexura (convenciones y resumen de cada ticket) y tus sesiones de Claude Code para cada repo. El proyecto
         es el nombre del repo en su remote <code class="font-mono">origin</code>, así que todos sus worktrees y clones comparten memoria.
       </p>
 
       <form class="flex flex-wrap items-center gap-2" (submit)="$event.preventDefault(); search()">
-        <select aria-label="Repo" class="rounded-md border border-border bg-surface-2 px-2 py-1.5" (change)="repo.set(value($event))">
+        <select aria-label="Repo" class="nx-input" (change)="repo.set(value($event))">
           @for (name of repos(); track name) {
             <option [value]="name" [selected]="name === repo()">{{ name }}</option>
           }
@@ -24,11 +24,11 @@ import { NexuraStore } from "../../core/nexura-store";
           type="search"
           placeholder="Buscar (vacío = lo más reciente)"
           aria-label="Buscar en la memoria"
-          class="min-w-64 flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          class="nx-input min-w-64 flex-1"
           [value]="query()"
           (input)="query.set(value($event))"
         />
-        <button type="submit" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy() || !repo()">
+        <button type="submit" class="nx-btn nx-btn-primary" [disabled]="busy() || !repo()">
           {{ query().trim() ? "Buscar" : "Ver lo último" }}
         </button>
       </form>
@@ -37,7 +37,7 @@ import { NexuraStore } from "../../core/nexura-store";
         <p class="text-err" role="alert">{{ text }}</p>
       }
       @if (result(); as current) {
-        <p class="text-[12px] text-muted">
+        <p class="text-sm text-muted">
           Proyecto <span class="font-mono text-fg-soft">{{ current.project }}</span> · {{ current.observations.length }} resultado(s)
         </p>
         @if (current.observations.length === 0) {
@@ -48,9 +48,9 @@ import { NexuraStore } from "../../core/nexura-store";
             <li class="rounded-md border border-border bg-surface-2">
               <details>
                 <summary class="flex cursor-pointer items-center gap-2 px-3 py-2">
-                  <span class="rounded border border-border px-1.5 font-mono text-[11px] text-muted">{{ item.type }}</span>
+                  <span class="rounded border border-border px-1.5 font-mono text-xs text-muted">{{ item.type }}</span>
                   <span class="min-w-0 flex-1 truncate font-medium">{{ item.title }}</span>
-                  <span class="shrink-0 text-[11px] text-muted" [title]="'Actualizada ' + item.updatedAt">
+                  <span class="shrink-0 text-xs text-muted" [title]="'Actualizada ' + item.updatedAt">
                     {{ sourceLabel(item.source) }} · {{ item.updatedAt.slice(0, 10) }}
                     @if (item.revisions > 1) {
                       · rev. {{ item.revisions }}
@@ -59,11 +59,11 @@ import { NexuraStore } from "../../core/nexura-store";
                 </summary>
                 <div class="flex flex-col gap-2 border-t border-border px-3 py-2">
                   @if (item.topicKey) {
-                    <p class="text-[11px] text-muted">Tema <span class="font-mono">{{ item.topicKey }}</span> (guardar con el mismo tema lo actualiza)</p>
+                    <p class="text-xs text-muted">Tema <span class="font-mono">{{ item.topicKey }}</span> (guardar con el mismo tema lo actualiza)</p>
                   }
-                  <pre class="font-mono text-[12px] whitespace-pre-wrap">{{ item.content }}</pre>
+                  <pre class="font-mono text-sm whitespace-pre-wrap">{{ item.content }}</pre>
                   <div>
-                    <button type="button" class="rounded-md border border-border px-2 py-1 text-[12px] text-err hover:bg-surface" (click)="remove(item)">Borrar</button>
+                    <button type="button" class="nx-btn nx-btn-sm text-err" (click)="remove(item)">Borrar</button>
                   </div>
                 </div>
               </details>
@@ -75,14 +75,14 @@ import { NexuraStore } from "../../core/nexura-store";
 
     <section class="mt-4 flex flex-col gap-2 rounded-lg border border-border bg-surface p-4">
       <h2 class="font-semibold">Usarla desde tu Claude Code</h2>
-      <p class="text-[12px] text-muted">
+      <p class="text-sm text-muted">
         Para que tus sesiones interactivas lean y guarden en la misma memoria, añade el servidor MCP de Nexura una vez (ámbito de usuario). Cada
         sesión usa el proyecto del repo en el que la abres.
       </p>
       @if (mcpCommand(); as command) {
         <div class="flex items-start gap-2">
-          <code class="min-w-0 flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] break-all">{{ command }}</code>
-          <button type="button" class="shrink-0 rounded-md border border-border px-2.5 py-1.5 hover:bg-surface-2" (click)="copy(command)">
+          <code class="min-w-0 flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-sm break-all">{{ command }}</code>
+          <button type="button" class="nx-btn shrink-0" (click)="copy(command)">
             {{ copied() ? "Copiado" : "Copiar" }}
           </button>
         </div>

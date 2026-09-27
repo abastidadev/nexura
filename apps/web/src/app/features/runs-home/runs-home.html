@@ -1,49 +1,122 @@
-<div class="mx-auto max-w-7xl px-5 py-7 md:px-8 md:py-9">
-  <div class="flex flex-wrap items-start justify-between gap-4">
-    <div>
-      <p class="text-[11px] font-bold tracking-[.18em] text-accent uppercase">Panel de control</p>
-      <h1 class="mt-2 text-3xl font-bold tracking-tight md:text-4xl">Tus flujos, de un vistazo.</h1>
-      <p class="mt-2 text-[14px] text-muted">Sigue el trabajo de tus agentes y retoma lo que necesita tu atención.</p>
+<div class="mx-auto max-w-6xl px-4 py-6 md:px-8 md:py-9">
+  <header class="flex flex-wrap items-end justify-between gap-4">
+    <div class="min-w-0">
+      <h1 class="text-2xl font-semibold tracking-tight md:text-[1.75rem]">Flujos</h1>
+      <p class="mt-1 max-w-prose text-muted">Sigue el trabajo de tus agentes y retoma lo que necesita tu atención.</p>
     </div>
-    <a routerLink="/new" class="inline-flex items-center gap-2 rounded-xl bg-accent-strong px-4 py-2.5 text-[13px] font-semibold text-white shadow-lg shadow-accent/15 transition hover:brightness-110"><span class="text-lg leading-none">+</span> Crear flujo</a>
-  </div>
+  </header>
 
-  @if (error(); as message) { <p class="mt-5 rounded-xl border border-err bg-err-soft px-4 py-3 text-err" role="alert">{{ message }}</p> }
+  @if (error(); as message) {
+    <p class="mt-5 flex items-center gap-2 rounded-xl border border-err/40 bg-err-soft px-4 py-3 text-err" role="alert"><nx-icon name="alert" [size]="17" />{{ message }}</p>
+  }
 
-  <section class="mt-8 grid grid-cols-2 gap-3 xl:grid-cols-4" aria-label="Resumen de flujos">
-    <div class="nx-stat-card"><div class="flex items-center justify-between"><span class="text-[12px] font-medium text-muted">Flujos totales</span><span class="nx-stat-icon bg-accent-soft text-accent">▦</span></div><strong class="mt-4 block text-3xl font-semibold tracking-tight">{{ rows().length }}</strong><span class="mt-1 block text-[11px] text-muted">En este espacio de trabajo</span></div>
-    <div class="nx-stat-card"><div class="flex items-center justify-between"><span class="text-[12px] font-medium text-muted">En curso</span><span class="nx-stat-icon bg-info-soft text-info">◉</span></div><strong class="mt-4 block text-3xl font-semibold tracking-tight">{{ activeCount() }}</strong><span class="mt-1 block text-[11px] text-muted">Ejecuciones activas o pausadas</span></div>
-    <div class="nx-stat-card"><div class="flex items-center justify-between"><span class="text-[12px] font-medium text-muted">Terminados</span><span class="nx-stat-icon bg-ok-soft text-ok">✓</span></div><strong class="mt-4 block text-3xl font-semibold tracking-tight">{{ doneCount() }}</strong><span class="mt-1 block text-[11px] text-muted">Completados correctamente</span></div>
-    <div class="nx-stat-card"><div class="flex items-center justify-between"><span class="text-[12px] font-medium text-muted">Coste acumulado</span><span class="nx-stat-icon bg-warn-soft text-warn">$</span></div><strong class="mt-4 block text-3xl font-semibold tracking-tight">{{ totalCost() }}</strong><span class="mt-1 block text-[11px] text-muted">De todos los flujos</span></div>
+  <section class="nx-card mt-7 grid grid-cols-2 gap-px overflow-hidden bg-border! md:grid-cols-4" aria-label="Resumen de flujos">
+    @for (stat of stats(); track stat.label) {
+      <div class="flex items-start gap-3 bg-surface px-5 py-4 md:py-5">
+        <span class="nx-stat-icon mt-0.5" [class]="stat.tone"><nx-icon [name]="stat.icon" [size]="16" /></span>
+        <div class="min-w-0">
+          <span class="block text-xs text-muted">{{ stat.label }}</span>
+          <strong class="mt-0.5 block text-2xl font-semibold tracking-tight tabular-nums">{{ stat.value }}</strong>
+        </div>
+      </div>
+    }
   </section>
 
+  @if (attention().length) {
+    <section class="mt-8" aria-labelledby="attention-title">
+      <h2 id="attention-title" class="flex items-center gap-2 text-md font-semibold">
+        <span class="size-2 rounded-full bg-warn" aria-hidden="true"></span>Necesita tu atención
+        <span class="text-sm font-normal text-muted tabular-nums">{{ attention().length }}</span>
+      </h2>
+      <ul class="mt-3 grid gap-2 sm:grid-cols-2" role="list">
+        @for (row of attention(); track row.id) {
+          <li class="relative flex items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3 hover:border-border-strong">
+            <nx-status-pill [tone]="row.status.tone" [label]="row.status.label" [live]="row.status.live" />
+            <a [routerLink]="['/runs', row.id]" class="min-w-0 flex-1 truncate font-medium after:absolute after:inset-0 after:rounded-xl" (click)="store.openTab(row.id)">
+              @if (row.ticketId) {
+                <span class="mr-1 font-mono text-accent">#{{ row.ticketId }}</span>
+              }
+              {{ row.title }}
+            </a>
+            <span class="shrink-0 text-xs text-muted">{{ row.step }}</span>
+            <nx-icon name="arrowRight" [size]="16" class="text-muted" />
+          </li>
+        }
+      </ul>
+    </section>
+  }
+
   <section class="mt-9" aria-labelledby="runs-title">
-    <div class="flex flex-wrap items-end justify-between gap-3">
-      <div><h2 id="runs-title" class="text-xl font-semibold tracking-tight">Actividad reciente</h2><p class="mt-1 text-[12px] text-muted">Explora y continúa tus ejecuciones.</p></div>
-      <label class="relative block w-full sm:w-64"><span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" aria-hidden="true">⌕</span><span class="sr-only">Buscar flujos</span><input class="w-full rounded-xl border border-border bg-surface py-2 pr-3 pl-9 outline-none placeholder:text-muted focus:border-accent" type="search" placeholder="Buscar flujos…" [value]="query()" (input)="query.set($any($event.target).value)" /></label>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <h2 id="runs-title" class="text-md font-semibold">Actividad reciente</h2>
+      <label class="relative block w-full sm:w-72">
+        <span class="pointer-events-none absolute top-1/2 left-3 -translate-y-1/2 text-muted" aria-hidden="true"><nx-icon name="search" [size]="16" /></span>
+        <span class="sr-only">Buscar flujos</span>
+        <input class="nx-input w-full pl-9" type="search" placeholder="Buscar flujos" [value]="query()" (input)="query.set($any($event.target).value)" />
+      </label>
     </div>
-    <div class="mt-5 flex flex-wrap items-center gap-1 border-b border-border pb-3" role="group" aria-label="Filtrar flujos">
-      <button type="button" class="nx-filter-button" [class.nx-filter-active]="filter() === 'all'" (click)="filter.set('all')">Todos <span class="opacity-60">{{ rows().length }}</span></button>
-      <button type="button" class="nx-filter-button" [class.nx-filter-active]="filter() === 'active'" (click)="filter.set('active')">En curso <span class="opacity-60">{{ activeCount() }}</span></button>
-      <button type="button" class="nx-filter-button" [class.nx-filter-active]="filter() === 'done'" (click)="filter.set('done')">Terminados <span class="opacity-60">{{ doneCount() }}</span></button>
-      <button type="button" class="nx-filter-button" [class.nx-filter-active]="filter() === 'failed'" (click)="filter.set('failed')">Con fallos <span class="opacity-60">{{ failedCount() }}</span></button>
+
+    <div class="mt-4 flex flex-wrap items-center gap-1" role="group" aria-label="Filtrar flujos">
+      @for (option of filters(); track option.id) {
+        <button type="button" class="nx-filter-button" [class.nx-filter-active]="filter() === option.id" [attr.aria-pressed]="filter() === option.id" (click)="filter.set(option.id)">
+          {{ option.label }} <span class="tabular-nums opacity-70">{{ option.count }}</span>
+        </button>
+      }
     </div>
 
     @if (rows().length === 0) {
-      <div class="mt-5 flex flex-col items-center rounded-2xl border border-dashed border-border-strong bg-surface px-6 py-16 text-center"><span class="flex size-14 items-center justify-center rounded-2xl bg-accent-soft text-3xl text-accent">✦</span><h3 class="mt-5 text-lg font-semibold">Aquí empieza tu próximo proyecto</h3><p class="mt-2 max-w-md text-muted">Crea un flujo desde un ticket o una descripción. Nexura organizará los pasos y te mostrará el progreso.</p><a routerLink="/new" class="mt-5 rounded-xl bg-accent-strong px-4 py-2.5 font-semibold text-white hover:brightness-110">Crear mi primer flujo</a></div>
-    } @else if (filteredRows().length === 0) {
-      <div class="mt-5 rounded-2xl border border-border bg-surface px-6 py-12 text-center"><p class="font-medium">No hay flujos con estos filtros</p><p class="mt-1 text-muted">Prueba otra búsqueda o selecciona «Todos».</p><button type="button" class="mt-4 text-accent hover:underline" (click)="query.set(''); filter.set('all')">Limpiar filtros</button></div>
-    } @else {
-      <div class="mt-4 flex flex-col gap-2">
-        @for (row of filteredRows(); track row.id) {
-          <div class="group flex cursor-pointer flex-wrap items-center gap-x-4 gap-y-3 rounded-xl border border-border bg-surface px-4 py-3.5 transition hover:border-border-strong hover:bg-surface-2 hover:shadow-lg hover:shadow-black/5 md:flex-nowrap" tabindex="0" role="link" [attr.aria-label]="'Abrir flujo ' + row.title" (click)="open(row.id)" (keydown.enter)="open(row.id)">
-            <span class="flex size-10 shrink-0 items-center justify-center rounded-xl bg-surface-3 text-lg text-accent" aria-hidden="true">⌘</span>
-            <div class="min-w-0 flex-1 basis-[65%] md:basis-auto"><div class="flex min-w-0 flex-wrap items-center gap-2"><span class="min-w-0 truncate font-semibold">@if (row.ticketId) { <span class="mr-1 font-mono text-accent">#{{ row.ticketId }}</span> }{{ row.title }}</span><nx-status-pill [tone]="row.status.tone" [label]="row.status.label" [live]="row.status.live" /></div><p class="mt-1 truncate text-[11px] text-muted">{{ row.repos }} · {{ row.profile }} · {{ row.step }} @if (row.error) { <span class="text-err">· {{ row.error }}</span> }</p></div>
-            <div class="flex shrink-0 items-center gap-5 pl-14 text-[11px] md:pl-0"><div><span class="block text-muted">Duración</span><span class="mt-0.5 block font-mono text-fg-soft">{{ row.duration }}</span></div><div><span class="block text-muted">Coste</span><span class="mt-0.5 block font-mono text-fg-soft">{{ row.cost }}</span></div><div class="hidden lg:block"><span class="block text-muted">Creado</span><span class="mt-0.5 block text-fg-soft">{{ row.created }}</span></div></div>
-            @if (!row.active) { <button type="button" class="ml-auto rounded-lg px-2 py-1.5 text-muted hover:bg-err-soft hover:text-err disabled:opacity-40 md:ml-0" title="Borrar flujo" [attr.aria-label]="'Borrar flujo ' + row.title" [disabled]="deleting() === row.id" (click)="remove($event, row)" (keydown.enter)="$event.stopPropagation()">✕</button> } @else { <span class="ml-auto hidden text-lg text-muted group-hover:text-accent md:block" aria-hidden="true">→</span> }
-          </div>
-        }
+      <div class="mt-5 flex flex-col items-start gap-4 rounded-2xl border border-dashed border-border-strong px-6 py-10 sm:flex-row sm:items-center sm:gap-6 md:px-10">
+        <span class="flex size-12 shrink-0 items-center justify-center rounded-xl bg-accent-soft text-accent"><nx-icon name="spark" [size]="24" /></span>
+        <div class="min-w-0 flex-1">
+          <h3 class="text-md font-semibold">Aún no hay flujos</h3>
+          <p class="mt-1 max-w-prose text-muted">Crea uno desde un ticket de GitHub o Azure DevOps, o describe la tarea a mano. Nexura encadena los pasos y te enseña el progreso aquí.</p>
+        </div>
+        <a routerLink="/new" class="nx-btn nx-btn-primary shrink-0">Crear el primer flujo</a>
       </div>
+    } @else if (filteredRows().length === 0) {
+      <div class="mt-5 rounded-2xl border border-border px-6 py-10 text-center">
+        <p class="font-medium">Ningún flujo coincide con estos filtros</p>
+        <p class="mt-1 text-muted">Prueba otra búsqueda o vuelve a «Todos».</p>
+        <button type="button" class="nx-btn nx-btn-sm mt-4" (click)="query.set(''); filter.set('all')">Quitar filtros</button>
+      </div>
+    } @else {
+      <ul class="nx-card mt-4 divide-y divide-border overflow-hidden" role="list">
+        @for (row of filteredRows(); track row.id) {
+          <li class="group relative flex flex-wrap items-center gap-x-5 gap-y-2 px-4 py-3.5 hover:bg-surface-2 md:flex-nowrap md:px-5">
+            <div class="min-w-0 flex-1 basis-full md:basis-auto">
+              <div class="flex min-w-0 items-center gap-2.5">
+                <span class="size-2 shrink-0 rounded-full" [class]="toneDot[row.status.tone]" [class.nx-pulse]="row.status.live" aria-hidden="true"></span>
+                <a [routerLink]="['/runs', row.id]" class="min-w-0 truncate font-semibold after:absolute after:inset-0" (click)="store.openTab(row.id)">
+                  @if (row.ticketId) {
+                    <span class="mr-1 font-mono font-medium text-accent">#{{ row.ticketId }}</span>
+                  }
+                  {{ row.title }}
+                </a>
+              </div>
+              <p class="mt-1 truncate pl-[1.125rem] text-xs text-muted">
+                <span class="text-fg-soft">{{ row.status.label }}</span> · {{ row.repos }} · {{ row.profile }} · {{ row.step }}
+                @if (row.error) {
+                  <span class="text-err">· {{ row.error }}</span>
+                }
+              </p>
+            </div>
+            <dl class="flex shrink-0 items-center gap-5 pl-[1.125rem] text-xs md:pl-0">
+              <div class="md:w-20 md:text-right"><dt class="sr-only">Duración</dt><dd class="font-mono text-fg-soft" title="Duración">{{ row.duration }}</dd></div>
+              <div class="md:w-16 md:text-right"><dt class="sr-only">Coste</dt><dd class="font-mono text-fg-soft" title="Coste">{{ row.cost }}</dd></div>
+              <div class="hidden md:w-28 md:text-right lg:block"><dt class="sr-only">Creado</dt><dd class="text-muted" title="Creado">{{ row.created }}</dd></div>
+            </dl>
+            <div class="relative z-10 ml-auto flex w-9 shrink-0 justify-end md:ml-0">
+              @if (!row.active) {
+                <button type="button" class="nx-icon-btn opacity-70 group-hover:opacity-100 hover:!bg-err-soft hover:!text-err focus-visible:opacity-100" [attr.aria-label]="'Borrar flujo ' + row.title" title="Borrar flujo" [disabled]="deleting() === row.id" (click)="remove($event, row)">
+                  <nx-icon name="trash" [size]="16" />
+                </button>
+              } @else {
+                <nx-icon name="arrowRight" [size]="16" class="text-muted group-hover:text-accent" />
+              }
+            </div>
+          </li>
+        }
+      </ul>
     }
   </section>
 </div>

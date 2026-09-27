@@ -5,6 +5,7 @@ import { ACTIVE_RUN_STATUSES, buildRunAgents, plannedSteps, type AgentEvent, typ
 import { Api, apiError } from "../../core/api";
 import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, stepLabel, timeOfDay } from "../../core/format";
 import { NexuraStore, readStorage, writeStorage } from "../../core/nexura-store";
+import { Icon } from "../../shared/icon";
 import { teamColors } from "../../shared/pixel-office/looks";
 import type { OfficeTeam } from "../../shared/pixel-office/office-plan";
 import { PixelOffice } from "../../shared/pixel-office/pixel-office";
@@ -27,7 +28,7 @@ type PipelineMode = "steps" | "office";
 
 @Component({
   selector: "nx-run-view",
-  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval, ReviewApproval, PixelOffice],
+  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval, ReviewApproval, PixelOffice, Icon],
   templateUrl: "./run-view.html",
   host: { class: "flex h-full flex-col" },
 })
@@ -238,6 +239,13 @@ export class RunView {
 
   protected keepLocal(): Promise<void> {
     return this.act(() => this.api.continue(this.id(), { skip: true }));
+  }
+
+  /** Closes a <details> menu once focus moves outside it (click elsewhere or Tab away). */
+  protected closeWhenFocusLeaves(event: FocusEvent, menu: HTMLDetailsElement): void {
+    if (!menu.contains(event.relatedTarget as Node | null)) {
+      menu.open = false;
+    }
   }
 
   protected cancel(): Promise<void> {

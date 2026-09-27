@@ -12,14 +12,14 @@ import { SOURCE_LABELS } from "../new-run/ticket-picker";
     <section class="border-b border-accent bg-accent-soft px-4 py-3" aria-labelledby="pr-title">
       <div class="flex flex-wrap items-center gap-3">
         <h2 id="pr-title" class="font-semibold">⇪ Aprobar la PR en {{ providers() }}</h2>
-        <span class="text-[12px] text-fg-soft">Al aprobar se hace <code class="font-mono">git push</code> de la rama y se abre la PR con el ticket enlazado.</span>
+        <span class="text-sm text-fg-soft">Al aprobar se hace <code class="font-mono">git push</code> de la rama y se abre la PR con el ticket enlazado.</span>
         <div class="ml-auto flex gap-2">
-          <button type="button" class="rounded-md border border-border bg-surface px-3 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="keepLocal.emit()">
+          <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="keepLocal.emit()">
             Dejar en local
           </button>
           <button
             type="button"
-            class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+            class="nx-btn nx-btn-primary nx-btn-sm"
             [disabled]="busy()"
             (click)="approve.emit(edited())"
           >
@@ -29,7 +29,7 @@ import { SOURCE_LABELS } from "../new-run/ticket-picker";
       </div>
       @for (draft of edited(); track draft.repo; let i = $index) {
         <div class="mt-3 grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-[1fr_180px]">
-          <div class="text-[12px] text-muted md:col-span-2">
+          <div class="text-sm text-muted md:col-span-2">
             <span class="font-medium text-fg">{{ draft.repo }}</span> · <span class="font-mono">{{ draft.branch }}</span> →
             <span class="font-mono">{{ draft.target }}</span> en {{ labels[draft.provider] }}
             @if (!draft.workItemId) {
@@ -41,24 +41,24 @@ import { SOURCE_LABELS } from "../new-run/ticket-picker";
             }
           </div>
           <label class="flex flex-col gap-1">
-            <span class="text-[11px] font-medium text-muted uppercase">Título</span>
-            <input class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent" [value]="draft.title" (input)="patch(i, { title: value($event) })" />
+            <span class="text-xs font-medium text-muted">Título</span>
+            <input class="nx-input" [value]="draft.title" (input)="patch(i, { title: value($event) })" />
           </label>
           <label class="flex flex-col gap-1">
-            <span class="text-[11px] font-medium text-muted uppercase">Rama destino</span>
-            <input class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent" [value]="draft.target" (input)="patch(i, { target: value($event) })" />
+            <span class="text-xs font-medium text-muted">Rama destino</span>
+            <input class="nx-input font-mono" [value]="draft.target" (input)="patch(i, { target: value($event) })" />
           </label>
           <label class="flex flex-col gap-1 md:col-span-2">
-            <span class="text-[11px] font-medium text-muted uppercase">Descripción</span>
+            <span class="text-xs font-medium text-muted">Descripción</span>
             <textarea
               rows="6"
-              class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 outline-none focus:border-accent"
+              class="nx-input resize-y"
               [value]="draft.description"
               (input)="patch(i, { description: value($event) })"
             ></textarea>
           </label>
-          <label class="flex cursor-pointer items-center gap-2 text-[12px]">
-            <input type="checkbox" class="size-4 accent-(--nx-accent)" [checked]="draft.isDraft" (change)="patch(i, { isDraft: !draft.isDraft })" />
+          <label class="flex cursor-pointer items-center gap-2 text-sm">
+            <input type="checkbox" class="size-4" [checked]="draft.isDraft" (change)="patch(i, { isDraft: !draft.isDraft })" />
             Crear como borrador (draft)
           </label>
         </div>

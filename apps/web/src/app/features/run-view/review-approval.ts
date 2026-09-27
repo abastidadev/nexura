@@ -16,7 +16,7 @@ const ACTIONS: { value: ReviewReply["action"]; label: string }[] = [
     <section class="border-b border-accent bg-accent-soft px-4 py-3" aria-labelledby="review-title">
       <div class="flex flex-wrap items-center gap-3">
         <h2 id="review-title" class="font-semibold">💬 Aprobar respuestas a la revisión</h2>
-        <span class="text-[12px] text-fg-soft">
+        <span class="text-sm text-fg-soft">
           @if (commits().length) {
             Commits locales: <span class="font-mono">{{ commits().join(", ") }}</span>. Al aprobar se hace push y se publican las respuestas marcadas.
           } @else {
@@ -24,12 +24,12 @@ const ACTIONS: { value: ReviewReply["action"]; label: string }[] = [
           }
         </span>
         <div class="ml-auto flex gap-2">
-          <button type="button" class="rounded-md border border-border bg-surface px-3 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="keepLocal.emit()">
+          <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="keepLocal.emit()">
             Descartar (sin push ni respuestas)
           </button>
           <button
             type="button"
-            class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+            class="nx-btn nx-btn-primary nx-btn-sm"
             [disabled]="busy()"
             (click)="approve.emit(selected())"
           >
@@ -41,23 +41,23 @@ const ACTIONS: { value: ReviewReply["action"]; label: string }[] = [
         <div class="mt-2 grid gap-2 rounded-md border border-border bg-surface p-3 md:grid-cols-[auto_1fr_240px]" [class.opacity-50]="!row.include">
           <input
             type="checkbox"
-            class="mt-1 size-4 accent-(--nx-accent)"
+            class="mt-1 size-4"
             [attr.aria-label]="'Publicar respuesta al hilo ' + row.threadId"
             [checked]="row.include"
             (change)="patch(i, { include: !row.include })"
           />
           <label class="flex flex-col gap-1">
-            <span class="text-[11px] text-muted">{{ row.repo }} · hilo {{ row.threadId }}</span>
+            <span class="text-xs text-muted">{{ row.repo }} · hilo {{ row.threadId }}</span>
             <textarea
               rows="2"
-              class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+              class="nx-input resize-y"
               [value]="row.reply"
               (input)="patch(i, { reply: value($event) })"
             ></textarea>
           </label>
           <label class="flex flex-col gap-1">
-            <span class="text-[11px] text-muted">Acción</span>
-            <select class="rounded-md border border-border bg-surface-2 px-2 py-1.5" (change)="patch(i, { action: $any(value($event)) })">
+            <span class="text-xs text-muted">Acción</span>
+            <select class="nx-input" (change)="patch(i, { action: $any(value($event)) })">
               @for (action of actions; track action.value) {
                 <option [value]="action.value" [selected]="action.value === row.action">{{ action.label }}</option>
               }

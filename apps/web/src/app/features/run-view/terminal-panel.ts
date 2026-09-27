@@ -10,7 +10,7 @@ export type TerminalRequest = {
   title: string;
 };
 
-const FONT_SIZE = 12;
+const FONT_SIZE = 13;
 
 function cssVar(name: string): string {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
@@ -20,15 +20,15 @@ function cssVar(name: string): string {
 @Component({
   selector: "nx-terminal-panel",
   template: `
-    <div class="flex h-8 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 text-[12px]">
+    <div class="flex h-8 shrink-0 items-center gap-3 border-b border-border bg-surface px-3 text-sm">
       <span class="size-2 rounded-full" [class]="connected() ? 'bg-ok' : 'bg-muted'" aria-hidden="true"></span>
       <span class="font-medium">{{ request().title }}</span>
       <span class="text-muted">{{ connected() ? "conectada" : "cerrada" }}</span>
       <span class="ml-auto flex gap-1">
-        <button type="button" class="rounded px-2 py-0.5 text-muted hover:bg-surface-3 hover:text-fg" (click)="toggleMaximize.emit()">
+        <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" (click)="toggleMaximize.emit()">
           ⤢ <span class="sr-only">Maximizar o restaurar</span>
         </button>
-        <button type="button" class="rounded px-2 py-0.5 text-muted hover:bg-surface-3 hover:text-fg" aria-label="Cerrar terminal" (click)="closed.emit()">
+        <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" aria-label="Cerrar terminal" (click)="closed.emit()">
           ×
         </button>
       </span>

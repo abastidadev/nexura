@@ -1,10 +1,10 @@
 <div class="flex h-full flex-col gap-4 p-5 md:p-8">
   <header class="flex shrink-0 flex-wrap items-center gap-3">
-    <h1 class="text-2xl font-bold tracking-tight">Agentes</h1>
-    <p class="text-[12px] text-muted" role="status">
+    <h1 class="text-2xl font-semibold tracking-tight md:text-[1.75rem]">Agentes</h1>
+    <p class="text-sm text-muted" role="status">
       {{ totals().working }} trabajando · {{ totals().waiting }} en espera · {{ totals().flows }} flujo(s) activo(s)
     </p>
-    <details class="relative text-[12px]">
+    <details class="relative text-sm">
       <summary class="cursor-pointer text-muted hover:text-fg">¿Qué significa?</summary>
       <p class="absolute left-0 z-30 mt-1 w-96 rounded-md border border-border bg-surface p-3 leading-relaxed text-fg-soft shadow-lg">
         Cada flujo tiene su color: alfombra, sillas, placa y el cordón de la acreditación de sus agentes. La ropa delata el modelo (camiseta
@@ -13,11 +13,10 @@
         en un agente para abrir su flujo.
       </p>
     </details>
-    <div class="ml-auto flex rounded-md border border-border p-0.5 text-[12px]" role="group" aria-label="Qué flujos mostrar">
+    <div class="nx-seg ml-auto" role="group" aria-label="Qué flujos mostrar">
       <button
         type="button"
-        class="rounded px-2.5 py-1"
-        [class]="filter() === 'active' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'"
+        [class]="filter() === 'active' ? 'nx-seg-on' : ''"
         [attr.aria-pressed]="filter() === 'active'"
         (click)="filter.set('active')"
       >
@@ -25,8 +24,7 @@
       </button>
       <button
         type="button"
-        class="rounded px-2.5 py-1"
-        [class]="filter() === 'all' ? 'bg-accent-soft text-accent' : 'text-muted hover:text-fg'"
+        [class]="filter() === 'all' ? 'nx-seg-on' : ''"
         [attr.aria-pressed]="filter() === 'all'"
         (click)="filter.set('all')"
         title="Incluye los flujos terminados en las últimas 24 h: sus agentes siguen por la oficina"
@@ -41,7 +39,7 @@
       @for (room of rooms(); track room.run.id) {
         <li class="min-w-0">
           <a
-            class="flex max-w-96 min-w-0 items-center gap-2 rounded-md border px-2 py-1 text-[12px] hover:bg-surface-2"
+            class="flex max-w-96 min-w-0 items-center gap-2 rounded-md border px-2 py-1 text-sm hover:bg-surface-2"
             [class]="focus() === room.run.id ? 'border-border-strong bg-surface-2' : 'border-border bg-surface'"
             [class.opacity-70]="!room.live"
             [routerLink]="['/runs', room.run.id]"

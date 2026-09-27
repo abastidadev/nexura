@@ -17,7 +17,7 @@ const ON_DEMAND: Record<string, string> = { classify: "modo Automático", addres
         con qué modelo y esfuerzo, se decide en los perfiles. Puedes añadir pasos propios entre los de Nexura.
       </p>
       <a
-        class="shrink-0 rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90"
+        class="nx-btn nx-btn-primary shrink-0"
         routerLink="/config"
         [queryParams]="{ tab: 'steps', create: 1 }"
       >
@@ -26,7 +26,7 @@ const ON_DEMAND: Record<string, string> = { classify: "modo Automático", addres
     </div>
     <div class="overflow-hidden rounded-lg border border-border bg-surface">
       <table class="w-full border-collapse text-left">
-        <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+        <thead class="border-b border-border text-xs text-muted">
           <tr>
             <th class="px-4 py-2 font-medium">Paso</th>
             <th class="px-4 py-2 font-medium">Tipo</th>
@@ -41,18 +41,18 @@ const ON_DEMAND: Record<string, string> = { classify: "modo Automático", addres
             <tr class="border-b border-border last:border-b-0 hover:bg-surface-2">
               <td class="px-4 py-2.5">
                 <a class="font-medium hover:text-accent hover:underline" routerLink="/config" [queryParams]="{ tab: 'steps', step: row.name }">{{ row.label }}</a>
-                <span class="ml-2 font-mono text-[11px] text-muted">{{ row.name }}</span>
+                <span class="ml-2 font-mono text-xs text-muted">{{ row.name }}</span>
                 @if (row.custom) {
-                  <span class="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-muted uppercase" [attr.title]="row.description">propio</span>
+                  <span class="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-2xs text-muted" [attr.title]="row.description">propio</span>
                 }
               </td>
-              <td class="px-4 py-2.5 text-[12px] text-fg-soft">{{ row.builtin ? "sin LLM" : "claude" }}</td>
-              <td class="max-w-[280px] truncate px-4 py-2.5 font-mono text-[12px] text-fg-soft" [attr.title]="row.tools">{{ row.tools }}</td>
-              <td class="px-4 py-2.5 font-mono text-[12px]">{{ row.timeout }}</td>
-              <td class="px-4 py-2.5 text-[12px] text-fg-soft">{{ row.usedBy }}</td>
+              <td class="px-4 py-2.5 text-sm text-fg-soft">{{ row.builtin ? "sin LLM" : "claude" }}</td>
+              <td class="max-w-[280px] truncate px-4 py-2.5 font-mono text-sm text-fg-soft" [attr.title]="row.tools">{{ row.tools }}</td>
+              <td class="px-4 py-2.5 font-mono text-sm">{{ row.timeout }}</td>
+              <td class="px-4 py-2.5 text-sm text-fg-soft">{{ row.usedBy }}</td>
               <td class="px-4 py-2.5 text-right">
                 <a
-                  class="rounded-md border border-border px-2.5 py-1 text-[12px] hover:bg-surface-3"
+                  class="nx-btn nx-btn-sm"
                   routerLink="/config"
                   [queryParams]="{ tab: 'steps', step: row.name }"
                   >Editar</a

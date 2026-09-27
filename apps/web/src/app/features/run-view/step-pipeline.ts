@@ -31,7 +31,7 @@ type PipelineItem =
           }
           @if (item.type === "run") {
             <span
-              class="absolute top-2 left-1.5 grid size-4 place-items-center rounded-full text-[10px] font-bold"
+              class="absolute top-2 left-1.5 grid size-4 place-items-center rounded-full text-2xs font-bold"
               [class]="item.tone.bg + ' ' + item.tone.text"
               [class.nx-pulse]="item.status.label === 'Ejecutando'"
               aria-hidden="true"
@@ -47,26 +47,26 @@ type PipelineItem =
               <span class="flex items-center gap-1.5">
                 <span class="font-medium">{{ item.label }}</span>
                 @if (item.attempt > 1) {
-                  <span class="rounded bg-surface-3 px-1 text-[10px] text-muted" [attr.title]="item.loop ? 'Vuelta de review/QA' : 'Reintento'">
+                  <span class="rounded bg-surface-3 px-1 text-2xs text-muted" [attr.title]="item.loop ? 'Vuelta de review/QA' : 'Reintento'">
                     #{{ item.attempt }}{{ item.loop ? " ↺" : "" }}
                   </span>
                 }
-                <span class="ml-auto font-mono text-[11px]" [class]="item.tone.text">{{ item.status.label }}</span>
+                <span class="ml-auto font-mono text-xs" [class]="item.tone.text">{{ item.status.label }}</span>
               </span>
-              <span class="mt-0.5 flex gap-2 text-[11px] text-muted">
+              <span class="mt-0.5 flex gap-2 text-xs text-muted">
                 <span>{{ item.detail }}</span>
                 <span class="ml-auto font-mono">{{ item.cost }}</span>
                 <span class="font-mono">{{ item.duration }}</span>
               </span>
               @if (item.error) {
-                <span class="mt-1 line-clamp-2 block text-[11px] text-err">{{ item.error }}</span>
+                <span class="mt-1 line-clamp-2 block text-xs text-err">{{ item.error }}</span>
               }
             </button>
           } @else {
             <span class="absolute top-2 left-1.5 size-4 rounded-full border border-dashed border-border-strong" aria-hidden="true"></span>
             <div class="mb-1 px-2 py-1.5 text-muted">
               <span class="block">{{ item.label }}</span>
-              <span class="text-[11px]">{{ item.detail }} · pendiente</span>
+              <span class="text-xs">{{ item.detail }} · pendiente</span>
             </div>
           }
         </li>

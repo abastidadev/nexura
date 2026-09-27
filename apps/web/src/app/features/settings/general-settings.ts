@@ -10,16 +10,16 @@ import { NexuraStore } from "../../core/nexura-store";
       <div>
         <div class="flex items-center gap-2">
           <h2 class="font-semibold">Agentes</h2>
-          <button type="button" class="ml-auto rounded-md border border-border px-2 py-0.5 text-[12px] hover:bg-surface-3" (click)="refreshAgents()">
+          <button type="button" class="nx-btn nx-btn-sm ml-auto" (click)="refreshAgents()">
             {{ agents.isLoading() ? "Comprobando…" : "Volver a comprobar" }}
           </button>
         </div>
-        <p class="mt-1 text-[12px] text-muted">
+        <p class="mt-1 text-sm text-muted">
           Cada paso de un perfil puede ir con Claude Code, Codex o GitHub Copilot, y se pueden mezclar en un mismo flujo (también los dos
           jueces de la revisión doble ciega). Se comprueba con <code class="font-mono">--version</code>, sin gastar tokens. Codex usa tu
           plan de ChatGPT (<code class="font-mono">codex login</code>) y Copilot el tuyo de GitHub (<code class="font-mono">copilot login</code>).
         </p>
-        <ul class="mt-2 flex flex-col gap-1 text-[12px]">
+        <ul class="mt-2 flex flex-col gap-1 text-sm">
           @for (info of agentList(); track info.agent) {
             <li class="flex flex-wrap items-baseline gap-2">
               <span class="w-24 font-medium">{{ agentLabels[info.agent] }}</span>
@@ -31,7 +31,7 @@ import { NexuraStore } from "../../core/nexura-store";
             </li>
           }
         </ul>
-        <p class="mt-2 text-[11px] text-muted">
+        <p class="mt-2 text-xs text-muted">
           Instalar: <code class="font-mono">npm install -g &#64;openai/codex</code> · <code class="font-mono">winget install GitHub.Copilot</code> (o <code class="font-mono">npm install -g &#64;github/copilot</code>).
           Otro binario: <code class="font-mono">NEXURA_CLAUDE_BIN</code>, <code class="font-mono">NEXURA_CODEX_BIN</code>,
           <code class="font-mono">NEXURA_COPILOT_BIN</code>. Solo los pasos con Claude miden la cuota, respetan el presupuesto y admiten mensajes a
@@ -41,7 +41,7 @@ import { NexuraStore } from "../../core/nexura-store";
 
       <div>
         <h2 class="font-semibold">Cuota del plan</h2>
-        <p class="mt-1 text-[12px] text-muted">
+        <p class="mt-1 text-sm text-muted">
           El uso de las ventanas de 5 h y 7 días llega en cada llamada a Claude (no hay forma gratuita de consultarlo aparte).
           Incluye todo tu uso de Claude, también las sesiones interactivas. Con el umbral, Nexura no lanza pasos nuevos con Claude
           mientras la ventana de 5 h esté por encima, y sigue sola cuando se reinicia; los pasos sin LLM siguen corriendo.
@@ -53,7 +53,7 @@ import { NexuraStore } from "../../core/nexura-store";
             min="1"
             max="100"
             placeholder="nunca"
-            class="w-20 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono outline-none focus:border-accent"
+            class="nx-input w-20 font-mono"
             [value]="draft().quotaPausePercent ?? ''"
             (input)="setQuota(value($event))"
           />
@@ -63,7 +63,7 @@ import { NexuraStore } from "../../core/nexura-store";
 
       <div>
         <h2 class="font-semibold">Comentarios de PR</h2>
-        <p class="mt-1 text-[12px] text-muted">
+        <p class="mt-1 text-sm text-muted">
           Cada cuánto se revisan (por REST, gratis) las PRs abiertas de los flujos terminados. Solo avisa y marca la pestaña;
           nunca lanza Claude por su cuenta. Deja de vigilar una PR cuando se completa o se abandona.
         </p>
@@ -73,17 +73,17 @@ import { NexuraStore } from "../../core/nexura-store";
             type="number"
             min="0"
             step="30"
-            class="w-24 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono outline-none focus:border-accent"
+            class="nx-input w-24 font-mono"
             [value]="draft().prPollSeconds"
             (input)="patch({ prPollSeconds: +value($event) })"
           />
-          segundos <span class="text-[12px] text-muted">(0 = apagado, mínimo 30)</span>
+          segundos <span class="text-sm text-muted">(0 = apagado, mínimo 30)</span>
         </label>
       </div>
 
       <div>
         <h2 class="font-semibold">Memoria compartida</h2>
-        <p class="mt-1 text-[12px] text-muted">
+        <p class="mt-1 text-sm text-muted">
           Los pasos con memoria (se elige en cada paso) reciben lo que se sabe del ticket y del repo, y pueden buscar y guardar decisiones,
           causas raíz y convenciones. Al acabar cada ticket, Nexura guarda un resumen sin gastar tokens. Se guarda en
           <code class="font-mono">data/memory.sqlite</code>; en Configuración → Memoria puedes consultarla y dársela también a tu Claude Code
@@ -96,7 +96,7 @@ import { NexuraStore } from "../../core/nexura-store";
       </div>
 
       <div class="flex items-center gap-2">
-        <button type="button" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy()" (click)="save()">
+        <button type="button" class="nx-btn nx-btn-primary" [disabled]="busy()" (click)="save()">
           Guardar
         </button>
         @if (message(); as msg) {

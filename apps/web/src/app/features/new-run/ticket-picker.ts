@@ -1,6 +1,7 @@
 import { afterNextRender, Component, computed, ElementRef, inject, input, output, resource, signal, viewChild } from "@angular/core";
 import type { TicketSource, WorkItemScope, WorkItemSummary } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
+import { Icon } from "../../shared/icon";
 
 export const SOURCE_LABELS: Record<TicketSource, string> = { azure: "Azure DevOps", github: "GitHub" };
 
@@ -18,15 +19,15 @@ const SCOPES: Record<TicketSource, { id: WorkItemScope; label: string; help: str
 /** Open Azure DevOps work items (backlog + in progress) or GitHub issues to start a flow from. Plain REST, no tokens. */
 @Component({
   selector: "nx-ticket-picker",
+  imports: [Icon],
   template: `
     <div class="flex flex-wrap items-center gap-2 border-b border-border p-3">
-      <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Qué tickets">
+      <div class="nx-seg" role="radiogroup" aria-label="Qué tickets">
         @for (option of scopes(); track option.id) {
           <button
             type="button"
             role="radio"
-            class="px-2.5 py-1 text-[12px]"
-            [class]="scope() === option.id ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+            [class]="scope() === option.id ? 'nx-seg-on' : ''"
             [attr.aria-checked]="scope() === option.id"
             [attr.title]="option.help"
             (click)="scope.set(option.id)"
@@ -37,15 +38,15 @@ const SCOPES: Record<TicketSource, { id: WorkItemScope; label: string; help: str
       </div>
       <input
         #search
-        class="min-w-0 flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-1 outline-none focus:border-accent"
+        class="nx-input min-w-0 flex-1"
         placeholder="Filtrar por ID, título, tipo, estado…"
         aria-label="Filtrar tickets"
         [value]="query()"
         (input)="query.set($any($event.target).value)"
         (keydown.enter)="$event.preventDefault(); pickFirst()"
       />
-      <button type="button" class="rounded px-2 py-1 text-muted hover:bg-surface-3 hover:text-fg" title="Recargar" (click)="tickets.reload()">⟳</button>
-      <button type="button" class="rounded px-2 py-1 text-muted hover:bg-surface-3 hover:text-fg" aria-label="Cerrar" (click)="closed.emit()">×</button>
+      <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" title="Recargar" aria-label="Recargar la lista" (click)="tickets.reload()"><nx-icon name="refresh" [size]="15" /></button>
+      <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" aria-label="Cerrar" (click)="closed.emit()">×</button>
     </div>
 
     @if (states().length > 1) {
@@ -53,7 +54,7 @@ const SCOPES: Record<TicketSource, { id: WorkItemScope; label: string; help: str
         @for (state of states(); track state.name) {
           <button
             type="button"
-            class="rounded-full border px-2 py-0.5 text-[11px]"
+            class="rounded-full border px-2 py-0.5 text-xs"
             [class]="hiddenStates().has(state.name) ? 'border-border text-muted line-through' : 'border-accent bg-accent-soft text-fg'"
             [attr.aria-pressed]="!hiddenStates().has(state.name)"
             (click)="toggleState(state.name)"
@@ -68,7 +69,7 @@ const SCOPES: Record<TicketSource, { id: WorkItemScope; label: string; help: str
       @if (tickets.isLoading()) {
         <p class="px-3 py-8 text-center text-muted">Consultando {{ sourceLabel() }}…</p>
       } @else if (tickets.error()) {
-        <p class="m-3 rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">{{ errorText() }}</p>
+        <p class="m-3 rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">{{ errorText() }}</p>
       } @else if (visible().length === 0) {
         <p class="px-3 py-8 text-center text-muted">
           {{ list().length ? "Ningún ticket coincide con el filtro." : "No hay tickets abiertos aquí." }}
@@ -78,21 +79,21 @@ const SCOPES: Record<TicketSource, { id: WorkItemScope; label: string; help: str
           @for (ticket of visible(); track ticket.id) {
             <li>
               <button type="button" class="flex w-full items-start gap-3 px-3 py-2 text-left hover:bg-surface-2" (click)="picked.emit(ticket.id)">
-                <span class="w-16 shrink-0 font-mono text-[12px] text-muted">#{{ ticket.id }}</span>
+                <span class="w-16 shrink-0 font-mono text-sm text-muted">#{{ ticket.id }}</span>
                 <span class="min-w-0 flex-1">
                   <span class="block truncate font-medium">{{ ticket.title }}</span>
-                  <span class="block truncate text-[11px] text-muted">
+                  <span class="block truncate text-xs text-muted">
                     {{ ticket.type }} · {{ ticket.project }}{{ ticket.assignedTo ? " · " + ticket.assignedTo : "" }}
                   </span>
                   @if (ticket.labels?.length) {
                     <span class="mt-0.5 flex flex-wrap gap-1">
                       @for (label of ticket.labels; track label) {
-                        <span class="rounded-full bg-surface-3 px-1.5 text-[10px] text-fg-soft">{{ label }}</span>
+                        <span class="rounded-full bg-surface-3 px-1.5 text-2xs text-fg-soft">{{ label }}</span>
                       }
                     </span>
                   }
                 </span>
-                <span class="shrink-0 rounded px-1.5 py-0.5 text-[11px]" [class]="stateClass(ticket.state)">{{ ticket.state }}</span>
+                <span class="shrink-0 rounded px-1.5 py-0.5 text-xs" [class]="stateClass(ticket.state)">{{ ticket.state }}</span>
               </button>
             </li>
           }

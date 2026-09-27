@@ -1,68 +1,68 @@
 <div class="flex flex-wrap items-center gap-3">
-  <a class="rounded-md border border-border px-2.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" routerLink="/config" [queryParams]="{ tab: 'profiles' }">
+  <a class="nx-btn nx-btn-sm" routerLink="/config" [queryParams]="{ tab: 'profiles' }">
     ← Perfiles
   </a>
-  <h1 class="text-xl font-semibold tracking-tight">
+  <h2 class="text-xl font-semibold tracking-tight">
     @if (isNew()) {
       Nuevo perfil
       @if (from()) {
-        <span class="text-[14px] font-normal text-muted">· copia de {{ from() }}</span>
+        <span class="text-base font-normal text-muted">· copia de {{ from() }}</span>
       }
     } @else {
       Editar perfil · <span class="font-mono">{{ name() }}</span>
     }
-  </h1>
+  </h2>
   @if (dirty() && !isNew()) {
-    <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
+    <span class="rounded-full bg-warn-soft px-2 py-0.5 text-xs text-warn">sin guardar</span>
   }
 </div>
 
 @if (notFound()) {
-  <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">No existe ningún perfil llamado {{ name() }}.</p>
+  <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">No existe ningún perfil llamado {{ name() }}.</p>
 } @else if (draft(); as profile) {
   <form class="rounded-lg border border-border bg-surface p-4" (submit)="$event.preventDefault(); save()">
     <div class="grid gap-3 md:grid-cols-[220px_1fr_120px_150px]">
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-muted uppercase">Nombre</span>
+        <span class="text-xs font-medium text-muted">Nombre</span>
         <input
-          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent disabled:opacity-60"
+          class="nx-input font-mono disabled:opacity-60"
           placeholder="solo-estilos"
           [value]="profile.name"
           [disabled]="!isNew()"
           (input)="patch({ name: value($event) })"
         />
         @if (isNew()) {
-          <span class="text-[11px] text-muted">minúsculas, números y guiones</span>
+          <span class="text-xs text-muted">minúsculas, números y guiones</span>
         }
       </label>
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-muted uppercase">Descripción</span>
+        <span class="text-xs font-medium text-muted">Descripción</span>
         <input
-          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          class="nx-input"
           placeholder="Cuándo usarlo; el modo Automático decide leyendo esto"
           [value]="profile.description"
           (input)="patch({ description: value($event) })"
         />
       </label>
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-muted uppercase" title="Cuántas veces review/QA pueden devolver el flujo a implement">Vueltas máx.</span>
+        <span class="text-xs font-medium text-muted" title="Cuántas veces review/QA pueden devolver el flujo a implement">Vueltas máx.</span>
         <input
           type="number"
           min="0"
           max="10"
-          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent"
+          class="nx-input font-mono"
           [value]="profile.maxLoops"
           (input)="patch({ maxLoops: +value($event) })"
         />
       </label>
       <label class="flex flex-col gap-1">
         <span
-          class="text-[11px] font-medium text-muted uppercase"
+          class="text-xs font-medium text-muted"
           title="Doble ciega: dos jueces revisan sin verse y solo vuelve a implement lo que confirman ambos (duplica el coste de codeReview)"
           >Revisión de código</span
         >
         <select
-          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+          class="nx-input"
           [value]="profile.reviewMode ?? 'single'"
           (change)="setReviewMode($event)"
         >
@@ -71,13 +71,13 @@
         </select>
       </label>
       <label class="flex flex-col gap-1">
-        <span class="text-[11px] font-medium text-muted uppercase" title="Tope de coste por flujo; se pasa a cada paso con Claude como --max-budget-usd (Codex y Copilot no informan de coste)">Presupuesto $</span>
+        <span class="text-xs font-medium text-muted" title="Tope de coste por flujo; se pasa a cada paso con Claude como --max-budget-usd (Codex y Copilot no informan de coste)">Presupuesto $</span>
         <input
           type="number"
           min="0"
           step="0.05"
           placeholder="sin límite"
-          class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent"
+          class="nx-input font-mono"
           [value]="profile.budgetUsd ?? ''"
           (input)="setBudget(value($event))"
         />
@@ -85,7 +85,7 @@
     </div>
 
     <table class="mt-4 w-full border-collapse text-left">
-      <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+      <thead class="border-b border-border text-xs text-muted">
         <tr>
           <th class="py-2 pr-3 font-medium">Activo</th>
           <th class="py-2 pr-3 font-medium">Paso</th>
@@ -99,11 +99,11 @@
           <tr class="border-b border-border last:border-b-0" [class.opacity-50]="!row.config.enabled && !row.onDemand">
             <td class="py-2 pr-3">
               @if (row.onDemand) {
-                <span class="text-[11px] text-muted" title="Se lanza a mano desde la PR del flujo">a mano</span>
+                <span class="text-xs text-muted" title="Se lanza a mano desde la PR del flujo">a mano</span>
               } @else {
                 <input
                   type="checkbox"
-                  class="size-4 accent-(--nx-accent)"
+                  class="size-4"
                   [attr.aria-label]="'Activar ' + row.label"
                   [checked]="row.config.enabled"
                   (change)="patchStep(row.name, { enabled: !row.config.enabled })"
@@ -113,7 +113,7 @@
             <td class="py-2 pr-3 font-medium">
               {{ row.label }}
               @if (row.custom) {
-                <span class="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-[10px] font-normal text-muted uppercase">propio</span>
+                <span class="ml-1 rounded bg-surface-3 px-1.5 py-0.5 text-2xs font-normal text-muted">propio</span>
               }
             </td>
             @if (row.builtin) {
@@ -121,20 +121,20 @@
             } @else {
               @let agent = agentOf(row.config);
               <td class="py-2 pr-3">
-                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" [attr.aria-label]="'Agente de ' + row.label" (change)="setAgent(row.name, $event)">
+                <select class="nx-input" [attr.aria-label]="'Agente de ' + row.label" (change)="setAgent(row.name, $event)">
                   @for (kind of agentKinds; track kind) {
                     <option [value]="kind" [selected]="kind === agent">{{ agentLabels[kind] }}</option>
                   }
                 </select>
                 @if (missingAgents().get(agent); as problem) {
-                  <span class="ml-1 text-[11px] text-warn" [title]="problem">⚠ no instalado</span>
+                  <span class="ml-1 text-xs text-warn" [title]="problem">⚠ no instalado</span>
                 }
               </td>
               <td class="py-2 pr-3">
                 <nx-model-picker [models]="agentModels()[agent]" [value]="row.config.model" [label]="'Modelo de ' + row.label" (valueChange)="setModel(row.name, $event)" />
               </td>
               <td class="py-2">
-                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" [attr.aria-label]="'Esfuerzo de ' + row.label" (change)="setEffort(row.name, $event)">
+                <select class="nx-input" [attr.aria-label]="'Esfuerzo de ' + row.label" (change)="setEffort(row.name, $event)">
                   @for (effort of efforts; track effort) {
                     <option [value]="effort" [selected]="effort === row.config.effort">{{ effort }}</option>
                   }
@@ -150,14 +150,14 @@
                 ↳ Juez B
               </td>
               <td class="py-2 pr-3">
-                <select class="rounded border border-border bg-surface-2 px-1.5 py-1" aria-label="Agente del juez B" (change)="setJudgeBAgent($event)">
+                <select class="nx-input" aria-label="Agente del juez B" (change)="setJudgeBAgent($event)">
                   <option value="same" [selected]="!judge">Igual que el juez A</option>
                   @for (kind of agentKinds; track kind) {
                     <option [value]="kind" [selected]="judge && kind === agentOf(judge)">{{ agentLabels[kind] }}</option>
                   }
                 </select>
                 @if (judge && missingAgents().get(agentOf(judge)); as problem) {
-                  <span class="ml-1 text-[11px] text-warn" [title]="problem">⚠ no instalado</span>
+                  <span class="ml-1 text-xs text-warn" [title]="problem">⚠ no instalado</span>
                 }
               </td>
               @if (judge) {
@@ -165,40 +165,40 @@
                   <nx-model-picker [models]="agentModels()[agentOf(judge)]" [value]="judge.model" label="Modelo del juez B" (valueChange)="patchJudgeB({ model: $event })" />
                 </td>
                 <td class="py-2">
-                  <select class="rounded border border-border bg-surface-2 px-1.5 py-1" aria-label="Esfuerzo del juez B" (change)="patchJudgeB({ effort: $any(value($event)) })">
+                  <select class="nx-input" aria-label="Esfuerzo del juez B" (change)="patchJudgeB({ effort: $any(value($event)) })">
                     @for (effort of efforts; track effort) {
                       <option [value]="effort" [selected]="effort === judge.effort">{{ effort }}</option>
                     }
                   </select>
                 </td>
               } @else {
-                <td class="py-2 text-[12px] text-muted" colspan="2">mismo agente, modelo y esfuerzo que codeReview</td>
+                <td class="py-2 text-sm text-muted" colspan="2">mismo agente, modelo y esfuerzo que codeReview</td>
               }
             </tr>
           }
         }
       </tbody>
     </table>
-    <p class="mt-2 text-[11px] text-muted">
+    <p class="mt-2 text-xs text-muted">
       La lista de Copilot la da el CLI instalado; en Claude, sonnet/opus/haiku/fable apuntan siempre al último modelo. Con «Otro…» vale cualquier id que acepte ese CLI. Codex y Copilot no informan de coste: el presupuesto y la pausa por cuota
       solo se aplican a los pasos con Claude, y solo Claude admite mensajes a mitad de paso.
     </p>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">
-      <button type="submit" class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy() || !dirty()">
+      <button type="submit" class="nx-btn nx-btn-primary" [disabled]="busy() || !dirty()">
         {{ isNew() ? "Crear perfil" : "Guardar cambios" }}
       </button>
-      <a class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" routerLink="/config" [queryParams]="{ tab: 'profiles' }">Cancelar</a>
+      <a class="nx-btn" routerLink="/config" [queryParams]="{ tab: 'profiles' }">Cancelar</a>
       @if (!isNew()) {
         <a
-          class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3"
+          class="nx-btn"
           routerLink="/config"
           [queryParams]="{ tab: 'profiles', create: 1, from: name() }"
           >Duplicar como nuevo</a
         >
         <button
           type="button"
-          class="ml-auto rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40"
+          class="nx-btn nx-btn-danger ml-auto"
           [disabled]="busy()"
           (click)="remove()"
         >

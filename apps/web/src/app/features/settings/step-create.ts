@@ -14,10 +14,10 @@ const OFF_PIPELINE = new Set(["classify", "addressReview", "prReview"]);
   imports: [RouterLink],
   template: `
     <div class="flex flex-wrap items-center gap-3">
-      <a class="rounded-md border border-border px-2.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" routerLink="/config" [queryParams]="{ tab: 'steps' }">
+      <a class="nx-btn nx-btn-sm" routerLink="/config" [queryParams]="{ tab: 'steps' }">
         ← Pasos
       </a>
-      <h1 class="text-xl font-semibold tracking-tight">Nuevo paso</h1>
+      <h2 class="text-xl font-semibold tracking-tight">Nuevo paso</h2>
     </div>
 
     <form class="flex flex-col gap-4 rounded-lg border border-border bg-surface p-4" (submit)="$event.preventDefault(); create()">
@@ -28,36 +28,36 @@ const OFF_PIPELINE = new Set(["classify", "addressReview", "prReview"]);
       </p>
       <div class="grid gap-4 md:grid-cols-3">
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] font-medium text-muted uppercase">Nombre técnico</span>
+          <span class="text-xs font-medium text-muted">Nombre técnico</span>
           <input
-            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 font-mono outline-none focus:border-accent"
+            class="nx-input font-mono"
             placeholder="docs"
             [value]="name()"
             (input)="name.set(value($event))"
           />
-          <span class="text-[11px]" [class]="name() && !validName() ? 'text-err' : 'text-muted'">Letra inicial; luego letras, números o guiones.</span>
+          <span class="text-xs" [class]="name() && !validName() ? 'text-err' : 'text-muted'">Letra inicial; luego letras, números o guiones.</span>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] font-medium text-muted uppercase">Nombre visible</span>
+          <span class="text-xs font-medium text-muted">Nombre visible</span>
           <input
-            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+            class="nx-input"
             placeholder="Documentación"
             [value]="label()"
             (input)="label.set(value($event))"
           />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] font-medium text-muted uppercase">Se ejecuta después de</span>
-          <select class="rounded-md border border-border bg-surface-2 px-2 py-1.5" (change)="after.set(value($event))">
+          <span class="text-xs font-medium text-muted">Se ejecuta después de</span>
+          <select class="nx-input" (change)="after.set(value($event))">
             @for (option of anchors(); track option.name) {
               <option [value]="option.name" [selected]="option.name === after()">{{ option.label }}</option>
             }
           </select>
         </label>
         <label class="flex flex-col gap-1 md:col-span-3">
-          <span class="text-[11px] font-medium text-muted uppercase">Para qué sirve</span>
+          <span class="text-xs font-medium text-muted">Para qué sirve</span>
           <input
-            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+            class="nx-input"
             placeholder="Actualiza el README y el CHANGELOG con lo que ha cambiado"
             [value]="description()"
             (input)="description.set(value($event))"
@@ -67,12 +67,12 @@ const OFF_PIPELINE = new Set(["classify", "addressReview", "prReview"]);
       <div class="flex flex-wrap items-center gap-2">
         <button
           type="submit"
-          class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40"
+          class="nx-btn nx-btn-primary"
           [disabled]="busy() || !validName()"
         >
           Crear y editar su prompt
         </button>
-        <a class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" routerLink="/config" [queryParams]="{ tab: 'steps' }">Cancelar</a>
+        <a class="nx-btn" routerLink="/config" [queryParams]="{ tab: 'steps' }">Cancelar</a>
         @if (error(); as message) {
           <span class="text-err" role="alert">{{ message }}</span>
         }

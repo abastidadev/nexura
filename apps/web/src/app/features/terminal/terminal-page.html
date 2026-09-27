@@ -1,9 +1,9 @@
 <aside class="flex h-52 w-full shrink-0 flex-col border-b border-border bg-surface lg:h-auto lg:w-72 lg:border-r lg:border-b-0" aria-label="Conversaciones">
   <div class="flex flex-col gap-3 border-b border-border p-4">
-    <div><p class="text-[10px] font-bold tracking-[.15em] text-accent uppercase">Trabajo interactivo</p><h2 class="mt-1 text-[16px] font-semibold">Conversaciones</h2></div>
+    <div><h2 class="text-md font-semibold">Conversaciones</h2></div>
     <button
       type="button"
-      class="rounded-xl bg-accent-strong px-3 py-2 font-semibold text-white hover:brightness-110"
+      class="nx-btn nx-btn-primary"
       (click)="creating.set(true)"
     >
       + Nueva conversación
@@ -11,7 +11,7 @@
   </div>
   <div class="flex flex-col gap-1.5 border-b border-border p-2">
     <input
-      class="rounded-md border border-border bg-surface-2 px-2.5 py-1 outline-none focus:border-accent"
+      class="nx-input"
       type="search"
       placeholder="Buscar…"
       aria-label="Buscar conversaciones"
@@ -20,7 +20,7 @@
     />
     @if (projects().length > 1) {
       <select
-        class="rounded-md border border-border bg-surface-2 px-2 py-1"
+        class="nx-input"
         aria-label="Filtrar por proyecto"
         (change)="projectFilter.set($any($event.target).value)"
       >
@@ -34,7 +34,7 @@
 
   <nav class="min-h-0 flex-1 overflow-y-auto py-1" aria-label="Lista de conversaciones">
     @for (group of groups(); track group.name) {
-      <h2 class="px-3 pt-2.5 pb-1 text-[11px] font-medium tracking-wide text-muted uppercase">{{ group.name }}</h2>
+      <h2 class="px-3 pt-2.5 pb-1 text-xs font-medium text-muted">{{ group.name }}</h2>
       @for (conversation of group.items; track conversation.id) {
         <div
           class="group mx-1 flex cursor-pointer items-start gap-2 rounded-md px-2 py-1.5"
@@ -66,46 +66,42 @@
             } @else {
               <div class="truncate font-medium" [attr.title]="conversation.title">
                 @if (conversation.pinned) {
-                  <span class="text-accent" aria-label="Fijada">★</span>
+                  <nx-icon name="pin" [size]="13" class="mr-0.5 align-[-2px] text-accent" /><span class="sr-only">Fijada: </span>
                 }
                 {{ conversation.title }}
               </div>
             }
-            <div class="truncate text-[11px] text-muted">{{ chain(conversation) }} · {{ ago(conversation.updatedAt) }}</div>
+            <div class="truncate text-xs text-muted">{{ chain(conversation) }} · {{ ago(conversation.updatedAt) }}</div>
           </div>
           <div class="hidden shrink-0 items-center gap-0.5 group-focus-within:flex group-hover:flex">
             <button
               type="button"
-              class="rounded px-1 text-muted hover:bg-surface-3 hover:text-fg"
+              class="nx-icon-btn size-8! min-h-0! min-w-0!"
               [attr.aria-label]="conversation.pinned ? 'Desfijar' : 'Fijar arriba'"
               [attr.title]="conversation.pinned ? 'Desfijar' : 'Fijar arriba'"
               (click)="$event.stopPropagation(); togglePin(conversation)"
             >
-              {{ conversation.pinned ? "★" : "☆" }}
+              <nx-icon name="pin" [size]="15" [class.text-accent]="conversation.pinned" />
             </button>
             <button
               type="button"
-              class="rounded px-1 text-muted hover:bg-surface-3 hover:text-fg"
+              class="nx-icon-btn size-8! min-h-0! min-w-0!"
               aria-label="Renombrar"
               title="Renombrar"
               (click)="$event.stopPropagation(); renaming.set(conversation.id)"
-            >
-              ✎
-            </button>
+            ><nx-icon name="pencil" [size]="15" /></button>
             <button
               type="button"
-              class="rounded px-1 text-muted hover:bg-err-soft hover:text-err"
+              class="nx-icon-btn size-8! min-h-0! min-w-0! hover:bg-err-soft! hover:text-err!"
               aria-label="Borrar"
               title="Borrar"
               (click)="$event.stopPropagation(); remove(conversation)"
-            >
-              🗑
-            </button>
+            ><nx-icon name="trash" [size]="15" /></button>
           </div>
         </div>
       }
     } @empty {
-      <p class="px-3 py-4 text-[12px] text-muted">
+      <p class="px-3 py-4 text-sm text-muted">
         {{ store.conversations().length ? "Ninguna conversación coincide." : "Todavía no hay conversaciones." }}
       </p>
     }
@@ -132,79 +128,77 @@
           [class]="conversation.status === 'running' ? 'bg-ok nx-pulse' : 'bg-border-strong'"
           aria-hidden="true"
         ></span>
-        <h1 class="min-w-0 shrink truncate text-[14px] font-semibold" [attr.title]="conversation.title">{{ conversation.title }}</h1>
-        <span class="min-w-0 flex-1 truncate font-mono text-[11px] text-muted" [attr.title]="conversation.cwd">
+        <h1 class="min-w-0 shrink truncate text-base font-semibold" [attr.title]="conversation.title">{{ conversation.title }}</h1>
+        <span class="min-w-0 flex-1 truncate font-mono text-xs text-muted" [attr.title]="conversation.cwd">
           {{ conversation.repo ? conversation.repo + " · " : "" }}{{ conversation.cwd }}
         </span>
         <span class="flex shrink-0 items-center gap-1">
           @if (conversation.status === "running") {
             <button
               type="button"
-              class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+              class="nx-btn nx-btn-sm"
               [disabled]="busy()"
               title="Cierra el CLI; la sesión se puede reanudar"
               (click)="stop()"
             >
-              ⏹ Parar
+              <nx-icon name="stop" [size]="13" />Parar
             </button>
             <button
               type="button"
-              class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+              class="nx-btn nx-btn-sm"
               [disabled]="busy()"
               title="Cierra el CLI y lo vuelve a abrir en la misma sesión"
               (click)="resume()"
             >
-              ↻ Reiniciar
+              <nx-icon name="refresh" [size]="14" />Reiniciar
             </button>
           } @else {
             <button
               type="button"
-              class="rounded-md bg-accent-strong px-2.5 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+              class="nx-btn nx-btn-primary nx-btn-sm"
               [disabled]="busy()"
               (click)="resume()"
             >
-              ▶ Reanudar
+              <nx-icon name="play" [size]="13" />Reanudar
             </button>
           }
           @if (conversation.kind === "agent") {
             <button
               type="button"
-              class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+              class="nx-btn nx-btn-sm"
               [disabled]="busy()"
               title="Nueva conversación que parte del historial de esta (con el agente elegido abajo)"
               (click)="fork()"
             >
-              ⑂ Bifurcar
+              <nx-icon name="fork" [size]="14" />Bifurcar
             </button>
             <button
               type="button"
-              class="rounded-md border px-2.5 py-1"
-              [class]="showHistory() ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-3'"
+              class="nx-btn nx-btn-sm"
+              [class]="showHistory() ? 'border-accent! bg-accent-soft!' : ''"
               [attr.aria-pressed]="showHistory()"
               title="La conversación como texto, con todos los agentes por los que ha pasado"
               (click)="showHistory.set(!showHistory())"
             >
-              🗒 Historial
+              <nx-icon name="history" [size]="14" />Historial
             </button>
           }
           <button
             type="button"
-            class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+            class="nx-btn nx-btn-sm"
             [disabled]="busy()"
             title="Abre PowerShell en el mismo proyecto"
             (click)="openShell(conversation)"
           >
-            ⌨ Shell
+            <nx-icon name="terminal" [size]="14" />Shell
           </button>
           <button
             type="button"
-            class="rounded-md border border-border px-2 py-1 text-muted hover:border-err hover:bg-err-soft hover:text-err"
+            class="nx-btn nx-btn-sm hover:border-err! hover:bg-err-soft! hover:text-err!"
             aria-label="Borrar la conversación"
             title="Borrar"
             (click)="remove(conversation)"
-          >
-            🗑
-          </button>
+          ><nx-icon name="trash" [size]="15" /></button>
         </span>
       </div>
 
@@ -214,29 +208,29 @@
           @if (dirty()) {
             @if (agentChanged()) {
               <input
-                class="w-64 rounded-md border border-border bg-surface-2 px-2.5 py-1 outline-none focus:border-accent"
+                class="nx-input w-64"
                 [placeholder]="'Mensaje para ' + agentLabels[draft().agent] + ' (opcional)'"
                 [value]="message()"
                 (input)="message.set($any($event.target).value)"
                 (keydown.enter)="apply()"
               />
-              <label class="flex items-center gap-1.5 text-[12px] text-muted" title="Empieza sin pasarle lo hablado hasta ahora">
+              <label class="flex items-center gap-1.5 text-sm text-muted" title="Empieza sin pasarle lo hablado hasta ahora">
                 <input type="checkbox" [checked]="fresh()" (change)="fresh.set($any($event.target).checked)" />
                 Sin historial
               </label>
             }
             <button
               type="button"
-              class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+              class="nx-btn nx-btn-primary nx-btn-sm"
               [disabled]="busy()"
               (click)="apply()"
             >
               {{ agentChanged() ? "Cambiar a " + agentLabels[draft().agent] + (fresh() ? "" : " y continuar") : "Aplicar (reinicia en la misma sesión)" }}
             </button>
-            <button type="button" class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3" (click)="discard()">Descartar</button>
+            <button type="button" class="nx-btn nx-btn-sm" (click)="discard()">Descartar</button>
           }
         </div>
-        <div class="flex min-w-0 items-center gap-1.5 overflow-x-auto text-[11px] whitespace-nowrap text-muted">
+        <div class="flex min-w-0 items-center gap-1.5 overflow-x-auto text-xs whitespace-nowrap text-muted">
           @for (segment of conversation.segments; track $index) {
             @if (!$first) {
               <span aria-hidden="true">→</span>
@@ -275,20 +269,20 @@
             </span>
             <button
               type="button"
-              class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40"
+              class="nx-btn nx-btn-primary nx-btn-sm"
               [disabled]="busy()"
               (click)="resume()"
             >
-              ▶ Reanudar
+              <nx-icon name="play" [size]="13" />Reanudar
             </button>
             @if (conversation.kind === "agent") {
-              <button type="button" class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="resume(true)">
+              <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="resume(true)">
                 Sesión nueva
               </button>
             }
           </div>
         } @else {
-          <p class="shrink-0 border-t border-border bg-surface px-3 py-1 text-[11px] text-muted">
+          <p class="shrink-0 border-t border-border bg-surface px-3 py-1 text-xs text-muted">
             Shift+Enter: nueva línea · Ctrl+C con texto seleccionado: copiar · Ctrl+V: pegar
             @if (conversation.kind === "agent" && conversation.segments.at(-1)?.agent !== "codex") {
               · Shift+Tab dentro del agente cambia de modo sin reiniciar

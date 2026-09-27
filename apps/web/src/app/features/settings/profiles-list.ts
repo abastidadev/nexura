@@ -18,7 +18,7 @@ const BASE_PROFILES = new Set(["minimal", "standard", "full"]);
         (p. ej. "solo-estilos" o "bug-rapido"): aparecen al lanzar un flujo y el modo Automático también puede elegirlos por su descripción.
       </p>
       <a
-        class="shrink-0 rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90"
+        class="nx-btn nx-btn-primary shrink-0"
         routerLink="/config"
         [queryParams]="{ tab: 'profiles', create: 1 }"
       >
@@ -33,31 +33,31 @@ const BASE_PROFILES = new Set(["minimal", "standard", "full"]);
             <a class="font-mono font-semibold hover:text-accent hover:underline" routerLink="/config" [queryParams]="{ tab: 'profiles', edit: card.name }">{{
               card.name
             }}</a>
-            <span class="rounded bg-surface-3 px-1.5 py-0.5 text-[10px] text-muted uppercase">{{ card.base ? "base" : "propio" }}</span>
+            <span class="rounded bg-surface-3 px-1.5 py-0.5 text-2xs text-muted">{{ card.base ? "base" : "propio" }}</span>
           </div>
-          <p class="mt-1 text-[12px] text-fg-soft">{{ card.description || "Sin descripción" }}</p>
+          <p class="mt-1 text-sm text-fg-soft">{{ card.description || "Sin descripción" }}</p>
           <div class="mt-2 flex flex-wrap gap-1">
             @for (step of card.steps; track step) {
-              <span class="rounded bg-surface-3 px-1.5 py-0.5 text-[11px]">{{ step }}</span>
+              <span class="rounded bg-surface-3 px-1.5 py-0.5 text-xs">{{ step }}</span>
             }
           </div>
-          <p class="mt-2 text-[11px] text-muted">{{ card.maxLoops }} vuelta(s) · presupuesto {{ card.budget }}{{ card.blind ? " · revisión doble ciega" : "" }}{{ card.agents ? " · " + card.agents : "" }}</p>
+          <p class="mt-2 text-xs text-muted">{{ card.maxLoops }} vuelta(s) · presupuesto {{ card.budget }}{{ card.blind ? " · revisión doble ciega" : "" }}{{ card.agents ? " · " + card.agents : "" }}</p>
           <div class="mt-3 flex gap-1 border-t border-border pt-3">
             <a
-              class="rounded-md border border-border px-2.5 py-1 text-[12px] hover:bg-surface-3"
+              class="nx-btn nx-btn-sm"
               routerLink="/config"
               [queryParams]="{ tab: 'profiles', edit: card.name }"
               >Editar</a
             >
             <a
-              class="rounded-md border border-border px-2.5 py-1 text-[12px] hover:bg-surface-3"
+              class="nx-btn nx-btn-sm"
               routerLink="/config"
               [queryParams]="{ tab: 'profiles', create: 1, from: card.name }"
               >Duplicar</a
             >
             <button
               type="button"
-              class="ml-auto rounded-md px-2.5 py-1 text-[12px] text-err hover:bg-err-soft disabled:opacity-40"
+              class="nx-btn nx-btn-sm nx-btn-ghost text-err! hover:bg-err-soft! ml-auto"
               [disabled]="busy()"
               (click)="remove(card.name)"
             >

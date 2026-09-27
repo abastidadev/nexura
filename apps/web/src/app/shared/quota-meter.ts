@@ -4,6 +4,7 @@ import { RouterLink } from "@angular/router";
 import { Api } from "../core/api";
 import { relativeReset } from "../core/format";
 import { NexuraStore } from "../core/nexura-store";
+import { Icon } from "./icon";
 
 type Window = { key: string; label: string; percent: number; resets: string; tone: string };
 type Summary = { label: string; percent: number | null };
@@ -20,7 +21,7 @@ function tone(percent: number): string {
 /** Account quotas in a compact header indicator. */
 @Component({
   selector: "nx-quota-meter",
-  imports: [DecimalPipe, RouterLink],
+  imports: [DecimalPipe, RouterLink, Icon],
   templateUrl: "./quota-meter.html",
   host: { "(document:pointerdown)": "closeOnOutsidePointer($event)" },
 })

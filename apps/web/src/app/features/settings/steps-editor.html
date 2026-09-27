@@ -1,16 +1,16 @@
 <div class="flex flex-wrap items-center gap-3">
-  <a class="rounded-md border border-border px-2.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" routerLink="/config" [queryParams]="{ tab: 'steps' }">
+  <a class="nx-btn nx-btn-sm" routerLink="/config" [queryParams]="{ tab: 'steps' }">
     ← Pasos
   </a>
-  <h1 class="text-xl font-semibold tracking-tight">Editar paso · {{ stepLabel(name()) }}</h1>
-  <span class="font-mono text-[12px] text-muted">config/steps/{{ name() }}/</span>
+  <h2 class="text-xl font-semibold tracking-tight">Editar paso · {{ stepLabel(name()) }}</h2>
+  <span class="font-mono text-sm text-muted">config/steps/{{ name() }}/</span>
   @if (dirty()) {
-    <span class="rounded-full bg-warn-soft px-2 py-0.5 text-[11px] text-warn">sin guardar</span>
+    <span class="rounded-full bg-warn-soft px-2 py-0.5 text-xs text-warn">sin guardar</span>
   }
 </div>
 
 @if (notFound()) {
-  <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">No existe ningún paso llamado {{ name() }}.</p>
+  <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">No existe ningún paso llamado {{ name() }}.</p>
 }
 
 @if (step(); as current) {
@@ -18,51 +18,51 @@
     @if (current.custom) {
       <div class="grid gap-4 md:grid-cols-[1fr_1fr_2fr]">
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] font-medium text-muted uppercase">Nombre visible</span>
+          <span class="text-xs font-medium text-muted">Nombre visible</span>
           <input
-            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+            class="nx-input"
             [value]="draft().label"
             (input)="patch({ label: value($event) })"
           />
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] font-medium text-muted uppercase">Se ejecuta después de</span>
-          <select class="rounded-md border border-border bg-surface-2 px-2 py-1.5" (change)="patch({ after: value($event) })">
+          <span class="text-xs font-medium text-muted">Se ejecuta después de</span>
+          <select class="nx-input" (change)="patch({ after: value($event) })">
             @for (option of anchors(); track option.name) {
               <option [value]="option.name" [selected]="option.name === draft().after">{{ option.label }}</option>
             }
           </select>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="text-[11px] font-medium text-muted uppercase">Para qué sirve</span>
+          <span class="text-xs font-medium text-muted">Para qué sirve</span>
           <input
-            class="rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent"
+            class="nx-input"
             [value]="draft().description"
             (input)="patch({ description: value($event) })"
           />
         </label>
       </div>
-      <p class="-mt-2 text-[11px] text-muted">
+      <p class="-mt-2 text-xs text-muted">
         Paso propio: su respuesta final va al libro de tareas y a <code class="font-mono">{{ "{{" }}output.{{ current.name }}{{ "}}" }}</code>; si cambia ficheros,
         Nexura hace commit al terminar. Dale <code class="font-mono">Edit</code>/<code class="font-mono">Write</code> en Herramientas si tiene que tocar código.
       </p>
     }
     @if (current.kind === "claude") {
       <div class="flex flex-col gap-1">
-        <label for="template" class="font-medium">Plantilla del prompt <span class="font-mono text-[11px] text-muted">prompt.md</span></label>
-        <p class="text-[12px] text-muted">
+        <label for="template" class="font-medium">Plantilla del prompt <span class="font-mono text-xs text-muted">prompt.md</span></label>
+        <p class="text-sm text-muted">
           Corrige aquí lo que falle en todos los tickets (pilar 2): los cambios valen para las próximas ejecuciones de este paso. Variables:
         </p>
         <div class="flex flex-wrap gap-1">
           @for (variable of variables; track variable.name) {
-            <code class="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-[11px]" [attr.title]="variable.help">{{ "{{" }}{{ variable.name }}{{ "}}" }}</code>
+            <code class="rounded bg-surface-3 px-1.5 py-0.5 font-mono text-xs" [attr.title]="variable.help">{{ "{{" }}{{ variable.name }}{{ "}}" }}</code>
           }
         </div>
         <textarea
           id="template"
           rows="18"
           spellcheck="false"
-          class="mt-1 resize-y rounded-md border border-border bg-surface-2 px-3 py-2 font-mono text-[12px] leading-relaxed outline-none focus:border-accent"
+          class="nx-input mt-1 resize-y font-mono text-sm leading-relaxed"
           [value]="draft().template"
           (input)="patch({ template: value($event) })"
         ></textarea>
@@ -76,42 +76,42 @@
     @if (current.kind === "claude") {
       <div class="grid gap-4 md:grid-cols-3">
         <label class="flex flex-col gap-1">
-          <span class="font-medium">Herramientas <span class="font-mono text-[11px] text-muted">--tools</span></span>
-          <span class="text-[11px] text-muted">Lista dura: lo que no esté aquí no existe para Claude. Vacío = sin herramientas.</span>
+          <span class="font-medium">Herramientas <span class="font-mono text-xs text-muted">--tools</span></span>
+          <span class="text-xs text-muted">Lista dura: lo que no esté aquí no existe para Claude. Vacío = sin herramientas.</span>
           <textarea
             rows="5"
             spellcheck="false"
-            class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+            class="nx-input resize-y font-mono text-sm"
             [value]="draft().tools"
             (input)="patch({ tools: value($event) })"
           ></textarea>
-          <span class="flex flex-wrap gap-3 text-[12px]">
+          <span class="flex flex-wrap gap-3 text-sm">
             @for (extra of claudeExtras; track extra.tool) {
               <span class="flex cursor-pointer items-center gap-1.5" [title]="'Añade o quita ' + extra.tool + ': usa lo que tenga la config de Claude del repo'">
-                <input type="checkbox" class="size-3.5 accent-(--nx-accent)" [checked]="hasTool(extra.tool)" (change)="toggleTool(extra.tool)" />
-                {{ extra.label }} <code class="font-mono text-[11px] text-muted">{{ extra.tool }}</code>
+                <input type="checkbox" class="size-3.5" [checked]="hasTool(extra.tool)" (change)="toggleTool(extra.tool)" />
+                {{ extra.label }} <code class="font-mono text-xs text-muted">{{ extra.tool }}</code>
               </span>
             }
           </span>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="font-medium">Permitidas <span class="font-mono text-[11px] text-muted">--allowedTools</span></span>
-          <span class="text-[11px] text-muted">Una regla por línea, p. ej. <code class="font-mono">Bash(npm run *)</code>.</span>
+          <span class="font-medium">Permitidas <span class="font-mono text-xs text-muted">--allowedTools</span></span>
+          <span class="text-xs text-muted">Una regla por línea, p. ej. <code class="font-mono">Bash(npm run *)</code>.</span>
           <textarea
             rows="5"
             spellcheck="false"
-            class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+            class="nx-input resize-y font-mono text-sm"
             [value]="draft().allowedTools"
             (input)="patch({ allowedTools: value($event) })"
           ></textarea>
         </label>
         <label class="flex flex-col gap-1">
-          <span class="font-medium">Prohibidas <span class="font-mono text-[11px] text-muted">--disallowedTools</span></span>
-          <span class="text-[11px] text-muted">Siempre denegadas, p. ej. <code class="font-mono">Bash(git push*)</code>.</span>
+          <span class="font-medium">Prohibidas <span class="font-mono text-xs text-muted">--disallowedTools</span></span>
+          <span class="text-xs text-muted">Siempre denegadas, p. ej. <code class="font-mono">Bash(git push*)</code>.</span>
           <textarea
             rows="5"
             spellcheck="false"
-            class="resize-y rounded-md border border-border bg-surface-2 px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+            class="nx-input resize-y font-mono text-sm"
             [value]="draft().disallowedTools"
             (input)="patch({ disallowedTools: value($event) })"
           ></textarea>
@@ -126,7 +126,7 @@
           type="number"
           min="1"
           step="1"
-          class="w-20 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono outline-none focus:border-accent"
+          class="nx-input w-20 font-mono"
           [value]="draft().timeoutMinutes"
           (input)="patch({ timeoutMinutes: +value($event) })"
         />
@@ -135,16 +135,16 @@
       @if (current.kind === "claude") {
         <label class="flex items-center gap-2">
           Servidores MCP
-          <input type="text" class="w-52 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono outline-none focus:border-accent" [value]="draft().mcpServers" (input)="patch({ mcpServers: value($event) })" placeholder="*, github, context7" />
-          <span class="text-[11px] text-muted">* = todos los activos del repo; vacío = ninguno</span>
+          <input type="text" class="nx-input w-52 font-mono" [value]="draft().mcpServers" (input)="patch({ mcpServers: value($event) })" placeholder="*, github, context7" />
+          <span class="text-xs text-muted">* = todos los activos del repo; vacío = ninguno</span>
         </label>
         @if (knownMcp().length) {
           <span class="flex flex-wrap items-center gap-1">
-            <span class="text-[11px] text-muted">En tus repos:</span>
+            <span class="text-xs text-muted">En tus repos:</span>
             @for (server of knownMcp(); track server.name) {
               <button
                 type="button"
-                class="rounded-full border px-2 py-0.5 font-mono text-[11px]"
+                class="rounded-full border px-2 py-0.5 font-mono text-xs"
                 [class]="hasMcp(server.name) ? 'border-accent bg-accent-soft text-accent' : 'border-border text-muted hover:bg-surface-3'"
                 [title]="server.where.join('\n')"
                 (click)="toggleMcp(server.name)"
@@ -156,7 +156,7 @@
         }
         <label class="flex items-center gap-2" title="Memoria compartida entre tickets (y con tu Claude Code interactivo si le añades el servidor MCP)">
           Memoria
-          <select class="rounded-md border border-border bg-surface-2 px-2 py-1 outline-none focus:border-accent" (change)="patch({ memory: $any(value($event)) })">
+          <select class="nx-input" (change)="patch({ memory: $any(value($event)) })">
             @for (option of memoryModes; track option.value) {
               <option [value]="option.value" [selected]="option.value === draft().memory">{{ option.label }}</option>
             }
@@ -167,28 +167,28 @@
 
     @if (schema()) {
       <details class="rounded-md border border-border">
-        <summary class="cursor-pointer px-3 py-2 text-fg-soft">Schema de la salida <span class="font-mono text-[11px] text-muted">schema.json</span> (solo lectura)</summary>
-        <pre class="max-h-80 overflow-auto border-t border-border p-3 font-mono text-[11px]">{{ schema() }}</pre>
+        <summary class="cursor-pointer px-3 py-2 text-fg-soft">Schema de la salida <span class="font-mono text-xs text-muted">schema.json</span> (solo lectura)</summary>
+        <pre class="max-h-80 overflow-auto border-t border-border p-3 font-mono text-xs">{{ schema() }}</pre>
       </details>
     }
 
     <div class="flex flex-wrap items-center gap-2">
       <button
         type="button"
-        class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40"
+        class="nx-btn nx-btn-primary"
         [disabled]="busy() || !dirty()"
         (click)="save()"
       >
         Guardar paso
       </button>
-      <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3 disabled:opacity-40" [disabled]="!dirty()" (click)="discard()">
+      <button type="button" class="nx-btn" [disabled]="!dirty()" (click)="discard()">
         Descartar cambios
       </button>
-      <a class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" routerLink="/config" [queryParams]="{ tab: 'steps' }">Volver</a>
+      <a class="nx-btn" routerLink="/config" [queryParams]="{ tab: 'steps' }">Volver</a>
       @if (current.custom) {
         <button
           type="button"
-          class="ml-auto rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40"
+          class="nx-btn nx-btn-danger ml-auto"
           [disabled]="busy()"
           (click)="remove()"
         >

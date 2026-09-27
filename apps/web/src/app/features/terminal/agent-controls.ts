@@ -27,13 +27,13 @@ export function modeCommand(agent: AgentKind, mode: ConversationMode): string {
   selector: "nx-agent-controls",
   template: `
     <div class="flex flex-wrap items-center gap-2">
-      <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Agente">
+      <div class="nx-seg" role="radiogroup" aria-label="Agente">
         @for (agent of agentKinds; track agent) {
           <button
             type="button"
             role="radio"
-            class="px-2.5 py-1 disabled:cursor-not-allowed disabled:opacity-40"
-            [class]="settings().agent === agent ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+            class="disabled:opacity-40"
+            [class]="settings().agent === agent ? 'nx-seg-on' : ''"
             [attr.aria-checked]="settings().agent === agent"
             [disabled]="!available(agent)"
             [attr.title]="unavailable(agent)"
@@ -47,7 +47,7 @@ export function modeCommand(agent: AgentKind, mode: ConversationMode): string {
       <label class="flex items-center gap-1.5 text-muted">
         Modelo
         <select
-          class="max-w-48 rounded-md border border-border bg-surface-2 px-1.5 py-1 font-mono text-fg"
+          class="nx-input max-w-48 font-mono text-fg"
           (change)="chooseModel($any($event.target).value)"
         >
           <option value="" [selected]="!typingModel() && !settings().model">por defecto</option>
@@ -59,7 +59,7 @@ export function modeCommand(agent: AgentKind, mode: ConversationMode): string {
         @if (typingModel()) {
           <input
             #customModel
-            class="w-40 rounded-md border border-border bg-surface-2 px-2 py-1 font-mono text-fg outline-none focus:border-accent"
+            class="nx-input w-40 font-mono text-fg"
             spellcheck="false"
             placeholder="id del modelo"
             aria-label="Otro modelo"
@@ -71,7 +71,7 @@ export function modeCommand(agent: AgentKind, mode: ConversationMode): string {
 
       <label class="flex items-center gap-1.5 text-muted">
         Esfuerzo
-        <select class="rounded-md border border-border bg-surface-2 px-1.5 py-1 text-fg" (change)="emit({ effort: $any($event.target).value })">
+        <select class="nx-input text-fg" (change)="emit({ effort: $any($event.target).value })">
           <option value="" [selected]="!settings().effort">por defecto</option>
           @for (effort of efforts(); track effort) {
             <option [value]="effort" [selected]="effort === settings().effort">{{ effort }}</option>

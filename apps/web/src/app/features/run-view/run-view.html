@@ -1,80 +1,94 @@
 @if (run(); as run) {
   @let info = summary()!;
-  <header class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3 border-b border-border bg-surface px-5 py-4 md:px-7">
-    <div class="min-w-0 flex-1">
-      <div class="flex items-center gap-2">
-        <nx-status-pill [tone]="status()!.tone" [label]="status()!.label" [live]="status()!.live" />
-        <h1 class="truncate text-[17px] font-semibold tracking-tight">
-          @if (run.request.ticketId) {
-            <span class="font-mono text-muted">#{{ run.request.ticketId }}</span>
-          }
-          {{ info.title }}
-        </h1>
+  <header class="shrink-0 border-b border-border bg-surface px-5 py-4 md:px-7">
+    <div class="flex flex-wrap items-start gap-x-5 gap-y-3">
+      <div class="min-w-0 flex-1 basis-80">
+        <div class="flex items-start gap-2.5">
+          <nx-status-pill class="mt-1 shrink-0" [tone]="status()!.tone" [label]="status()!.label" [live]="status()!.live" />
+          <h1 class="line-clamp-2 min-w-0 text-lg leading-snug font-semibold tracking-tight" [attr.title]="info.title">
+            @if (run.request.ticketId) {
+              <span class="font-mono font-medium text-accent">#{{ run.request.ticketId }}</span>
+            }
+            {{ info.title }}
+          </h1>
+        </div>
       </div>
-      <p class="mt-0.5 truncate text-[12px] text-muted">
-        run <span class="font-mono">{{ run.id }}</span> · {{ run.request.repos.join(", ") }} · perfil
+
+      <div class="flex shrink-0 flex-wrap items-center gap-2">
+        @if (run.worktrees.length) {
+          <button type="button" class="nx-btn" (click)="openShell()"><nx-icon name="terminal" [size]="16" />Terminal</button>
+        }
+        @if (isActive()) {
+          <button type="button" class="nx-btn nx-btn-danger" [disabled]="busy()" (click)="cancel()">Cancelar</button>
+        }
+        @if (!isActive()) {
+          <details #cleanupMenu class="relative" (keydown.escape)="cleanupMenu.open = false" (focusout)="closeWhenFocusLeaves($event, cleanupMenu)">
+            <summary class="nx-btn list-none [&::-webkit-details-marker]:hidden" [class.opacity-45]="busy()">
+              Limpiar<nx-icon name="chevronDown" [size]="15" />
+            </summary>
+            <div class="nx-card absolute right-0 z-30 mt-1.5 flex w-72 flex-col p-1.5" role="group" aria-label="Limpiar">
+              @if (isFinal() && run.worktrees.length) {
+                <button type="button" class="rounded-lg px-3 py-2 text-left hover:bg-surface-2 disabled:opacity-45" [disabled]="busy()" (click)="cleanupMenu.open = false; cleanup(false)">
+                  <span class="block font-medium">Borrar worktrees</span>
+                  <span class="block text-xs text-muted">Libera disco; las ramas se conservan.</span>
+                </button>
+                <button type="button" class="rounded-lg px-3 py-2 text-left hover:bg-err-soft disabled:opacity-45" [disabled]="busy()" (click)="cleanupMenu.open = false; cleanup(true)">
+                  <span class="block font-medium text-err">Borrar worktrees y ramas</span>
+                  <span class="block text-xs text-muted">No se puede deshacer.</span>
+                </button>
+              }
+              <button type="button" class="rounded-lg px-3 py-2 text-left hover:bg-err-soft disabled:opacity-45" [disabled]="busy()" (click)="cleanupMenu.open = false; deleteRun()">
+                <span class="block font-medium text-err">Borrar flujo</span>
+                <span class="block text-xs text-muted">Historial, logs y worktrees.</span>
+              </button>
+            </div>
+          </details>
+        }
+      </div>
+    </div>
+
+    <div class="mt-2 flex flex-wrap items-center gap-x-5 gap-y-2 text-sm">
+      <p class="min-w-0 truncate text-muted">
+        <span class="font-mono">{{ run.id }}</span> · {{ run.request.repos.join(", ") }} · perfil
         <span class="text-fg-soft" [attr.title]="run.classifyReason ?? null">{{ run.resolvedProfile ?? "decidiendo…" }}</span>
         @if (run.classifyReason) {
           <span>({{ run.classifyReason }})</span>
         }
       </p>
-      @if (run.classifyReason && run.resolvedProfile) {
-        <div class="mt-1 flex flex-wrap items-center gap-2 text-[12px]">
-          @if (run.classifyFeedback; as feedback) {
-            <span [class]="feedback.correct ? 'text-ok' : 'text-warn'">
-              {{ feedback.correct ? "✓ Valorado: perfil correcto" : "✗ Valorado: debía ser " + (feedback.expected ?? "otro") }}
-            </span>
-            <button type="button" class="text-muted hover:text-fg hover:underline" (click)="correcting.set(true)">cambiar</button>
-          } @else {
-            <span class="text-muted">¿Acertó el perfil?</span>
-            <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="rateClassify(true)">✓ Sí</button>
-            <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="correcting.set(true)">✗ No</button>
-          }
-          @if (correcting()) {
-            <span class="text-muted">Debía ser:</span>
-            @for (name of profileNames(); track name) {
-              @if (name !== run.resolvedProfile) {
-                <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="rateClassify(false, name)">{{ name }}</button>
-              }
-            }
-            @if (run.classifyFeedback) {
-              <button type="button" class="rounded border border-border px-2 py-0.5 hover:bg-surface-3" (click)="rateClassify(true)">era correcto</button>
-            }
-          }
-        </div>
-      }
+      <dl class="flex items-center gap-4 text-xs md:ml-auto">
+        <div class="flex items-baseline gap-1.5"><dt class="text-muted">Coste</dt><dd class="font-mono text-sm text-fg">{{ info.cost }}</dd></div>
+        <div class="flex items-baseline gap-1.5"><dt class="text-muted">Tokens</dt><dd class="font-mono text-sm text-fg">{{ info.tokens }}</dd></div>
+        <div class="flex items-baseline gap-1.5"><dt class="text-muted">Turnos</dt><dd class="font-mono text-sm text-fg">{{ info.turns }}</dd></div>
+        <div class="flex items-baseline gap-1.5"><dt class="text-muted">Tiempo</dt><dd class="font-mono text-sm text-fg">{{ info.duration }}</dd></div>
+      </dl>
     </div>
 
-    <dl class="flex gap-5 text-[12px]">
-      <div><dt class="text-[10px] text-muted uppercase">Coste</dt><dd class="font-mono text-[14px]">{{ info.cost }}</dd></div>
-      <div><dt class="text-[10px] text-muted uppercase">Tokens</dt><dd class="font-mono text-[14px]">{{ info.tokens }}</dd></div>
-      <div><dt class="text-[10px] text-muted uppercase">Turnos</dt><dd class="font-mono text-[14px]">{{ info.turns }}</dd></div>
-      <div><dt class="text-[10px] text-muted uppercase">Tiempo</dt><dd class="font-mono text-[14px]">{{ info.duration }}</dd></div>
-    </dl>
-
-    <div class="flex gap-2">
-      @if (run.worktrees.length) {
-        <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="openShell()">⌨ Terminal</button>
-      }
-      @if (isActive()) {
-        <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="cancel()">
-          Cancelar
-        </button>
-      }
-      @if (isFinal() && run.worktrees.length) {
-        <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="cleanup(false)">
-          Borrar worktrees
-        </button>
-        <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="cleanup(true)">
-          Borrar worktrees y ramas
-        </button>
-      }
-      @if (!isActive()) {
-        <button type="button" class="rounded-md border border-err px-3 py-1.5 text-err hover:bg-err-soft disabled:opacity-40" [disabled]="busy()" (click)="deleteRun()">
-          Borrar flujo
-        </button>
-      }
-    </div>
+    @if (run.classifyReason && run.resolvedProfile) {
+      <div class="mt-2 flex flex-wrap items-center gap-2 text-sm">
+        @if (run.classifyFeedback; as feedback) {
+          <span class="flex items-center gap-1.5" [class]="feedback.correct ? 'text-ok' : 'text-warn'">
+            <nx-icon [name]="feedback.correct ? 'check' : 'x'" [size]="15" />
+            {{ feedback.correct ? "Valorado: perfil correcto" : "Valorado: debía ser " + (feedback.expected ?? "otro") }}
+          </span>
+          <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" (click)="correcting.set(true)">Cambiar</button>
+        } @else {
+          <span class="text-muted">¿Acertó el perfil?</span>
+          <button type="button" class="nx-btn nx-btn-sm" (click)="rateClassify(true)"><nx-icon name="check" [size]="14" />Sí</button>
+          <button type="button" class="nx-btn nx-btn-sm" (click)="correcting.set(true)"><nx-icon name="x" [size]="14" />No</button>
+        }
+        @if (correcting()) {
+          <span class="text-muted">Debía ser:</span>
+          @for (name of profileNames(); track name) {
+            @if (name !== run.resolvedProfile) {
+              <button type="button" class="nx-btn nx-btn-sm" (click)="rateClassify(false, name)">{{ name }}</button>
+            }
+          }
+          @if (run.classifyFeedback) {
+            <button type="button" class="nx-btn nx-btn-sm" (click)="rateClassify(true)">Era correcto</button>
+          }
+        }
+      </div>
+    }
   </header>
 
   @if (actionError(); as message) {
@@ -86,7 +100,7 @@
       <span class="font-semibold">Falló en {{ stepLabel(failed.step) }} #{{ failed.attempt }}</span>
       <span class="min-w-0 flex-1 truncate">{{ run.error }}</span>
       @if (selectedStep()?.id !== failed.id) {
-        <button type="button" class="rounded border border-err px-2 py-0.5 hover:bg-surface" (click)="selectStep(failed.id)">Ir al paso</button>
+        <button type="button" class="nx-btn nx-btn-sm nx-btn-danger" (click)="selectStep(failed.id)">Ir al paso</button>
       }
     </div>
   } @else if (run.status === "failed" && run.error) {
@@ -112,21 +126,21 @@
   } @else if (run.status === "paused" && run.pendingStep; as pending) {
     <section class="border-b border-warn bg-warn-soft px-4 py-3" aria-labelledby="pause-title">
       <div class="flex items-center gap-3">
-        <h2 id="pause-title" class="font-semibold text-warn">⏸ Pausado antes de {{ stepLabel(pending.step) }}</h2>
-        <span class="text-[12px] text-fg-soft">Revisa o edita el prompt; el cambio solo se aplica a esta ejecución.</span>
+        <h2 id="pause-title" class="font-semibold text-warn">Pausado antes de {{ stepLabel(pending.step) }}</h2>
+        <span class="text-sm text-fg-soft">Revisa o edita el prompt; el cambio solo se aplica a esta ejecución.</span>
         <div class="ml-auto flex gap-2">
-          <button type="button" class="rounded-md border border-border bg-surface px-3 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="continueRun(true)">
+          <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="continueRun(true)">
             Saltar paso
           </button>
-          <button type="button" class="rounded-md bg-accent-strong px-3 py-1 font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy()" (click)="continueRun()">
-            Ejecutar paso ▶
+          <button type="button" class="nx-btn nx-btn-primary nx-btn-sm" [disabled]="busy()" (click)="continueRun()">
+            Ejecutar paso
           </button>
         </div>
       </div>
       @if (pending.prompt !== undefined) {
         <textarea
           rows="7"
-          class="mt-2 w-full resize-y rounded-md border border-border bg-surface px-2.5 py-2 font-mono text-[12px] outline-none focus:border-accent"
+          class="nx-input mt-2 w-full resize-y font-mono text-sm"
           aria-label="Prompt del siguiente paso"
           [value]="pendingPrompt()"
           (input)="pendingPrompt.set(value($event))"
@@ -159,11 +173,11 @@
     ></div>
     <aside class="overflow-y-auto border-r border-border bg-surface p-3">
       <div class="mb-2 flex items-center gap-2">
-        <h2 class="text-[11px] font-semibold tracking-wide text-muted uppercase">Pipeline</h2>
+        <h2 class="text-xs font-semibold text-muted">Pipeline</h2>
         @if (pinnedStepId()) {
-          <button type="button" class="text-[11px] text-accent hover:underline" (click)="pinnedStepId.set(null)">Seguir en vivo</button>
+          <button type="button" class="text-xs text-accent hover:underline" (click)="pinnedStepId.set(null)">Seguir en vivo</button>
         }
-        <div class="ml-auto flex rounded border border-border p-px text-[11px]" role="group" aria-label="Vista del pipeline">
+        <div class="ml-auto flex rounded border border-border p-px text-xs" role="group" aria-label="Vista del pipeline">
           <button
             type="button"
             class="rounded-sm px-1.5"
@@ -220,15 +234,15 @@
 
     <aside class="flex flex-col gap-4 overflow-y-auto border-l border-border bg-surface p-3">
       <section aria-labelledby="tasks-heading">
-        <h2 id="tasks-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Tareas</h2>
+        <h2 id="tasks-heading" class="mb-1.5 text-xs font-semibold text-muted">Tareas</h2>
         @if (tasks().length === 0) {
-          <p class="text-[12px] text-muted">Sin tareas.</p>
+          <p class="text-sm text-muted">Sin tareas.</p>
         }
         <ul class="flex flex-col gap-1">
           @for (task of tasks(); track task.id) {
             <li class="flex items-start gap-2">
               <span
-                class="mt-0.5 grid size-4 shrink-0 place-items-center rounded border text-[10px]"
+                class="mt-0.5 grid size-4 shrink-0 place-items-center rounded border text-2xs"
                 [class]="task.done ? 'border-ok bg-ok text-white' : 'border-border-strong'"
                 [attr.aria-label]="task.done ? 'Hecha' : 'Pendiente'"
                 >{{ task.done ? "✓" : "" }}</span
@@ -241,15 +255,15 @@
 
       @if (run.pullRequests?.length) {
         <section aria-labelledby="prs-heading">
-          <h2 id="prs-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Pull requests</h2>
+          <h2 id="prs-heading" class="mb-1.5 text-xs font-semibold text-muted">Pull requests</h2>
           @for (pr of run.pullRequests; track pr.url) {
             <a class="mb-1 block rounded-md bg-ok-soft p-2 hover:underline" target="_blank" rel="noopener" [href]="pr.url">
               <span class="font-mono text-ok">PR #{{ pr.id }}</span> · {{ pr.repo }} ↗
-              <span class="block truncate text-[12px] text-fg-soft">{{ pr.title }}</span>
+              <span class="block truncate text-sm text-fg-soft">{{ pr.title }}</span>
             </a>
           }
           @if (run.reviewWatch; as watch) {
-            <p class="mt-1 text-[11px]" [class]="watch.error ? 'text-err' : 'text-muted'">
+            <p class="mt-1 text-xs" [class]="watch.error ? 'text-err' : 'text-muted'">
               @if (watch.error) {
                 Vigilancia: {{ watch.error }}
               } @else if (watch.prStatus !== "active") {
@@ -261,14 +275,14 @@
           }
           @if (isFinal() && run.worktrees.length) {
             <div class="mt-2 flex flex-col gap-1.5">
-              <button type="button" class="rounded-md border border-border px-2 py-1 text-[12px] hover:bg-surface-3 disabled:opacity-40" [disabled]="checkingThreads()" (click)="checkThreads()">
+              <button type="button" class="nx-btn nx-btn-sm" [disabled]="checkingThreads()" (click)="checkThreads()">
                 {{ checkingThreads() ? "Comprobando…" : "Comprobar comentarios (gratis)" }}
               </button>
               @if (threads(); as found) {
                 @if (found.length === 0) {
-                  <p class="text-[12px] text-muted">Sin hilos activos.</p>
+                  <p class="text-sm text-muted">Sin hilos activos.</p>
                 } @else {
-                  <ul class="flex flex-col gap-1 text-[12px]">
+                  <ul class="flex flex-col gap-1 text-sm">
                     @for (thread of found; track thread.repo + thread.threadId) {
                       <li class="rounded bg-surface-2 p-1.5">
                         <span class="font-mono text-muted">{{ thread.filePath ?? "general" }}{{ thread.line ? ":" + thread.line : "" }}</span>
@@ -276,7 +290,7 @@
                       </li>
                     }
                   </ul>
-                  <button type="button" class="rounded-md bg-accent-strong px-2 py-1 text-[12px] font-medium text-white hover:opacity-90 disabled:opacity-40" [disabled]="busy()" (click)="addressReview()">
+                  <button type="button" class="nx-btn nx-btn-primary nx-btn-sm" [disabled]="busy()" (click)="addressReview()">
                     Atender {{ found.length }} comentario(s) con Claude
                   </button>
                 }
@@ -288,11 +302,11 @@
 
       @if (qaNotes(); as notes) {
         <section aria-labelledby="qa-heading">
-          <h2 id="qa-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Plan de pruebas manual</h2>
-          <p class="mb-2 text-[12px] text-fg-soft">{{ notes.summary }}</p>
+          <h2 id="qa-heading" class="mb-1.5 text-xs font-semibold text-muted">Plan de pruebas manual</h2>
+          <p class="mb-2 text-sm text-fg-soft">{{ notes.summary }}</p>
           <ol class="flex flex-col gap-2">
             @for (item of notes.cases; track $index) {
-              <li class="rounded-md bg-surface-2 p-2 text-[12px]">
+              <li class="rounded-md bg-surface-2 p-2 text-sm">
                 <span class="font-medium">{{ item.title }}</span>
                 <ol class="mt-1 list-decimal pl-5 text-fg-soft">
                   @for (stepText of item.steps; track $index) {
@@ -304,35 +318,35 @@
             }
           </ol>
           @if (notes.risks.length) {
-            <p class="mt-2 text-[12px] text-warn">Riesgos: {{ notes.risks.join(" · ") }}</p>
+            <p class="mt-2 text-sm text-warn">Riesgos: {{ notes.risks.join(" · ") }}</p>
           }
         </section>
       }
 
       <section aria-labelledby="repos-heading">
-        <h2 id="repos-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Repos y ramas</h2>
+        <h2 id="repos-heading" class="mb-1.5 text-xs font-semibold text-muted">Repos y ramas</h2>
         @for (worktree of run.worktrees; track worktree.path) {
           <div class="mb-2 rounded-md bg-surface-2 p-2">
             <div class="font-medium">{{ worktree.repo }}</div>
-            <div class="font-mono text-[11px] break-all text-accent">{{ worktree.branch }}</div>
-            <div class="text-[11px] text-muted">desde {{ worktree.baseRef }}</div>
-            <div class="mt-1 font-mono text-[10px] break-all text-muted" [attr.title]="worktree.path">{{ worktree.path }}</div>
+            <div class="font-mono text-xs break-all text-accent">{{ worktree.branch }}</div>
+            <div class="text-xs text-muted">desde {{ worktree.baseRef }}</div>
+            <div class="mt-1 font-mono text-2xs break-all text-muted" [attr.title]="worktree.path">{{ worktree.path }}</div>
           </div>
         } @empty {
-          <p class="text-[12px] text-muted">{{ isFinal() ? "Worktrees borrados." : "Aún sin worktree." }}</p>
+          <p class="text-sm text-muted">{{ isFinal() ? "Worktrees borrados." : "Aún sin worktree." }}</p>
         }
       </section>
 
       @if (run.request.prompt) {
         <section aria-labelledby="prompt-heading">
-          <h2 id="prompt-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Indicaciones</h2>
-          <p class="text-[12px] whitespace-pre-wrap text-fg-soft">{{ run.request.prompt }}</p>
+          <h2 id="prompt-heading" class="mb-1.5 text-xs font-semibold text-muted">Indicaciones</h2>
+          <p class="text-sm whitespace-pre-wrap text-fg-soft">{{ run.request.prompt }}</p>
         </section>
       }
 
       <section class="min-h-0" aria-labelledby="ledger-heading">
-        <h2 id="ledger-heading" class="mb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Libro de tareas</h2>
-        <pre class="rounded-md bg-surface-2 p-2 font-mono text-[11px] leading-relaxed whitespace-pre-wrap text-fg-soft [overflow-wrap:anywhere]">{{
+        <h2 id="ledger-heading" class="mb-1.5 text-xs font-semibold text-muted">Libro de tareas</h2>
+        <pre class="rounded-md bg-surface-2 p-2.5 font-mono text-2xs leading-relaxed whitespace-pre-wrap text-fg-soft [overflow-wrap:anywhere]">{{
           (ledger.hasValue() && ledger.value()) || (ledger.error() ? "No se pudo cargar." : "Vacío.")
         }}</pre>
       </section>

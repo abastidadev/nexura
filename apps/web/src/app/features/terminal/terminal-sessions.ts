@@ -4,7 +4,7 @@ import { Terminal, type ITheme } from "@xterm/xterm";
 import { Api, apiError } from "../../core/api";
 import { NexuraStore } from "../../core/nexura-store";
 
-const FONT_SIZE = 13;
+const FONT_SIZE = 14;
 const SCROLLBACK = 10_000;
 const RECONNECT_MS = 2000;
 

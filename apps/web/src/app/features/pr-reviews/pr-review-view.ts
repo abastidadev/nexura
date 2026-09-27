@@ -6,6 +6,7 @@ import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 import { EventTimeline } from "../run-view/event-timeline";
 import { PrReviewCommentCard, SEVERITY } from "./pr-review-comment";
+import { Icon } from "../../shared/icon";
 
 export const VOTES: Record<PrVote, { label: string; tone: Tone }> = {
   approve: { label: "Aprobar", tone: "ok" },
@@ -18,13 +19,13 @@ type Draft = { selected: boolean; post: string };
 /** One PR review: live while it runs; then the proposed comments to pick, edit and publish with a vote. */
 @Component({
   selector: "nx-pr-review-view",
-  imports: [StatusPill, EventTimeline, PrReviewCommentCard],
+  imports: [StatusPill, EventTimeline, PrReviewCommentCard, Icon],
   template: `
     @let target = run().request.prReview;
     <header class="flex flex-wrap items-start gap-3 border-b border-border px-5 py-3">
       <div class="min-w-0 flex-1">
         <div class="flex flex-wrap items-center gap-2">
-          <h2 class="text-[15px] font-semibold tracking-tight">
+          <h2 class="text-md font-semibold tracking-tight">
             @if (target) {
               <a class="hover:underline" [href]="target.url" target="_blank" rel="noopener">PR #{{ target.id }}</a> · {{ target.title }}
             } @else {
@@ -33,7 +34,7 @@ type Draft = { selected: boolean; post: string };
           </h2>
           <nx-status-pill [tone]="status().tone" [label]="status().label" [live]="status().live" />
         </div>
-        <p class="mt-0.5 text-[12px] text-muted">
+        <p class="mt-0.5 text-sm text-muted">
           @if (target) {
             <span class="font-mono">{{ target.sourceBranch }} → {{ target.targetBranch }}</span> · {{ target.author }} ·
           }
@@ -43,38 +44,36 @@ type Draft = { selected: boolean; post: string };
       </div>
       <div class="flex shrink-0 items-center gap-2">
         @if (active()) {
-          <button type="button" class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="cancel()">
+          <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="cancel()">
             Cancelar
           </button>
         } @else {
           @if (run().status === "failed" || run().status === "cancelled") {
-            <button type="button" class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="retry()">
+            <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="retry()">
               Reintentar
             </button>
           }
           <button
             type="button"
-            class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3 disabled:opacity-40"
+            class="nx-btn nx-btn-sm"
             [disabled]="busy()"
             title="Lanza una revisión nueva del estado actual de la PR"
             (click)="rereview.emit()"
           >
             Volver a revisar
           </button>
-          <button type="button" class="rounded px-2 py-1 text-muted hover:bg-surface-3 hover:text-err disabled:opacity-40" [disabled]="busy()" title="Borrar esta revisión" (click)="remove()">
-            🗑
-          </button>
+          <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost hover:text-err!" [disabled]="busy()" title="Borrar esta revisión" (click)="remove()"><nx-icon name="trash" [size]="15" /></button>
         }
       </div>
     </header>
 
     @if (error(); as message) {
-      <p class="mx-5 mt-3 rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">{{ message }}</p>
+      <p class="mx-5 mt-3 rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">{{ message }}</p>
     }
 
     @if (!review()) {
       @if (run().error) {
-        <p class="mx-5 mt-3 rounded-md border border-err bg-err-soft px-3 py-2 whitespace-pre-wrap text-err" role="alert">{{ run().error }}</p>
+        <p class="mx-5 mt-3 rounded-md border border-err/40 bg-err-soft px-3 py-2 whitespace-pre-wrap text-err" role="alert">{{ run().error }}</p>
       }
       @if (step(); as current) {
         <nx-event-timeline class="min-h-0 flex-1" [events]="events()" [live]="current.status === 'running'" [speaker]="agentLabel()" />
@@ -87,31 +86,31 @@ type Draft = { selected: boolean; post: string };
       @let result = review()!;
       <div class="min-h-0 flex-1 overflow-y-auto px-5 py-4">
         @if (outdated()) {
-          <p class="mb-3 rounded-md border border-warn bg-warn-soft px-3 py-2 text-warn" role="status">
+          <p class="mb-3 rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-warn" role="status">
             La PR tiene commits nuevos desde esta revisión: no se puede votar sobre ellos. En GitHub los comentarios se anclan al commit revisado; en
             Azure DevOps irán como comentarios generales citando fichero y línea. «Volver a revisar» revisa el último commit.
           </p>
         }
         @if (!result.published && result.postedIds?.length) {
-          <p class="mb-3 rounded-md border border-warn bg-warn-soft px-3 py-2 text-warn" role="status">
+          <p class="mb-3 rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-warn" role="status">
             La publicación anterior falló a medias: {{ result.postedIds!.length }} comentario(s) ya están en la PR y no se repetirán.
           </p>
         }
         @if (result.published; as published) {
-          <p class="mb-3 rounded-md border border-ok bg-ok-soft px-3 py-2 text-ok" role="status">
+          <p class="mb-3 rounded-md border border-ok/40 bg-ok-soft px-3 py-2 text-ok" role="status">
             Publicado {{ timeOfDay(published.at) }}: {{ published.commentIds.length }} comentario(s){{ published.vote ? " y voto «" + votes[published.vote].label + "»" : "" }}.
           </p>
         }
 
         <section class="rounded-lg border border-border bg-surface p-4">
           <div class="flex flex-wrap items-center gap-2">
-            <h3 class="text-[11px] font-semibold tracking-wide text-muted uppercase">Veredicto</h3>
+            <h3 class="text-xs font-semibold text-muted">Veredicto</h3>
             <nx-status-pill [tone]="votes[result.verdict].tone" [label]="votes[result.verdict].label" />
-            <span class="font-mono text-[11px] text-muted">@ {{ result.headSha.slice(0, 8) }}</span>
+            <span class="font-mono text-xs text-muted">@ {{ result.headSha.slice(0, 8) }}</span>
           </div>
           <p class="mt-2 whitespace-pre-wrap">{{ result.summary }}</p>
           @if (result.strengths.length) {
-            <h3 class="mt-3 text-[11px] font-semibold tracking-wide text-muted uppercase">Lo que hace bien</h3>
+            <h3 class="mt-3 text-xs font-semibold text-muted">Lo que hace bien</h3>
             <ul class="mt-1 list-disc pl-5 text-fg-soft">
               @for (item of result.strengths; track $index) {
                 <li>{{ item }}</li>
@@ -120,7 +119,7 @@ type Draft = { selected: boolean; post: string };
           }
           @if (result.conventions.length) {
             <details class="mt-3">
-              <summary class="cursor-pointer text-[11px] font-semibold tracking-wide text-muted uppercase">
+              <summary class="cursor-pointer text-xs font-semibold text-muted">
                 Convenciones del repo comprobadas ({{ result.conventions.length }})
               </summary>
               <ul class="mt-1 list-disc pl-5 text-fg-soft">
@@ -129,13 +128,13 @@ type Draft = { selected: boolean; post: string };
                 }
               </ul>
               @if (result.conventionsSaved) {
-                <p class="mt-2 text-[12px] text-ok">Guardadas en las notas del repo: los próximos flujos y revisiones las tendrán en cuenta.</p>
+                <p class="mt-2 text-sm text-ok">Guardadas en las notas del repo: los próximos flujos y revisiones las tendrán en cuenta.</p>
               } @else {
                 <div class="mt-2 flex flex-wrap items-center gap-2">
-                  <button type="button" class="rounded-md border border-border px-2.5 py-1 text-[12px] hover:bg-surface-3 disabled:opacity-40" [disabled]="busy()" (click)="learn()">
+                  <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="learn()">
                     Guardar en las notas del repo
                   </button>
-                  <span class="text-[11px] text-muted">Salen de leer una PR que puede haber escrito cualquiera: guárdalas solo si son ciertas.</span>
+                  <span class="text-xs text-muted">Salen de leer una PR que puede haber escrito cualquiera: guárdalas solo si son ciertas.</span>
                 </div>
               }
             </details>
@@ -143,12 +142,12 @@ type Draft = { selected: boolean; post: string };
         </section>
 
         <div class="mt-4 flex flex-wrap items-center gap-1.5" aria-label="Filtrar por gravedad">
-          <h3 class="mr-1 text-[11px] font-semibold tracking-wide text-muted uppercase">Comentarios ({{ result.comments.length }})</h3>
+          <h3 class="mr-1 text-xs font-semibold text-muted">Comentarios ({{ result.comments.length }})</h3>
           @for (severity of severities; track severity) {
             @if (counts()[severity]) {
               <button
                 type="button"
-                class="rounded-full border px-2 py-0.5 text-[11px]"
+                class="rounded-full border px-2 py-0.5 text-xs"
                 [class]="hidden().has(severity) ? 'border-border text-muted line-through' : 'border-accent bg-accent-soft text-fg'"
                 [attr.aria-pressed]="!hidden().has(severity)"
                 (click)="toggleSeverity(severity)"
@@ -179,10 +178,10 @@ type Draft = { selected: boolean; post: string };
 
       @if (!result.published) {
         <footer class="flex flex-wrap items-center gap-3 border-t border-border bg-surface px-5 py-2.5">
-          <span class="text-[12px] text-muted">{{ selectedCount() }} de {{ result.comments.length }} seleccionado(s)</span>
-          <label class="flex items-center gap-1.5 text-[12px]">
+          <span class="text-sm text-muted">{{ selectedCount() }} de {{ result.comments.length }} seleccionado(s)</span>
+          <label class="flex items-center gap-1.5 text-sm">
             Voto
-            <select class="rounded border border-border bg-surface-2 px-1.5 py-1" aria-label="Voto" (change)="vote.set($any($event.target).value)">
+            <select class="nx-input" aria-label="Voto" (change)="vote.set($any($event.target).value)">
               <option value="" [selected]="vote() === ''">Sin voto</option>
               @for (option of voteOptions; track option) {
                 <option [value]="option" [selected]="vote() === option">{{ votes[option].label }}{{ option === result.verdict ? " (sugerido)" : "" }}</option>
@@ -192,13 +191,13 @@ type Draft = { selected: boolean; post: string };
           <!-- On the left: the toasts pile up in the bottom right corner. -->
           <button
             type="button"
-            class="rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40"
+            class="nx-btn nx-btn-primary"
             [disabled]="busy() || (selectedCount() === 0 && !vote())"
             (click)="publish()"
           >
             {{ busy() ? "Publicando…" : "Publicar (" + selectedCount() + ")" }}
           </button>
-          <span class="text-[11px] text-muted">Nada sale de Nexura hasta que publicas; se publica con tu cuenta y sin firma.</span>
+          <span class="text-xs text-muted">Nada sale de Nexura hasta que publicas; se publica con tu cuenta y sin firma.</span>
         </footer>
       }
     }

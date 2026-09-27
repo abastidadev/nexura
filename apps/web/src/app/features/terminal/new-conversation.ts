@@ -27,7 +27,7 @@ type Place = { repo?: string; cwd?: string };
         <div class="flex flex-wrap items-center gap-2">
           <span class="w-20 font-medium">Proyecto</span>
           <select
-            class="min-w-56 rounded-md border border-border bg-surface-2 px-2 py-1"
+            class="nx-input min-w-56"
             aria-label="Proyecto"
             (change)="chooseRepo($any($event.target).value)"
           >
@@ -38,18 +38,17 @@ type Place = { repo?: string; cwd?: string };
               <option value="" selected>{{ place().cwd }}</option>
             }
           </select>
-          <button type="button" class="rounded-md border border-border px-2.5 py-1 hover:bg-surface-3" (click)="pickFolder()">Otra carpeta…</button>
-          <span class="min-w-0 truncate font-mono text-[11px] text-muted" [attr.title]="folder()">{{ folder() }}</span>
+          <button type="button" class="nx-btn nx-btn-sm" (click)="pickFolder()">Otra carpeta…</button>
+          <span class="min-w-0 truncate font-mono text-xs text-muted" [attr.title]="folder()">{{ folder() }}</span>
         </div>
 
         <div class="flex flex-wrap items-center gap-2">
           <span class="w-20 font-medium">Tipo</span>
-          <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Tipo de conversación">
+          <div class="nx-seg" role="radiogroup" aria-label="Tipo de conversación">
             <button
               type="button"
               role="radio"
-              class="px-2.5 py-1"
-              [class]="kind() === 'agent' ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+              [class]="kind() === 'agent' ? 'nx-seg-on' : ''"
               [attr.aria-checked]="kind() === 'agent'"
               (click)="kind.set('agent')"
             >
@@ -58,8 +57,7 @@ type Place = { repo?: string; cwd?: string };
             <button
               type="button"
               role="radio"
-              class="px-2.5 py-1"
-              [class]="kind() === 'shell' ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+              [class]="kind() === 'shell' ? 'nx-seg-on' : ''"
               [attr.aria-checked]="kind() === 'shell'"
               (click)="kind.set('shell')"
             >
@@ -73,9 +71,9 @@ type Place = { repo?: string; cwd?: string };
             <span class="w-20 pt-1 font-medium">Agente</span>
             <nx-agent-controls [settings]="settings()" [agents]="agents()" (settingsChange)="settings.set($event)" />
           </div>
-          <p class="ml-22 font-mono text-[11px] text-muted">{{ command() }}</p>
+          <p class="ml-22 font-mono text-xs text-muted">{{ command() }}</p>
           @if (settings().mode === "bypass") {
-            <p class="ml-22 rounded-md border border-err bg-err-soft px-3 py-2 text-[12px] text-err">
+            <p class="ml-22 rounded-md border border-err/40 bg-err-soft px-3 py-2 text-sm text-err">
               Sin permisos: el agente ejecuta cualquier comando y edita cualquier fichero sin preguntarte.
             </p>
           }
@@ -84,7 +82,7 @@ type Place = { repo?: string; cwd?: string };
         <label class="flex flex-wrap items-center gap-2">
           <span class="w-20 font-medium">Título</span>
           <input
-            class="min-w-64 flex-1 rounded-md border border-border bg-surface-2 px-2.5 py-1 outline-none focus:border-accent"
+            class="nx-input min-w-64 flex-1"
             [placeholder]="kind() === 'agent' ? 'Opcional: si no, el que le ponga el agente' : 'Opcional'"
             [value]="title()"
             (input)="title.set($any($event.target).value)"
@@ -96,7 +94,7 @@ type Place = { repo?: string; cwd?: string };
             <span class="font-medium">Primer mensaje <span class="font-normal text-muted">(opcional; también puedes escribir directamente en la terminal)</span></span>
             <textarea
               rows="4"
-              class="rounded-md border border-border bg-surface-2 px-2.5 py-2 outline-none focus:border-accent"
+              class="nx-input"
               placeholder="Qué quieres que haga…"
               [value]="prompt()"
               (input)="prompt.set($any($event.target).value)"
@@ -107,21 +105,21 @@ type Place = { repo?: string; cwd?: string };
       </section>
 
       @if (error(); as message) {
-        <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">{{ message }}</p>
+        <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">{{ message }}</p>
       }
       <div class="flex items-center gap-2">
         <button
           type="submit"
-          class="rounded-md bg-accent-strong px-4 py-1.5 font-medium text-white hover:opacity-90 disabled:opacity-40"
+          class="nx-btn nx-btn-primary"
           [disabled]="busy() || !folder()"
         >
           {{ busy() ? "Abriendo…" : kind() === "agent" ? "Abrir " + agentLabels[settings().agent] : "Abrir PowerShell" }}
         </button>
         @if (cancellable()) {
-          <button type="button" class="rounded-md border border-border px-3 py-1.5 hover:bg-surface-3" (click)="cancelled.emit()">Cancelar</button>
+          <button type="button" class="nx-btn" (click)="cancelled.emit()">Cancelar</button>
         }
         @if (!repos().length && !place().cwd) {
-          <span class="text-[12px] text-muted">Añade tus repos en Configuración → Repos, o elige una carpeta.</span>
+          <span class="text-sm text-muted">Añade tus repos en Configuración → Repos, o elige una carpeta.</span>
         }
       </div>
     </form>

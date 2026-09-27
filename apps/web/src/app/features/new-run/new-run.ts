@@ -5,6 +5,7 @@ import { Api, apiError } from "../../core/api";
 import { modelDetail, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { SOURCE_LABELS, TicketPicker } from "./ticket-picker";
+import { Icon } from "../../shared/icon";
 
 export const AUTO_PROFILE = "auto";
 const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/;
@@ -19,7 +20,7 @@ type ProfileCard = {
 
 @Component({
   selector: "nx-new-run",
-  imports: [TicketPicker],
+  imports: [TicketPicker, Icon],
   templateUrl: "./new-run.html",
   host: { class: "block h-full overflow-y-auto" },
 })

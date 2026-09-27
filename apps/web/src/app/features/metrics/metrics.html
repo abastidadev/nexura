@@ -1,17 +1,15 @@
 <div class="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-7 md:px-8 md:py-9">
   <div class="flex flex-wrap items-end justify-between gap-4">
     <div>
-      <p class="text-[11px] font-bold tracking-[.18em] text-accent uppercase">Análisis</p>
-      <h1 class="mt-1 text-3xl font-bold tracking-tight">Métricas</h1>
-      <p class="mt-1 text-[13px] text-muted">Uso de tokens y fallos por agente, paso y perfil en los flujos de Nexura.</p>
+      <h1 class="text-2xl font-semibold tracking-tight md:text-[1.75rem]">Métricas</h1>
+      <p class="mt-1 text-sm text-muted">Uso de tokens y fallos por agente, paso y perfil en los flujos de Nexura.</p>
     </div>
-    <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Rango de días">
+    <div class="nx-seg" role="radiogroup" aria-label="Rango de días">
       @for (range of ranges; track range) {
         <button
           type="button"
           role="radio"
-          class="px-3 py-1 text-[12px]"
-          [class]="days() === range ? 'bg-accent-strong text-white' : 'hover:bg-surface-3'"
+          [class]="days() === range ? 'nx-seg-on' : ''"
           [attr.aria-checked]="days() === range"
           (click)="days.set(range)"
         >
@@ -22,16 +20,16 @@
   </div>
 
   @if (data.error()) {
-    <p class="rounded-md border border-err bg-err-soft px-3 py-2 text-err" role="alert">No se pudieron cargar las métricas.</p>
+    <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">No se pudieron cargar las métricas.</p>
   }
 
   @if (metrics(); as m) {
     <section class="grid grid-cols-2 gap-3 md:grid-cols-3 xl:grid-cols-5" aria-label="Resumen">
       @for (tile of tiles(); track tile.label) {
         <div class="rounded-lg border border-border bg-surface p-3">
-          <div class="text-[11px] font-medium text-muted uppercase">{{ tile.label }}</div>
-          <div class="mt-1 font-mono text-[22px] leading-tight">{{ tile.value }}</div>
-          <div class="mt-0.5 text-[11px] text-muted">{{ tile.hint }}</div>
+          <div class="text-xs font-medium text-muted">{{ tile.label }}</div>
+          <div class="mt-1 text-2xl leading-tight font-semibold tracking-tight tabular-nums">{{ tile.value }}</div>
+          <div class="mt-0.5 text-xs text-muted">{{ tile.hint }}</div>
         </div>
       }
     </section>
@@ -39,16 +37,16 @@
     <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="account-usage">
       <div class="flex items-center justify-between gap-3">
         <h2 id="account-usage" class="font-semibold">Cuota de Claude, Codex y Copilot</h2>
-        <button type="button" class="text-[12px] text-accent hover:underline" (click)="accountRefresh.update((n) => n + 1)">Actualizar</button>
+        <button type="button" class="text-sm text-accent hover:underline" (click)="accountRefresh.update((n) => n + 1)">Actualizar</button>
       </div>
-      <p class="mb-3 text-[12px] text-muted">Consumo de toda la cuenta vinculada, también fuera de Nexura. La consulta no envía prompts al modelo.</p>
+      <p class="mb-3 text-sm text-muted">Consumo de toda la cuenta vinculada, también fuera de Nexura. La consulta no envía prompts al modelo.</p>
       @if (accountData.isLoading()) {
-        <div class="flex items-center gap-2 py-6 text-[12px] text-muted" role="status">
+        <div class="flex items-center gap-2 py-6 text-sm text-muted" role="status">
           <span class="size-4 animate-spin rounded-full border-2 border-muted border-t-accent" aria-hidden="true"></span>
           Cargando cuotas de los proveedores…
         </div>
       } @else if (accountData.error()) {
-        <p class="py-3 text-[12px] text-err" role="alert">No se pudieron cargar las cuotas. Pulsa actualizar para intentarlo de nuevo.</p>
+        <p class="py-3 text-sm text-err" role="alert">No se pudieron cargar las cuotas. Pulsa actualizar para intentarlo de nuevo.</p>
       } @else {
       <div class="grid gap-3 md:grid-cols-3">
         <div class="rounded-md border border-border p-3">
@@ -56,19 +54,19 @@
           @if (accountUsage()?.claude; as claude) {
             @for (window of claude.windows; track window.label) {
               <div class="mt-3">
-                <div class="flex justify-between text-[12px]"><span>Ventana {{ window.label }}</span><span class="font-mono">{{ window.usedPercent | number: "1.0-1" }} % usado</span></div>
+                <div class="flex justify-between text-sm"><span>Ventana {{ window.label }}</span><span class="font-mono">{{ window.usedPercent | number: "1.0-1" }} % usado</span></div>
                 <div class="mt-1 h-2 rounded bg-surface-3" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="window.usedPercent" [attr.aria-label]="'Claude ' + window.label + ': ' + window.usedPercent + '% usado'">
                   <div class="h-2 rounded bg-accent" [style.width.%]="window.usedPercent"></div>
                 </div>
                 @if (window.resetsAt) {
-                  <p class="mt-1 text-[11px] text-muted">Se reinicia en {{ resetIn(window.resetsAt) }}</p>
+                  <p class="mt-1 text-xs text-muted">Se reinicia en {{ resetIn(window.resetsAt) }}</p>
                 } @else if (window.resetText) {
-                  <p class="mt-1 text-[11px] text-muted">Se reinicia {{ window.resetText }}</p>
+                  <p class="mt-1 text-xs text-muted">Se reinicia {{ window.resetText }}</p>
                 }
               </div>
             }
           } @else {
-            <p class="mt-2 text-[12px] text-muted">Sin datos de cuota de la cuenta.</p>
+            <p class="mt-2 text-sm text-muted">Sin datos de cuota de la cuenta.</p>
           }
         </div>
         <div class="rounded-md border border-border p-3">
@@ -76,27 +74,27 @@
           @if (accountUsage()?.codex; as codex) {
             @for (window of codex.windows; track window.label) {
               <div class="mt-3">
-                <div class="flex justify-between text-[12px]"><span>Ventana {{ window.label }}</span><span class="font-mono">{{ window.usedPercent | number: "1.0-1" }} % usado</span></div>
+                <div class="flex justify-between text-sm"><span>Ventana {{ window.label }}</span><span class="font-mono">{{ window.usedPercent | number: "1.0-1" }} % usado</span></div>
                 <div class="mt-1 h-2 rounded bg-surface-3" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="window.usedPercent" [attr.aria-label]="'Codex ' + window.label + ': ' + window.usedPercent + '% usado'">
                   <div class="h-2 rounded bg-accent" [style.width.%]="window.usedPercent"></div>
                 </div>
-                <p class="mt-1 text-[11px] text-muted">Se reinicia en {{ resetIn(window.resetsAt) }}</p>
+                <p class="mt-1 text-xs text-muted">Se reinicia en {{ resetIn(window.resetsAt) }}</p>
               </div>
             }
           } @else {
-            <p class="mt-2 text-[12px] text-muted">Sin datos de cuota de la cuenta.</p>
+            <p class="mt-2 text-sm text-muted">Sin datos de cuota de la cuenta.</p>
           }
         </div>
         <div class="rounded-md border border-border p-3">
           <h3 class="font-medium">Copilot</h3>
           @if (accountUsage()?.copilot; as copilot) {
-            <div class="mt-3 flex justify-between text-[12px]"><span>Cuota del plan</span><span class="font-mono">{{ copilot.used }} / {{ copilot.allowance }}</span></div>
+            <div class="mt-3 flex justify-between text-sm"><span>Cuota del plan</span><span class="font-mono">{{ copilot.used }} / {{ copilot.allowance }}</span></div>
             <div class="mt-1 h-2 rounded bg-surface-3" role="meter" aria-valuemin="0" aria-valuemax="100" [attr.aria-valuenow]="100 - copilot.remainingPercent" [attr.aria-label]="'Copilot: ' + copilot.remainingPercent + '% restante'">
               <div class="h-2 rounded bg-accent" [style.width.%]="100 - copilot.remainingPercent"></div>
             </div>
-            <p class="mt-1 text-[11px] text-muted">{{ copilot.remainingPercent | number: "1.0-1" }} % restante · Reinicio {{ copilotReset(copilot.resetsAt) }}</p>
+            <p class="mt-1 text-xs text-muted">{{ copilot.remainingPercent | number: "1.0-1" }} % restante · Reinicio {{ copilotReset(copilot.resetsAt) }}</p>
           } @else {
-            <p class="mt-2 text-[12px] text-muted">Sin datos de cuota de la cuenta.</p>
+            <p class="mt-2 text-sm text-muted">Sin datos de cuota de la cuenta.</p>
           }
         </div>
       </div>
@@ -105,14 +103,14 @@
 
     <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-agent">
       <h2 id="by-agent" class="font-semibold">Por agente</h2>
-      <p class="mb-3 text-[12px] text-muted">Uso de tokens registrado por cada agente en los flujos de Nexura.</p>
+      <p class="mb-3 text-sm text-muted">Uso de tokens registrado por cada agente en los flujos de Nexura.</p>
       <div class="grid gap-3 md:grid-cols-3">
         @for (row of agents(); track row.agent) {
           <div class="rounded-md border border-border p-3">
-            <div class="flex items-center justify-between gap-2"><span class="font-medium">{{ agentLabels[row.agent] }}</span><span class="font-mono text-[12px] text-muted">{{ row.runs }} ejec.</span></div>
-            <div class="mt-2 font-mono text-xl">{{ formatTokens(row.tokens) }} <span class="text-[11px] text-muted">tokens</span></div>
+            <div class="flex items-center justify-between gap-2"><span class="font-medium">{{ agentLabels[row.agent] }}</span><span class="font-mono text-sm text-muted">{{ row.runs }} ejec.</span></div>
+            <div class="mt-2 text-xl font-semibold tracking-tight tabular-nums">{{ formatTokens(row.tokens) }} <span class="text-xs text-muted">tokens</span></div>
             <div class="mt-2 h-2 rounded bg-surface-3"><div class="h-2 rounded bg-accent" [style.width.%]="row.percent"></div></div>
-            <div class="mt-2 text-[12px] text-muted">{{ row.failed }} fallos</div>
+            <div class="mt-2 text-sm text-muted">{{ row.failed }} fallos</div>
           </div>
         } @empty {
           <p class="text-muted">Todavía no hay pasos ejecutados.</p>
@@ -122,9 +120,9 @@
 
     <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-step">
       <h2 id="by-step" class="font-semibold">Por paso, agente y modelo</h2>
-      <p class="mb-3 text-[12px] text-muted">Tokens de cada paso (barra) y ejecuciones fallidas. Los pasos sin LLM no gastan tokens.</p>
+      <p class="mb-3 text-sm text-muted">Tokens de cada paso (barra) y ejecuciones fallidas. Los pasos sin LLM no gastan tokens.</p>
       <table class="w-full border-collapse text-left">
-        <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+        <thead class="border-b border-border text-xs text-muted">
           <tr>
             <th class="py-2 pr-3 font-medium">Paso</th>
             <th class="py-2 pr-3 font-medium">Agente</th>
@@ -166,7 +164,7 @@
       <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-profile">
         <h2 id="by-profile" class="mb-3 font-semibold">Por perfil</h2>
         <table class="w-full border-collapse text-left">
-          <thead class="border-b border-border text-[11px] tracking-wide text-muted uppercase">
+          <thead class="border-b border-border text-xs text-muted">
             <tr>
               <th class="py-2 pr-3 font-medium">Perfil</th>
               <th class="py-2 pr-3 text-right font-medium">Flujos</th>
@@ -194,21 +192,21 @@
 
       <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="by-day">
         <h2 id="by-day" class="font-semibold">Tokens por día</h2>
-        <p class="mb-3 text-[12px] text-muted">Últimos {{ days() }} días, solo días con flujos.</p>
+        <p class="mb-3 text-sm text-muted">Últimos {{ days() }} días, solo días con flujos.</p>
         @if (daysSeries().length === 0) {
           <p class="py-6 text-center text-muted">Sin flujos en este rango.</p>
         } @else {
           <div class="flex h-40 items-end gap-1.5 border-b border-border" role="img" [attr.aria-label]="'Tokens por día en los últimos ' + days() + ' días'">
             @for (day of daysSeries(); track day.day) {
               <div class="group flex h-full min-w-6 max-w-12 flex-1 flex-col justify-end" [attr.title]="dayLabel(day.day) + ': ' + formatTokens(day.tokens) + ' tokens · ' + day.runs + ' flujo(s)'">
-                <span class="mb-1 text-center font-mono text-[10px] text-muted opacity-0 group-hover:opacity-100">{{ formatTokens(day.tokens) }}</span>
+                <span class="mb-1 text-center font-mono text-2xs text-muted opacity-0 group-hover:opacity-100">{{ formatTokens(day.tokens) }}</span>
                 <div class="rounded-t bg-accent group-hover:opacity-80" [style.height.%]="day.percent"></div>
               </div>
             }
           </div>
           <div class="mt-1 flex gap-1.5">
             @for (day of daysSeries(); track day.day) {
-              <span class="min-w-6 max-w-12 flex-1 truncate text-center text-[10px] text-muted">{{ dayLabel(day.day) }}</span>
+              <span class="min-w-6 max-w-12 flex-1 truncate text-center text-2xs text-muted">{{ dayLabel(day.day) }}</span>
             }
           </div>
         }
@@ -218,7 +216,7 @@
     @if (classify(); as c) {
       <section class="rounded-lg border border-border bg-surface p-4" aria-labelledby="classify">
         <h2 id="classify" class="font-semibold">Clasificador automático</h2>
-        <p class="mb-3 text-[12px] text-muted">
+        <p class="mb-3 text-sm text-muted">
           Valora en cada flujo automático si el perfil elegido fue el correcto. Los fallos enseñan qué heurísticas de
           <a class="text-accent hover:underline" routerLink="/config" [queryParams]="{ tab: 'steps', step: 'classify' }">la plantilla de classify</a>
           conviene ajustar.
@@ -227,7 +225,7 @@
           <p class="text-muted">Aún no has valorado ningún flujo.</p>
         } @else {
           <p class="mb-3">
-            <span class="font-mono text-[22px]">{{ percent(c.correct, c.rated) }}</span>
+            <span class="text-2xl font-semibold tracking-tight tabular-nums">{{ percent(c.correct, c.rated) }}</span>
             <span class="text-muted"> de acierto en {{ c.rated }} flujo(s) valorado(s)</span>
           </p>
           @for (mistake of c.mistakes; track mistake.runId) {
@@ -237,7 +235,7 @@
                 , debía ser <strong>{{ mistake.expected }}</strong>
               }
               @if (mistake.reason) {
-                <span class="block text-[12px] text-muted">Motivo que dio: {{ mistake.reason }}</span>
+                <span class="block text-sm text-muted">Motivo que dio: {{ mistake.reason }}</span>
               }
             </a>
           }

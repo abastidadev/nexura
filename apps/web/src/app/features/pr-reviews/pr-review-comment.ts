@@ -20,7 +20,7 @@ export const SEVERITY: Record<PrReviewSeverity, { label: string; tone: Tone }> =
         @if (!readonly()) {
           <input
             type="checkbox"
-            class="mt-0.5 size-4 accent-(--nx-accent)"
+            class="mt-0.5 size-4"
             [checked]="selected()"
             [attr.aria-label]="'Publicar el comentario ' + comment().id"
             (change)="selectedChange.emit($any($event.target).checked)"
@@ -28,15 +28,15 @@ export const SEVERITY: Record<PrReviewSeverity, { label: string; tone: Tone }> =
         } @else if (published()) {
           <span class="text-ok" title="Publicado en la PR" aria-label="Publicado">✔</span>
         }
-        <span class="rounded px-1.5 py-0.5 text-[11px] font-semibold" [class]="tone().bg + ' ' + tone().text">{{ severity().label }}</span>
+        <span class="rounded px-1.5 py-0.5 text-xs font-semibold" [class]="tone().bg + ' ' + tone().text">{{ severity().label }}</span>
         <h3 class="min-w-0 flex-1 font-medium">{{ comment().title }}</h3>
-        <span class="text-[11px] text-muted" [attr.title]="comment().inline ? 'Se ancla en esas líneas de la PR' : 'Va como comentario general de la PR, citando el sitio'">
+        <span class="text-xs text-muted" [attr.title]="comment().inline ? 'Se ancla en esas líneas de la PR' : 'Va como comentario general de la PR, citando el sitio'">
           {{ comment().inline ? "en línea" : "general" }}
         </span>
       </header>
 
       @if (place()) {
-        <p class="mt-1 font-mono text-[12px] text-fg-soft">{{ place() }}</p>
+        <p class="mt-1 font-mono text-sm text-fg-soft">{{ place() }}</p>
       }
 
       @if (comment().snippet; as snippet) {
@@ -45,27 +45,27 @@ export const SEVERITY: Record<PrReviewSeverity, { label: string; tone: Tone }> =
 
       @if (comment().why) {
         <div class="mt-2">
-          <h4 class="text-[11px] font-semibold tracking-wide text-muted uppercase">Por qué</h4>
+          <h4 class="text-xs font-semibold text-muted">Por qué</h4>
           <p class="mt-0.5 whitespace-pre-wrap text-fg-soft">{{ comment().why }}</p>
         </div>
       }
 
       @if (comment().suggestion) {
         <div class="mt-2">
-          <h4 class="text-[11px] font-semibold tracking-wide text-muted uppercase">Sugerencia</h4>
-          <pre class="mt-0.5 overflow-x-auto rounded-md border border-border bg-surface-2 p-2 font-mono text-[12px] leading-5">{{ comment().suggestion }}</pre>
+          <h4 class="text-xs font-semibold text-muted">Sugerencia</h4>
+          <pre class="mt-0.5 overflow-x-auto rounded-md border border-border bg-surface-2 p-2 font-mono text-sm leading-5">{{ comment().suggestion }}</pre>
         </div>
       }
 
       <div class="mt-2">
         <div class="flex items-center justify-between gap-2">
-          <label class="text-[11px] font-semibold tracking-wide text-muted uppercase" [attr.for]="'post-' + comment().id">Comentario para la PR</label>
-          <button type="button" class="rounded px-1.5 py-0.5 text-[11px] text-muted hover:bg-surface-3 hover:text-fg" (click)="copy()">
+          <label class="text-xs font-semibold text-muted" [attr.for]="'post-' + comment().id">Comentario para la PR</label>
+          <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" (click)="copy()">
             {{ copied() ? "Copiado ✔" : "Copiar" }}
           </button>
         </div>
         <textarea
-          class="mt-1 w-full resize-y rounded-md border border-border bg-surface-2 px-2.5 py-1.5 outline-none focus:border-accent disabled:opacity-70"
+          class="nx-input mt-1 w-full resize-y disabled:opacity-70"
           rows="2"
           spellcheck="true"
           lang="en"

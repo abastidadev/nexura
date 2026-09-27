@@ -46,9 +46,8 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
         }
         @default {
           <div>
-            <p class="text-[11px] font-bold tracking-[.18em] text-accent uppercase">Preferencias</p>
-            <h1 class="mt-1 text-3xl font-bold tracking-tight">Configuración</h1>
-            <p class="mt-1 text-[13px] text-muted">
+            <h1 class="text-2xl font-semibold tracking-tight md:text-[1.75rem]">Configuración</h1>
+            <p class="mt-1 text-sm text-muted">
               Perfiles, pasos y repos se guardan en <code class="font-mono">config/</code> del repo de Nexura (versiónalos con git); lo general y las
               notas aprendidas, en <code class="font-mono">data/</code>.
             </p>
@@ -58,8 +57,8 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
               <button
                 type="button"
                 role="tab"
-                class="-mb-px border-b-2 px-3 py-2"
-                [class]="active() === item.id ? 'border-accent text-fg' : 'border-transparent text-muted hover:text-fg'"
+                class="nx-tab"
+                [class.nx-tab-on]="active() === item.id"
                 [attr.aria-selected]="active() === item.id"
                 [attr.title]="item.help"
                 (click)="open(item.id)"

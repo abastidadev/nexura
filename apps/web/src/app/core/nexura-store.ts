@@ -33,6 +33,7 @@ export function reviewLink(run: Run): ToastLink {
 }
 
 export type Theme = "dark" | "light";
+export type ThemePreference = Theme | "system";
 
 function mergeEvents(current: StoredEvent[], incoming: StoredEvent[]): StoredEvent[] {
   const bySeq = new Map(current.map((item) => [item.seq, item]));
@@ -61,7 +62,14 @@ export class NexuraStore {
   public readonly connected = signal(false);
   public readonly now = signal(Date.now());
   public readonly openTabs = signal<string[]>(readStorage<string[]>(TABS_KEY, []));
-  public readonly theme = signal<Theme>(readStorage<Theme>(THEME_KEY, "dark"));
+  /** What the user picked; "system" follows the OS setting. */
+  public readonly themePreference = signal<ThemePreference>(readStorage<ThemePreference>(THEME_KEY, "system"));
+  private readonly systemDark = signal(matchMedia("(prefers-color-scheme: dark)").matches);
+  /** The palette actually shown. */
+  public readonly theme = computed<Theme>(() => {
+    const preference = this.themePreference();
+    return preference === "system" ? (this.systemDark() ? "dark" : "light") : preference;
+  });
   public readonly settings = signal<NexuraSettings | null>(null);
   public readonly toasts = signal<Toast[]>([]);
   public readonly notificationsEnabled = signal<boolean>(readStorage<boolean>(NOTIFY_KEY, false));
@@ -99,10 +107,10 @@ export class NexuraStore {
     // "(n)" on the tab title and the favicon while something waits for the user.
     effect(() => this.notifier.attention.set(this.needsAttention() + this.unseenReviews().length));
     effect(() => {
-      const theme = this.theme();
-      document.documentElement.classList.toggle("light", theme === "light");
-      writeStorage(THEME_KEY, theme);
+      document.documentElement.classList.toggle("light", this.theme() === "light");
+      writeStorage(THEME_KEY, this.themePreference());
     });
+    matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => this.systemDark.set(event.matches));
   }
 
   public async init(): Promise<void> {
@@ -271,8 +279,10 @@ export class NexuraStore {
     this.toast(message);
   }
 
-  public toggleTheme(): void {
-    this.theme.update((theme) => (theme === "dark" ? "light" : "dark"));
+  /** Cycles system → light → dark. */
+  public cycleTheme(): void {
+    const order: ThemePreference[] = ["system", "light", "dark"];
+    this.themePreference.update((current) => order[(order.indexOf(current) + 1) % order.length]!);
   }
 
   /** Turns a status change into a notification when it needs (or informs) the user. */

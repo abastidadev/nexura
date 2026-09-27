@@ -11,13 +11,13 @@ const PREVIEW_CHARS = 600;
   template: `
     <div class="flex h-9 shrink-0 items-center gap-2 border-b border-border px-3">
       <span class="font-medium">Historial</span>
-      <span class="text-[11px] text-muted">{{ messages().length }} mensajes</span>
+      <span class="text-xs text-muted">{{ messages().length }} mensajes</span>
       <span class="ml-auto flex gap-1">
-        <button type="button" class="rounded px-1.5 py-0.5 text-muted hover:bg-surface-3 hover:text-fg" title="Recargar" aria-label="Recargar el historial" (click)="history.reload()">↻</button>
-        <button type="button" class="rounded px-1.5 py-0.5 text-muted hover:bg-surface-3 hover:text-fg" title="Copiar como Markdown" (click)="copy()">
+        <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" title="Recargar" aria-label="Recargar el historial" (click)="history.reload()">↻</button>
+        <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" title="Copiar como Markdown" (click)="copy()">
           {{ copied() ? "✓" : "⧉" }}
         </button>
-        <button type="button" class="rounded px-1.5 py-0.5 text-muted hover:bg-surface-3 hover:text-fg" aria-label="Cerrar el historial" (click)="closed.emit()">×</button>
+        <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost" aria-label="Cerrar el historial" (click)="closed.emit()">×</button>
       </span>
     </div>
     <div class="min-h-0 flex-1 overflow-y-auto px-3 py-2">
@@ -28,7 +28,7 @@ const PREVIEW_CHARS = 600;
       }
       @for (message of messages(); track $index) {
         <article class="mb-3">
-          <header class="mb-0.5 flex items-center gap-1.5 text-[11px]">
+          <header class="mb-0.5 flex items-center gap-1.5 text-xs">
             <span class="font-semibold" [class]="message.role === 'user' ? 'text-accent' : 'text-fg-soft'">
               {{ message.role === "user" ? "Tú" : agentLabels[message.agent] }}
             </span>
@@ -37,14 +37,14 @@ const PREVIEW_CHARS = 600;
             }
             <span class="text-muted">{{ time(message.ts) }}</span>
           </header>
-          <p class="text-[12px] break-words whitespace-pre-wrap" [class.text-fg-soft]="message.role === 'assistant'">{{ expanded().has($index) ? message.text : preview(message.text) }}</p>
+          <p class="text-sm break-words whitespace-pre-wrap" [class.text-fg-soft]="message.role === 'assistant'">{{ expanded().has($index) ? message.text : preview(message.text) }}</p>
           @if (message.text.length > previewChars) {
-            <button type="button" class="text-[11px] text-accent hover:underline" (click)="toggle($index)">
+            <button type="button" class="text-xs text-accent hover:underline" (click)="toggle($index)">
               {{ expanded().has($index) ? "ver menos" : "ver todo" }}
             </button>
           }
           @if (message.tools?.length) {
-            <ul class="mt-1 space-y-0.5 font-mono text-[11px] text-muted">
+            <ul class="mt-1 space-y-0.5 font-mono text-xs text-muted">
               @for (tool of message.tools; track $index) {
                 <li class="truncate" [attr.title]="tool">• {{ tool }}</li>
               }

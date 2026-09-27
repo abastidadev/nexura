@@ -13,6 +13,7 @@ import { ConversationHistory } from "./conversation-history";
 import { ConversationTerminal } from "./conversation-terminal";
 import { NewConversation } from "./new-conversation";
 import { TerminalSessions } from "./terminal-sessions";
+import { Icon } from "../../shared/icon";
 
 const SELECTED_KEY = "nexura.terminal.selected";
 const HISTORY_KEY = "nexura.terminal.history";
@@ -34,7 +35,7 @@ function projectOf(conversation: Conversation): string {
  */
 @Component({
   selector: "nx-terminal-page",
-  imports: [AgentControls, ConversationHistory, ConversationTerminal, NewConversation],
+  imports: [AgentControls, ConversationHistory, ConversationTerminal, NewConversation, Icon],
   templateUrl: "./terminal-page.html",
   host: { class: "flex h-full min-h-0 flex-col lg:flex-row" },
 })

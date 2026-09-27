@@ -7,7 +7,7 @@ import { TerminalSessions } from "./terminal-sessions";
   template: `
     <div #host class="h-full w-full px-2 py-1"></div>
     @if (connection() && !connection()!()) {
-      <span class="absolute top-2 right-3 rounded bg-warn-soft px-2 py-0.5 text-[11px] text-warn" role="status">Reconectando…</span>
+      <span class="absolute top-2 right-3 rounded bg-warn-soft px-2 py-0.5 text-xs text-warn" role="status">Reconectando…</span>
     }
   `,
   host: { class: "relative block min-h-0 min-w-0 bg-[var(--nx-bg)]" },

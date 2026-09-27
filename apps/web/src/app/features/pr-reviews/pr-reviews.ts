@@ -10,6 +10,7 @@ import { StatusPill } from "../../shared/status-pill";
 import { SOURCE_LABELS } from "../new-run/ticket-picker";
 import { EFFORTS } from "../run-view/step-inspector";
 import { PrReviewView } from "./pr-review-view";
+import { Icon } from "../../shared/icon";
 
 const REVIEWER_KEY = "nexura.reviewer";
 const ACTIVE = new Set(["queued", "running", "waiting-rate-limit", "paused"]);
@@ -32,7 +33,7 @@ type PrRow = {
  */
 @Component({
   selector: "nx-pr-reviews",
-  imports: [ModelPicker, StatusPill, PrReviewView],
+  imports: [ModelPicker, StatusPill, PrReviewView, Icon],
   templateUrl: "./pr-reviews.html",
   host: { class: "flex h-full min-h-0 flex-col lg:flex-row" },
 })
