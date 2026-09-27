@@ -6,6 +6,7 @@ import { createApiServer } from "../api/api-server.ts";
 import { PrWatcher } from "../forge/pr-watcher.ts";
 import { loadConfig } from "../config/config-loader.ts";
 import { Orchestrator } from "../orchestrator/orchestrator.ts";
+import { accountUsage } from "../runner/account-usage.ts";
 import { RunStore } from "../store/run-store.ts";
 import { formatEvent, formatRunLine } from "./format.ts";
 
@@ -27,7 +28,7 @@ const USAGE = `Nexura by abastidadev
 function createOrchestrator(concurrency = DEFAULT_CONCURRENCY): { orchestrator: Orchestrator; store: RunStore } {
   const store = new RunStore();
   store.failInterrupted();
-  return { orchestrator: new Orchestrator(loadConfig(), store, { concurrency }), store };
+  return { orchestrator: new Orchestrator(loadConfig(), store, { concurrency, accountUsage: () => accountUsage() }), store };
 }
 
 /** Prints the progress of one run until it reaches a final status. */

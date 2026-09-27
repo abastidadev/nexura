@@ -26,8 +26,8 @@
           </span>
         }
       </span>
-      @if (paused()) {
-        <span class="size-1.5 rounded-full bg-warn" title="Pasos Claude en espera" aria-label="Pasos Claude en espera"></span>
+      @if (paused().size) {
+        <span class="size-1.5 rounded-full bg-warn" [title]="'En espera por la cuota: ' + pausedLabel()" [attr.aria-label]="'En espera por la cuota: ' + pausedLabel()"></span>
       }
     }
     <span class="text-2xs text-muted transition-transform group-open:rotate-180" aria-hidden="true">▼</span>
@@ -70,7 +70,7 @@
         } @empty {
           <p class="mt-1 text-xs text-muted">Sin datos de la cuenta.</p>
         }
-        @if (paused()) {
+        @if (paused().has("claude")) {
           <p class="mt-2 text-xs text-warn">Pasos de Claude en espera por la cuota</p>
         }
       </section>
@@ -90,6 +90,9 @@
         } @else {
           <p class="mt-1 text-xs text-muted">Sin datos de la cuenta.</p>
         }
+        @if (paused().has("codex")) {
+          <p class="mt-2 text-xs text-warn">Pasos de Codex en espera por la cuota</p>
+        }
       </section>
 
       <section class="rounded-md border border-border bg-surface-2 p-2.5" aria-label="Cuota Copilot">
@@ -102,6 +105,9 @@
           <p class="mt-1 text-2xs text-muted">{{ copilot.remainingPercent | number: "1.0-1" }} % restante · Reinicio {{ copilotReset(copilot.resetsAt) }}</p>
         } @else {
           <p class="mt-1 text-xs text-muted">Sin datos de la cuenta.</p>
+        }
+        @if (paused().has("copilot")) {
+          <p class="mt-2 text-xs text-warn">Pasos de Copilot en espera por la cuota</p>
         }
       </section>
       }

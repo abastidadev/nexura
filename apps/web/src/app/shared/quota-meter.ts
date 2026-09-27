@@ -1,6 +1,7 @@
 import { Component, computed, DestroyRef, ElementRef, inject, resource, signal, viewChild } from "@angular/core";
 import { DecimalPipe } from "@angular/common";
 import { RouterLink } from "@angular/router";
+import { AGENT_KINDS, AGENT_LABELS, quotaPauseUntil } from "@nexura/shared";
 import { Api } from "../core/api";
 import { relativeReset } from "../core/format";
 import { NexuraStore } from "../core/nexura-store";
@@ -56,11 +57,13 @@ export class QuotaMeter {
     ];
   });
 
+  /** Agents whose new steps wait because their quota is above the pause threshold. */
   protected readonly paused = computed(() => {
-    const limit = this.store.settings()?.quotaPausePercent;
-    const fiveHour = this.store.quota()?.fiveHour;
-    return limit != null && fiveHour !== undefined && fiveHour.resetsAt * MS_PER_SECOND > this.store.now() && fiveHour.utilization * 100 >= limit;
+    const limit = this.store.settings()?.quotaPausePercent ?? null;
+    const now = this.store.now();
+    return new Set(AGENT_KINDS.filter((agent) => quotaPauseUntil(agent, limit, this.store.quota() ?? undefined, this.accountUsage(), now) !== undefined));
   });
+  protected readonly pausedLabel = computed(() => [...this.paused()].map((agent) => AGENT_LABELS[agent]).join(", "));
 
   protected readonly claudeAge = computed(() => {
     const updatedAt = this.accountUsage()?.claude?.updatedAt;

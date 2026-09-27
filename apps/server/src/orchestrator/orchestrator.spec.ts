@@ -5,6 +5,8 @@ import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   AGENT_MODELS,
+  quotaPauseUntil,
+  type AgentAccountUsage,
   type PrDraft,
   type PrVote,
   type PullRequestSummary,
@@ -631,6 +633,47 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
     expect(statuses).toEqual(expect.arrayContaining(["waiting-rate-limit", "running", "done"]));
     expect(statuses.indexOf("waiting-rate-limit")).toBeLessThan(statuses.lastIndexOf("running"));
     await orchestrator.cleanup(run.id, true);
+  });
+
+  it("waits for the codex quota reset before a codex step, ignoring Claude's window", async () => {
+    const store = new RunStore(":memory:");
+    const resetsAt = Math.floor(Date.now() / 1000) + 3;
+    let reads = 0;
+    const accountUsage = async (): Promise<AgentAccountUsage> => {
+      reads++;
+      return { codex: { windows: [{ label: "5 h", usedPercent: 95, resetsAt }], updatedAt: new Date().toISOString() } };
+    };
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1, rateLimitMarginMs: 0, accountUsage });
+    const statuses: string[] = [];
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && statuses.at(-1) !== message.run.status) {
+        statuses.push(message.run.status);
+      }
+    });
+    const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "codex-test", release: "local" })).id);
+
+    expect(run.status).toBe("done");
+    expect(reads).toBeGreaterThan(0);
+    expect(statuses.indexOf("waiting-rate-limit")).toBeGreaterThanOrEqual(0);
+    expect(statuses.indexOf("waiting-rate-limit")).toBeLessThan(statuses.lastIndexOf("running"));
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("computes the pause per agent: Claude and Codex by their 5 h window, Copilot by its monthly allowance", () => {
+    const now = Date.parse("2026-09-27T10:00:00Z");
+    const later = now / 1000 + 3600;
+    const account: AgentAccountUsage = {
+      codex: { windows: [{ label: "7 d", usedPercent: 99, resetsAt: later }, { label: "5 h", usedPercent: 50, resetsAt: later }], updatedAt: "" },
+      copilot: { used: 270, allowance: 300, remainingPercent: 10, resetsAt: "2026-10-01T00:00:00Z", updatedAt: "" },
+    };
+    const claude = { status: "allowed", fiveHour: { utilization: 0.9, resetsAt: later }, updatedAt: "" };
+    expect(quotaPauseUntil("claude", 90, claude, account, now)).toBe(later);
+    expect(quotaPauseUntil("claude", 95, claude, account, now)).toBeUndefined();
+    expect(quotaPauseUntil("codex", 90, claude, account, now)).toBeUndefined();
+    expect(quotaPauseUntil("copilot", 90, claude, account, now)).toBe(Date.parse("2026-10-01T00:00:00Z") / 1000);
+    expect(quotaPauseUntil("copilot", null, claude, account, now)).toBeUndefined();
+    // A window that already reset no longer pauses.
+    expect(quotaPauseUntil("claude", 90, claude, account, (later + 1) * 1000)).toBeUndefined();
   });
 
   it("validates settings", () => {

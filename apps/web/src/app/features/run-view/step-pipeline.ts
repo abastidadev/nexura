@@ -1,6 +1,6 @@
 import { Component, computed, input, output } from "@angular/core";
 import type { StepName, StepRun } from "@nexura/shared";
-import { elapsedMs, formatCost, formatDuration, modelDetail, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
+import { elapsedMs, formatDuration, modelDetail, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
 
 type PipelineItem =
   | {
@@ -12,7 +12,6 @@ type PipelineItem =
       status: ReturnType<typeof stepDisplayStatus>;
       tone: (typeof TONE_CLASSES)[keyof typeof TONE_CLASSES];
       detail: string;
-      cost: string;
       duration: string;
       turns: number;
       error?: string;
@@ -55,8 +54,7 @@ type PipelineItem =
               </span>
               <span class="mt-0.5 flex gap-2 text-xs text-muted">
                 <span>{{ item.detail }}</span>
-                <span class="ml-auto font-mono">{{ item.cost }}</span>
-                <span class="font-mono">{{ item.duration }}</span>
+                <span class="ml-auto font-mono">{{ item.duration }}</span>
               </span>
               @if (item.error) {
                 <span class="mt-1 line-clamp-2 block text-xs text-err">{{ item.error }}</span>
@@ -101,7 +99,6 @@ export class StepPipeline {
         status,
         tone: TONE_CLASSES[status.tone],
         detail: step.kind === "builtin" ? "sin LLM" : modelDetail(step),
-        cost: step.kind === "builtin" ? "" : formatCost(step.costUsd),
         duration: step.startedAt ? formatDuration(elapsedMs(step.startedAt, step.finishedAt, this.now())) : "",
         turns: step.numTurns,
         error: step.status === "failed" ? step.error : undefined,

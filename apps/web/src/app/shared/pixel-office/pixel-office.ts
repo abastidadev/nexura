@@ -1,6 +1,6 @@
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, input, output, signal, viewChild } from "@angular/core";
 import { ACTIVITY_LABELS, type AgentNode } from "../../core/agents";
-import { elapsedMs, formatCost, formatDuration } from "../../core/format";
+import { elapsedMs, formatDuration } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { modelFamily, type ModelFamily } from "./looks";
 import { officeMembers, planOffice, type Member, type OfficeTeam } from "./office-plan";
@@ -59,9 +59,6 @@ const CLOTHES: Record<ModelFamily, string> = {
             <div class="truncate font-mono text-fg-soft">{{ tip.bubble }}</div>
           }
           <div class="mt-1 flex gap-3 font-mono text-muted">
-            @if (tip.cost) {
-              <span>{{ tip.cost }}</span>
-            }
             @if (tip.duration) {
               <span>{{ tip.duration }}</span>
             }
@@ -160,7 +157,6 @@ export class PixelOffice {
       model: node.model,
       activity: this.activityLabel(node),
       bubble: node.bubble,
-      cost: node.costUsd ? formatCost(node.costUsd) : "",
       duration: node.startedAt ? formatDuration(elapsedMs(node.startedAt, node.finishedAt, this.store.now())) : "",
       turns: node.numTurns ?? 0,
     };

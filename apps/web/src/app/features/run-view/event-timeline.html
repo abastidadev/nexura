@@ -104,7 +104,6 @@
               <span class="font-semibold" [class]="item.result.success ? 'text-ok' : 'text-err'">
                 {{ item.result.success ? "✓ Paso completado" : "✕ " + item.result.subtype }}
               </span>
-              <span class="font-mono text-sm">{{ formatCost(item.result.costUsd) }}</span>
               <span class="text-sm text-fg-soft">{{ item.result.numTurns }} turnos</span>
               <span class="text-sm text-fg-soft">{{ formatDuration(item.result.durationMs) }}</span>
               <span class="text-sm text-muted">

@@ -121,6 +121,13 @@ export class PrReviewsPage {
 
   public constructor() {
     effect(() => writeStorage(REVIEWER_KEY, this.reviewer()));
+    // An opened review gets its header tab, like flows and terminals.
+    effect(() => {
+      const run = this.selectedRun();
+      if (run) {
+        this.store.openTab(run.id);
+      }
+    });
   }
 
   protected unseen(run: Run): boolean {

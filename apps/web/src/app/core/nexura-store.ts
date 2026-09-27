@@ -129,8 +129,8 @@ export class NexuraStore {
     if (quota) {
       this.quota.set(quota);
     }
-    // Drop tabs of runs that no longer exist (and of reviews: they live in Revisiones).
-    this.openTabs.update((tabs) => tabs.filter((id) => runs.some((run) => run.id === id && !isPrReview(run))));
+    // Drop tabs of flows, reviews and terminals that no longer exist.
+    this.openTabs.update((tabs) => tabs.filter((id) => runs.some((run) => run.id === id) || conversations.some((conversation) => conversation.id === id)));
     this.unseenReviews.update((ids) => ids.filter((id) => runs.some((run) => run.id === id)));
   }
 
@@ -153,6 +153,7 @@ export class NexuraStore {
 
   public forgetConversation(id: string): void {
     this.conversationsById.update(({ [id]: _removed, ...rest }) => rest);
+    this.closeTab(id);
   }
 
   public upsertRun(run: Run): void {

@@ -1,7 +1,7 @@
 import { Component, computed, effect, inject, input, linkedSignal, output, signal, untracked } from "@angular/core";
 import { AGENT_LABELS, agentOf, PR_REVIEW_SEVERITIES, type PrReviewSeverity, type PrVote, type Run } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { elapsedMs, formatCost, formatDuration, RUN_STATUS, timeOfDay, type Tone } from "../../core/format";
+import { elapsedMs, formatDuration, RUN_STATUS, timeOfDay, type Tone } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 import { EventTimeline } from "../run-view/event-timeline";
@@ -39,7 +39,7 @@ type Draft = { selected: boolean; post: string };
             <span class="font-mono">{{ target.sourceBranch }} → {{ target.targetBranch }}</span> · {{ target.author }} ·
           }
           {{ agentLabel() }} {{ run().request.reviewConfig?.model }} ({{ run().request.reviewConfig?.effort }}) · {{ timeOfDay(run().createdAt) }} ·
-          {{ duration() }} · {{ cost() }}
+          {{ duration() }}
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
@@ -227,7 +227,6 @@ export class PrReviewView {
   protected readonly status = computed(() => RUN_STATUS[this.run().status]);
   protected readonly active = computed(() => ["queued", "running", "waiting-rate-limit", "paused"].includes(this.run().status));
   protected readonly agentLabel = computed(() => AGENT_LABELS[agentOf(this.run().request.reviewConfig)]);
-  protected readonly cost = computed(() => formatCost(this.run().totalCostUsd));
   protected readonly duration = computed(() => {
     const step = this.run().steps.at(-1);
     return step ? formatDuration(elapsedMs(step.startedAt, step.finishedAt, this.store.now())) : "—";

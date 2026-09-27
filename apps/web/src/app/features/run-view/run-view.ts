@@ -3,7 +3,7 @@ import { RouterLink } from "@angular/router";
 import type { PrDraft, ReviewReply, ReviewThread } from "@nexura/shared";
 import { ACTIVE_RUN_STATUSES, buildRunAgents, plannedSteps, type AgentEvent, type AgentNode } from "../../core/agents";
 import { Api, apiError } from "../../core/api";
-import { elapsedMs, formatCost, formatDuration, formatTokens, RUN_STATUS, stepLabel, timeOfDay } from "../../core/format";
+import { elapsedMs, formatDuration, formatTokens, RUN_STATUS, stepLabel, timeOfDay } from "../../core/format";
 import { NexuraStore, readStorage, writeStorage } from "../../core/nexura-store";
 import { Icon } from "../../shared/icon";
 import { teamColors } from "../../shared/pixel-office/looks";
@@ -99,7 +99,6 @@ export class RunView {
     const live = RUN_STATUS[run.status].live;
     return {
       title: run.request.ticketText.split("\n")[0] ?? "",
-      cost: formatCost(run.totalCostUsd),
       tokens: formatTokens(tokens),
       turns: run.steps.reduce((sum, step) => sum + step.numTurns, 0),
       duration: formatDuration(elapsedMs(run.createdAt, live ? undefined : (lastFinish ?? run.createdAt), this.store.now())),

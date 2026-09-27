@@ -1,4 +1,5 @@
-import { Component, computed, effect, inject, linkedSignal, signal } from "@angular/core";
+import { Component, computed, effect, inject, input, linkedSignal, signal } from "@angular/core";
+import { Router } from "@angular/router";
 import {
   AGENT_LABELS,
   CONVERSATION_MODE_LABELS,
@@ -43,6 +44,11 @@ export class TerminalPage {
   private readonly api = inject(Api);
   protected readonly store = inject(NexuraStore);
   private readonly sessions = inject(TerminalSessions);
+  private readonly router = inject(Router);
+
+  /** `?c=<id>`: the conversation to show (the header tabs link here). */
+  public readonly c = input<string>();
+  private lastLinked?: string;
 
   protected readonly agentLabels = AGENT_LABELS;
   protected readonly modeLabels = CONVERSATION_MODE_LABELS;
@@ -108,6 +114,24 @@ export class TerminalPage {
       .catch(() => this.agents.set(null));
     effect(() => writeStorage(SELECTED_KEY, this.selectedId()));
     effect(() => writeStorage(HISTORY_KEY, this.showHistory()));
+    // The URL names the shown conversation, so its header tab (opened here) is highlighted.
+    effect(() => {
+      const linked = this.c();
+      if (linked !== this.lastLinked) {
+        this.lastLinked = linked;
+        if (linked) {
+          this.selectedId.set(linked);
+        }
+      }
+      const selected = this.selected();
+      if (!selected) {
+        return;
+      }
+      this.store.openTab(selected.id);
+      if (linked !== selected.id) {
+        void this.router.navigate([], { queryParams: { c: selected.id }, replaceUrl: true });
+      }
+    });
     // Once the list is loaded: a selection that no longer exists moves to the newest one, and
     // terminals of conversations deleted elsewhere are freed.
     effect(() => {

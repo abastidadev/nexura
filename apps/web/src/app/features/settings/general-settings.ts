@@ -34,20 +34,18 @@ import { NexuraStore } from "../../core/nexura-store";
         <p class="mt-2 text-xs text-muted">
           Instalar: <code class="font-mono">npm install -g &#64;openai/codex</code> · <code class="font-mono">winget install GitHub.Copilot</code> (o <code class="font-mono">npm install -g &#64;github/copilot</code>).
           Otro binario: <code class="font-mono">NEXURA_CLAUDE_BIN</code>, <code class="font-mono">NEXURA_CODEX_BIN</code>,
-          <code class="font-mono">NEXURA_COPILOT_BIN</code>. Solo los pasos con Claude miden la cuota, respetan el presupuesto y admiten mensajes a
-          mitad de paso.
+          <code class="font-mono">NEXURA_COPILOT_BIN</code>. Solo los pasos con Claude respetan el presupuesto y admiten mensajes a mitad de paso.
         </p>
       </div>
 
       <div>
         <h2 class="font-semibold">Cuota del plan</h2>
         <p class="mt-1 text-sm text-muted">
-          El uso de las ventanas de 5 h y 7 días llega en cada llamada a Claude (no hay forma gratuita de consultarlo aparte).
-          Incluye todo tu uso de Claude, también las sesiones interactivas. Con el umbral, Nexura no lanza pasos nuevos con Claude
-          mientras la ventana de 5 h esté por encima, y sigue sola cuando se reinicia; los pasos sin LLM siguen corriendo.
+          Cuenta todo el uso de tus planes, también las sesiones interactivas. Con el umbral, Nexura no lanza pasos nuevos con un agente
+          mientras su cuota esté por encima, y sigue sola cuando se reinicia; los pasos sin LLM siguen corriendo.
         </p>
         <label class="mt-3 flex items-center gap-2">
-          Pausar pasos con Claude al llegar al
+          Pausar pasos al llegar al
           <input
             type="number"
             min="1"
@@ -57,7 +55,7 @@ import { NexuraStore } from "../../core/nexura-store";
             [value]="draft().quotaPausePercent ?? ''"
             (input)="setQuota(value($event))"
           />
-          % de la ventana de 5 h
+          % de la cuota
         </label>
       </div>
 

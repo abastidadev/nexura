@@ -2,7 +2,7 @@ import { Component, computed, inject, input, linkedSignal, output, resource, sig
 import { RouterLink } from "@angular/router";
 import { AGENT_KINDS, AGENT_LABELS, agentOf, modelsFor, type AgentKind, type Effort, type Run, type StepRun } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { elapsedMs, formatCost, formatDuration, formatTokens, modelDetail, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
+import { elapsedMs, formatDuration, formatTokens, modelDetail, stepDisplayStatus, stepLabel, TONE_CLASSES } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { ModelPicker } from "../../shared/model-picker";
 import { EventTimeline } from "./event-timeline";
@@ -56,7 +56,6 @@ export class StepInspector {
     const step = this.step();
     const usage = step.usage;
     return {
-      cost: formatCost(step.costUsd),
       duration: step.startedAt ? formatDuration(elapsedMs(step.startedAt, step.finishedAt, this.store.now())) : "—",
       tokens: usage
         ? `in ${formatTokens(usage.inputTokens)} · out ${formatTokens(usage.outputTokens)} · cache ${formatTokens(usage.cacheReadTokens + usage.cacheCreationTokens)}`

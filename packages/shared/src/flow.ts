@@ -441,7 +441,7 @@ export type ReviewWatch = {
 
 /** Server-wide settings, editable in Configuración > General. */
 export type NexuraSettings = {
-  /** Claude steps wait for the window reset while the 5 h usage is at or above this %. null = never. */
+  /** LLM steps wait for their agent's quota reset while its usage is at or above this % (Claude and Codex: 5 h window; Copilot: monthly allowance). null = never. */
   quotaPausePercent: number | null;
   /** How often finished runs with an open PR are checked for new comments (REST, free). 0 = off. */
   prPollSeconds: number;
@@ -505,6 +505,37 @@ export type QuotaInfo = {
   sevenDay?: { utilization: number; resetsAt: number };
   updatedAt: string;
 };
+
+/**
+ * Epoch seconds until which new steps of `agent` wait for their quota, or undefined to run now.
+ * Claude and Codex use their 5 h window (Claude's from the stream, fresher than /usage); Copilot its monthly allowance.
+ */
+export function quotaPauseUntil(
+  agent: AgentKind,
+  limit: number | null,
+  claude: QuotaInfo | undefined,
+  account: AgentAccountUsage | undefined,
+  nowMs = Date.now(),
+): number | undefined {
+  if (limit === null) {
+    return undefined;
+  }
+  let window: { usedPercent: number; resetsAt?: number } | undefined;
+  if (agent === "claude") {
+    const fiveHour = claude?.fiveHour;
+    window = fiveHour ? { usedPercent: fiveHour.utilization * 100, resetsAt: fiveHour.resetsAt } : account?.claude?.windows.find((item) => item.label === "5 h");
+  } else if (agent === "codex") {
+    const windows = account?.codex?.windows;
+    window = windows?.find((item) => item.label === "5 h") ?? windows?.[0];
+  } else if (account?.copilot) {
+    const resetsAt = account.copilot.resetsAt ? Date.parse(account.copilot.resetsAt) / 1000 : Number.NaN;
+    window = { usedPercent: 100 - account.copilot.remainingPercent, resetsAt: Number.isFinite(resetsAt) ? resetsAt : undefined };
+  }
+  if (!window?.resetsAt || window.resetsAt * 1000 <= nowMs) {
+    return undefined;
+  }
+  return window.usedPercent >= limit ? window.resetsAt : undefined;
+}
 
 /** Overrides applied when retrying a failed step from the UI/CLI. */
 export type RetryOptions = {

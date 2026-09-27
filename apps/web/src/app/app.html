@@ -120,15 +120,16 @@
     <header class="flex h-12 shrink-0 items-center gap-3 border-b border-border bg-bg px-3 md:px-5 lg:h-14">
       <div class="hidden min-w-0 flex-1 items-center gap-3 lg:flex">
         @if (tabs().length) {
-          <nav class="flex min-w-0 items-center gap-1 overflow-x-auto py-1" aria-label="Flujos abiertos">
+          <nav class="flex min-w-0 items-center gap-1 overflow-x-auto py-1" aria-label="Pestañas abiertas">
             @for (tab of tabs(); track tab.id) {
               <a
-                [routerLink]="['/runs', tab.id]"
+                [routerLink]="tab.link"
+                [queryParams]="tab.queryParams"
                 routerLinkActive="!border-border-strong !bg-surface !text-fg shadow-sm"
                 ariaCurrentWhenActive="page"
                 class="group relative flex h-9 max-w-56 shrink-0 cursor-grab items-center gap-2 rounded-lg border border-transparent pr-1 pl-3 text-sm text-fg-soft hover:bg-surface-2 hover:text-fg"
                 [class.opacity-40]="dragging() === tab.id"
-                [attr.title]="tab.title + ' · ' + tab.status.label + ' · arrastra para reordenar'"
+                [attr.title]="tab.title + ' · ' + tab.status + ' · arrastra para reordenar'"
                 draggable="true"
                 (dragstart)="onDragStart($event, tab.id)"
                 (dragover)="onDragOver($event, tab.id)"
@@ -139,20 +140,21 @@
                 @if (dropTarget()?.id === tab.id) {
                   <span class="pointer-events-none absolute inset-y-1 w-0.5 rounded bg-accent" [class]="dropTarget()!.side === 'before' ? '-left-px' : '-right-px'" aria-hidden="true"></span>
                 }
-                <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.status.live" aria-hidden="true"></span>
+                <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.live" aria-hidden="true"></span>
+                <nx-icon [name]="tab.icon" [size]="14" class="shrink-0 text-muted" />
                 <span class="truncate">{{ tab.label }}</span>
-                <span class="sr-only">, {{ tab.status.label }}</span>
+                <span class="sr-only">, {{ tab.status }}</span>
                 @if (tab.comments) {
                   <span class="rounded-md bg-info-soft px-1.5 text-2xs font-semibold text-info tabular-nums">{{ tab.comments }}<span class="sr-only"> comentarios</span></span>
                 }
-                <button type="button" class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-3 hover:text-fg" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">
+                <button type="button" class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted hover:bg-surface-3 hover:text-fg" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab)">
                   <nx-icon name="x" [size]="14" />
                 </button>
               </a>
             }
           </nav>
         } @else {
-          <span class="text-sm text-muted">Los flujos que abras aparecerán aquí como pestañas.</span>
+          <span class="text-sm text-muted">Los flujos, revisiones y terminales que abras aparecerán aquí como pestañas.</span>
         }
       </div>
       <div class="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
@@ -185,17 +187,19 @@
     </header>
 
     @if (tabs().length) {
-      <nav class="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-bg px-3 py-1.5 lg:hidden" aria-label="Flujos abiertos">
+      <nav class="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-bg px-3 py-1.5 lg:hidden" aria-label="Pestañas abiertas">
         @for (tab of tabs(); track tab.id) {
           <a
-            [routerLink]="['/runs', tab.id]"
+            [routerLink]="tab.link"
+            [queryParams]="tab.queryParams"
             routerLinkActive="!bg-surface-2 !text-fg"
             ariaCurrentWhenActive="page"
             class="flex h-9 max-w-44 shrink-0 items-center gap-2 rounded-lg pr-1 pl-2.5 text-xs text-fg-soft"
           >
             <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" aria-hidden="true"></span>
+            <nx-icon [name]="tab.icon" [size]="13" class="shrink-0 text-muted" />
             <span class="truncate">{{ tab.label }}</span>
-            <button type="button" class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">
+            <button type="button" class="flex size-7 shrink-0 items-center justify-center rounded-md text-muted" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab)">
               <nx-icon name="x" [size]="14" />
             </button>
           </a>

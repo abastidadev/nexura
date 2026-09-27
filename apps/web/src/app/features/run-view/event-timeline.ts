@@ -1,7 +1,7 @@
 import { afterRenderEffect, Component, computed, ElementRef, input, signal, viewChild } from "@angular/core";
 import type { NexuraEvent } from "@nexura/shared";
 import type { StoredEvent } from "../../core/api";
-import { formatCost, formatDuration, formatTokens, timeOfDay } from "../../core/format";
+import { formatDuration, formatTokens, timeOfDay } from "../../core/format";
 
 type ToolUse = Extract<NexuraEvent, { kind: "toolUse" }>;
 type ToolResult = Extract<NexuraEvent, { kind: "toolResult" }>;
@@ -74,7 +74,6 @@ export class EventTimeline {
   private readonly scroller = viewChild.required<ElementRef<HTMLElement>>("scroller");
   protected readonly follow = signal(true);
   protected readonly showThinking = signal(false);
-  protected readonly formatCost = formatCost;
   protected readonly formatDuration = formatDuration;
   protected readonly formatTokens = formatTokens;
   protected readonly timeOfDay = timeOfDay;

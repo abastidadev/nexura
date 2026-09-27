@@ -82,13 +82,6 @@ export const TONE_CLASSES: Record<Tone, { text: string; bg: string; dot: string 
   muted: { text: "text-muted", bg: "bg-surface-3", dot: "bg-muted" },
 };
 
-export function formatCost(usd: number | undefined): string {
-  if (!usd) {
-    return "$0";
-  }
-  return usd < 0.01 ? `$${usd.toFixed(4)}` : `$${usd.toFixed(3)}`;
-}
-
 export function formatDuration(ms: number): string {
   if (ms < 1000) {
     return `${Math.max(0, Math.round(ms))} ms`;

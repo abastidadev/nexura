@@ -1,7 +1,7 @@
 import { Component, computed, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import type { Run } from "@nexura/shared";
-import { elapsedMs, formatCost, formatDuration, RUN_STATUS, stepLabel, TONE_CLASSES, type Tone } from "../../core/format";
+import { elapsedMs, formatDuration, RUN_STATUS, stepLabel, TONE_CLASSES, type Tone } from "../../core/format";
 import { apiError } from "../../core/api";
 import { isPrReview, NexuraStore } from "../../core/nexura-store";
 import { Icon, type IconName } from "../../shared/icon";
@@ -14,7 +14,6 @@ type RunRow = {
   repos: string;
   profile: string;
   step: string;
-  cost: string;
   duration: string;
   created: string;
   status: (typeof RUN_STATUS)[keyof typeof RUN_STATUS];
@@ -39,7 +38,6 @@ export class RunsHome {
   protected readonly store = inject(NexuraStore);
   protected readonly toneDot = Object.fromEntries(Object.entries(TONE_CLASSES).map(([tone, classes]) => [tone, classes.dot])) as Record<Tone, string>;
 
-  protected readonly totalCost = computed(() => formatCost(this.store.runs().reduce((sum, run) => sum + run.totalCostUsd, 0)));
   protected readonly rows = computed<RunRow[]>(() => {
     const now = this.store.now();
     // PR reviews live in Revisiones.
@@ -78,7 +76,7 @@ export class RunsHome {
     { label: "Flujos", value: this.rows().length, icon: "flows", tone: "bg-surface-3 text-fg-soft" },
     { label: "En curso", value: this.activeCount(), icon: "activity", tone: "bg-info-soft text-info" },
     { label: "Terminados", value: this.doneCount(), icon: "done", tone: "bg-ok-soft text-ok" },
-    { label: "Coste acumulado", value: this.totalCost(), icon: "coins", tone: "bg-accent-soft text-accent" },
+    { label: "Con fallos", value: this.failedCount(), icon: "alert", tone: "bg-err-soft text-err" },
   ]);
 
   protected readonly deleting = signal<string | null>(null);
@@ -112,7 +110,6 @@ export class RunsHome {
       repos: run.request.repos.join(", "),
       profile: run.resolvedProfile ?? (run.request.profile === "auto" ? "auto…" : run.request.profile),
       step: current ? `${stepLabel(current.step)}${current.attempt > 1 ? ` #${current.attempt}` : ""}` : "—",
-      cost: formatCost(run.totalCostUsd),
       duration: formatDuration(elapsedMs(run.createdAt, live ? undefined : (last ?? run.createdAt), now)),
       created: new Date(run.createdAt).toLocaleString("es-ES", { dateStyle: "short", timeStyle: "short" }),
       status: RUN_STATUS[run.status],

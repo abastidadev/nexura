@@ -1,7 +1,7 @@
 import { Component, computed, effect, inject, signal, type OnInit } from "@angular/core";
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
 import { RUN_STATUS, TONE_CLASSES, type Tone } from "./core/format";
-import { NexuraStore, type Toast } from "./core/nexura-store";
+import { isPrReview, NexuraStore, reviewLink, type Toast } from "./core/nexura-store";
 import { Notifier } from "./core/notifier";
 import { readStorage, writeStorage } from "./core/storage";
 import { Icon, type IconName } from "./shared/icon";
@@ -10,6 +10,21 @@ import { QuotaMeter } from "./shared/quota-meter";
 const COLLAPSED_KEY = "nexura.sidebarCollapsed";
 
 type NavItem = { path: string; label: string; icon: IconName };
+
+/** A header tab: a flow, a PR review or a terminal conversation. */
+type HeaderTab = {
+  id: string;
+  icon: IconName;
+  label: string;
+  title: string;
+  status: string;
+  live: boolean;
+  dot: string;
+  link: string[];
+  queryParams?: Record<string, string>;
+  /** Open PR comment threads (flows only). */
+  comments: number;
+};
 
 @Component({
   selector: "nx-root",
@@ -58,20 +73,56 @@ export class App implements OnInit {
   private readonly everConnected = signal(false);
   protected readonly showDisconnected = signal(false);
 
-  protected readonly tabs = computed(() =>
-    this.store
-      .openTabs()
-      .map((id) => this.store.runs().find((run) => run.id === id))
-      .filter((run) => run !== undefined)
-      .map((run) => ({
-        id: run.id,
-        label: run.request.ticketId ? `#${run.request.ticketId}` : run.request.ticketText.split("\n")[0]!.slice(0, 28),
-        title: run.request.ticketText.split("\n")[0] ?? "",
-        status: RUN_STATUS[run.status],
-        dot: TONE_CLASSES[RUN_STATUS[run.status].tone].dot,
-        comments: run.reviewWatch?.prStatus === "active" ? run.reviewWatch.activeThreads : 0,
-      })),
-  );
+  /** Everything open in the header: flows, PR reviews and terminal conversations. */
+  protected readonly tabs = computed<HeaderTab[]>(() => {
+    const runs = new Map(this.store.runs().map((run) => [run.id, run]));
+    const conversations = new Map(this.store.conversations().map((conversation) => [conversation.id, conversation]));
+    return this.store.openTabs().flatMap((id): HeaderTab[] => {
+      const run = runs.get(id);
+      if (run) {
+        const status = RUN_STATUS[run.status];
+        const common = { id, status: status.label, live: status.live, dot: TONE_CLASSES[status.tone].dot };
+        if (isPrReview(run)) {
+          const link = reviewLink(run);
+          const pr = run.request.prReview;
+          return [{
+            ...common,
+            icon: "reviews",
+            label: `PR #${pr?.id ?? "?"}`,
+            title: `Revisión · ${pr?.title ?? run.request.repos[0] ?? ""}`,
+            link: link.path,
+            queryParams: link.queryParams,
+            comments: 0,
+          }];
+        }
+        return [{
+          ...common,
+          icon: "flows",
+          label: run.request.ticketId ? `#${run.request.ticketId}` : run.request.ticketText.split("\n")[0]!.slice(0, 28),
+          title: run.request.ticketText.split("\n")[0] ?? "",
+          link: ["/runs", id],
+          comments: run.reviewWatch?.prStatus === "active" ? run.reviewWatch.activeThreads : 0,
+        }];
+      }
+      const conversation = conversations.get(id);
+      if (conversation) {
+        const running = conversation.status === "running";
+        return [{
+          id,
+          icon: "terminal",
+          label: conversation.title.slice(0, 28),
+          title: `Terminal · ${conversation.title}`,
+          status: running ? "En marcha" : "Detenida",
+          live: running,
+          dot: running ? "bg-ok" : "bg-muted",
+          link: ["/terminal"],
+          queryParams: { c: id },
+          comments: 0,
+        }];
+      }
+      return [];
+    });
+  });
 
   /** Steps running right now in any flow (subagents are counted in the Agentes view). */
   protected readonly workingAgents = computed(() =>
@@ -166,13 +217,20 @@ export class App implements OnInit {
     this.store.init().catch(() => this.loadError.set("No se puede conectar con el servidor de Nexura (npm run serve)."));
   }
 
-  protected closeTab(event: Event, id: string): void {
+  /** Closing only hides the tab: a running terminal keeps running. Closing the one on screen moves to the last open tab. */
+  protected closeTab(event: Event, tab: HeaderTab): void {
     event.preventDefault();
     event.stopPropagation();
-    this.store.closeTab(id);
-    if (this.router.url.startsWith(`/runs/${id}`)) {
-      const remaining = this.store.openTabs();
-      void this.router.navigate(remaining.length ? ["/runs", remaining.at(-1)] : ["/"]);
+    const shown = this.isShown(tab);
+    this.store.closeTab(tab.id);
+    if (shown) {
+      const next = this.tabs().at(-1);
+      void this.router.navigate(next ? next.link : ["/"], { queryParams: next?.queryParams });
     }
+  }
+
+  private isShown(tab: HeaderTab): boolean {
+    const tree = this.router.createUrlTree(tab.link, { queryParams: tab.queryParams });
+    return this.router.isActive(tree, { paths: "exact", queryParams: "subset", fragment: "ignored", matrixParams: "ignored" });
   }
 }

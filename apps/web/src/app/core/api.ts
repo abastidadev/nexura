@@ -58,7 +58,6 @@ export function apiError(error: unknown, fallback: string): string {
   return (error as { error?: { error?: string } }).error?.error ?? fallback;
 }
 
-export type CostByStep = { step: string; model: string; runs: number; costUsd: number; avgTurns: number };
 
 /** Thin typed client of the Nexura server REST API. */
 @Service()
@@ -294,9 +293,5 @@ export class Api {
   /** Every message across the agents it went through, from their session files (no tokens). */
   public conversationHistory(id: string): Promise<TranscriptMessage[]> {
     return firstValueFrom(this.http.get<TranscriptMessage[]>(`/api/conversations/${id}/history`));
-  }
-
-  public costByStep(): Promise<CostByStep[]> {
-    return firstValueFrom(this.http.get<CostByStep[]>("/api/metrics/cost-by-step"));
   }
 }

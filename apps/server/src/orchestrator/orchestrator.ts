@@ -10,6 +10,8 @@ import {
   PR_VOTES,
   DEFAULT_SETTINGS,
   orderSteps,
+  quotaPauseUntil,
+  type AgentAccountUsage,
   type AgentKind,
   type CreatedPr,
   type FlowProfile,
@@ -131,6 +133,8 @@ export type OrchestratorOptions = {
   concurrency: number;
   /** Extra wait after a window reset before retrying (default 60 s; tests use 0). */
   rateLimitMarginMs?: number;
+  /** Codex/Copilot plan usage for the quota pause (the server passes the real reader; without it only Claude pauses). */
+  accountUsage?: () => Promise<AgentAccountUsage>;
 };
 
 const SETTINGS_KEY = "settings";
@@ -714,10 +718,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     options?: RetryOptions,
     judge?: StepRun["judge"],
   ): Promise<StepRun | undefined> {
-    const usesClaude = this.config.steps.get(stepName)?.kind !== "builtin" && (options?.agent ?? agentOf(stepConfig)) === "claude";
+    const agent = this.config.steps.get(stepName)?.kind === "builtin" ? undefined : (options?.agent ?? agentOf(stepConfig));
     for (;;) {
-      // Don't start a Claude step while the plan window is above the user's threshold (it only measures Claude's plan).
-      const guardedUntil = usesClaude ? this.quotaGuardUntil() : undefined;
+      // Don't start an LLM step while its agent's quota is above the user's threshold.
+      const guardedUntil = agent ? await this.quotaGuardUntil(agent) : undefined;
       if (guardedUntil !== undefined) {
         await this.waitForWindow(run, context, guardedUntil);
         continue;
@@ -784,14 +788,15 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     return { ...judgeB, structuredOutput: merged };
   }
 
-  /** Epoch seconds of the 5 h window reset when its usage is at/above the configured %, else undefined. */
-  private quotaGuardUntil(): number | undefined {
+  /** Epoch seconds of the agent's quota reset when its usage is at/above the configured %, else undefined. */
+  private async quotaGuardUntil(agent: AgentKind): Promise<number | undefined> {
     const limit = this.settings.quotaPausePercent;
-    const window = this.quota?.fiveHour;
-    if (limit === null || !window || window.resetsAt * 1000 <= Date.now()) {
+    if (limit === null) {
       return undefined;
     }
-    return window.utilization * 100 >= limit ? window.resetsAt : undefined;
+    // Claude's window comes with every stream; Codex and Copilot only report theirs through the account helpers.
+    const account = agent === "claude" || !this.options.accountUsage ? undefined : await this.options.accountUsage().catch(() => undefined);
+    return quotaPauseUntil(agent, limit, this.quota, account);
   }
 
   private async waitForWindow(run: Run, context: RunContext, resetsAt: number): Promise<void> {

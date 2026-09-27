@@ -2,7 +2,7 @@ import { Component, computed, effect, inject, signal } from "@angular/core";
 import { RouterLink } from "@angular/router";
 import type { Run } from "@nexura/shared";
 import { ACTIVE_RUN_STATUSES, buildRunAgents, countWorking, plannedSteps, type AgentEvent, type AgentNode } from "../../core/agents";
-import { formatCost, RUN_STATUS } from "../../core/format";
+import { RUN_STATUS } from "../../core/format";
 import { NexuraStore, readStorage, writeStorage } from "../../core/nexura-store";
 import { teamColors } from "../../shared/pixel-office/looks";
 import type { OfficeTeam } from "../../shared/pixel-office/office-plan";
@@ -22,7 +22,6 @@ type Room = {
   title: string;
   color: string;
   status: (typeof RUN_STATUS)[keyof typeof RUN_STATUS];
-  cost: string;
   agents: AgentNode[];
   working: number;
   waiting: number;
@@ -109,7 +108,6 @@ export class AgentsPage {
       title: run.request.ticketId ? `#${run.request.ticketId} · ${title}` : title,
       color: this.colors().get(run.id) ?? "#888888",
       status: RUN_STATUS[run.status],
-      cost: formatCost(run.totalCostUsd),
       agents,
       working: countWorking(agents),
       waiting: agents.filter((agent) => agent.activity === "waiting").length,
