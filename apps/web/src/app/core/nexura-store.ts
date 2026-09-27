@@ -215,7 +215,7 @@ export class NexuraStore {
     this.closeTab(id);
     this.markReviewSeen(id);
     if (this.router.url.startsWith(`/runs/${id}`)) {
-      void this.router.navigate(["/"]);
+      void this.router.navigate(["/runs"]);
     }
   }
 

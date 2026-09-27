@@ -3,14 +3,15 @@ import type { Routes } from "@angular/router";
 export const routes: Routes = [
   {
     path: "",
-    title: "Nexura · Flujos",
-    loadComponent: () => import("./features/runs-home/runs-home").then((m) => m.RunsHome),
-  },
-  {
-    path: "panel",
     title: "Nexura · Panel",
     loadComponent: () => import("./features/dashboard/dashboard").then((m) => m.DashboardPage),
   },
+  {
+    path: "runs",
+    title: "Nexura · Flujos",
+    loadComponent: () => import("./features/runs-home/runs-home").then((m) => m.RunsHome),
+  },
+  { path: "panel", redirectTo: "" },
   {
     path: "new",
     title: "Nexura · Nuevo flujo",

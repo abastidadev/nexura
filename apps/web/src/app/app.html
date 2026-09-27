@@ -8,7 +8,7 @@
     aria-label="Navegación principal"
   >
     <div class="flex h-14 items-center gap-3 px-4 lg:h-16" [class.lg:justify-center]="collapsed()" [class.lg:px-0]="collapsed()">
-      <a routerLink="/" class="flex min-w-0 items-center gap-2.5 rounded-lg" aria-label="Nexura, ir a Flujos">
+      <a routerLink="/" class="flex min-w-0 items-center gap-2.5 rounded-lg" aria-label="Nexura, ir al Panel">
         <!-- White tile in both themes: the logo's navy strokes vanish on the dark surfaces. -->
         <span class="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-white ring-1 ring-border" aria-hidden="true">
           <img src="logo.png" alt="" width="24" height="24" class="size-6" />
@@ -48,7 +48,7 @@
           <span class="nx-nav-icon"><nx-icon [name]="item.icon" /></span>
           <span [class.lg:sr-only]="collapsed()">{{ item.label }}</span>
           @switch (item.path) {
-            @case ("/") {
+            @case ("/runs") {
               @if (store.activeCount()) {
                 <span class="ml-auto rounded-md bg-info-soft px-1.5 text-2xs font-semibold text-info tabular-nums" [class.lg:hidden]="collapsed()">
                   {{ store.activeCount() }}<span class="sr-only"> en curso</span>

@@ -194,7 +194,7 @@
         <section class="flex flex-col gap-3 rounded-lg border border-border bg-surface p-4 lg:col-span-2" aria-labelledby="flow-status">
           <div class="flex items-center justify-between gap-3">
             <h2 id="flow-status" class="font-semibold">Estado de los flujos</h2>
-            <a routerLink="/" class="text-sm text-accent hover:underline">Ver todos</a>
+            <a routerLink="/runs" class="text-sm text-accent hover:underline">Ver todos</a>
           </div>
           <div class="flex h-3 gap-0.5 overflow-hidden rounded" role="img" [attr.aria-label]="m.totals.runs + ' flujos por estado'">
             @for (part of statusBar(); track part.key) {
