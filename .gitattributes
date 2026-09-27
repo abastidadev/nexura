@@ -1,1 +1,10 @@
-.githooks/* text eol=lf
+# LF everywhere, also on Windows checkouts.
+* text=auto eol=lf
+
+*.ico binary
+*.png binary
+*.jpg binary
+*.gif binary
+*.webp binary
+*.woff binary
+*.woff2 binary
