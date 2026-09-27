@@ -9,9 +9,9 @@
   >
     <div class="flex h-14 items-center gap-3 px-4 lg:h-16" [class.lg:justify-center]="collapsed()" [class.lg:px-0]="collapsed()">
       <a routerLink="/" class="flex min-w-0 items-center gap-2.5 rounded-lg" aria-label="Nexura, ir a Flujos">
-        <span class="relative flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-fg text-bg" aria-hidden="true">
-          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M6 18V6l12 12V6" /></svg>
-          <span class="absolute -right-0.5 -bottom-0.5 size-2.5 rounded-full border-2 border-surface bg-accent-strong"></span>
+        <!-- White tile in both themes: the logo's navy strokes vanish on the dark surfaces. -->
+        <span class="flex size-8 shrink-0 items-center justify-center rounded-[10px] bg-white ring-1 ring-border" aria-hidden="true">
+          <img src="logo.png" alt="" width="24" height="24" class="size-6" />
         </span>
         <span class="min-w-0" [class.lg:hidden]="collapsed()">
           <span class="block text-md leading-tight font-semibold tracking-tight">Nexura</span>

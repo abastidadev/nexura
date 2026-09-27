@@ -63,6 +63,7 @@ const MIME: Record<string, string> = {
   ".css": "text/css",
   ".svg": "image/svg+xml",
   ".ico": "image/x-icon",
+  ".png": "image/png",
   ".woff2": "font/woff2",
   ".json": "application/json",
 };
