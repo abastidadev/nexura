@@ -3,42 +3,42 @@
 /* Semantic tokens. Dark is the default (IDE); `.light` on <html> switches the palette. */
 :root {
   color-scheme: dark;
-  --nx-bg: #0b0e14;
-  --nx-surface: #11151d;
-  --nx-surface-2: #171c26;
-  --nx-surface-3: #1f2632;
-  --nx-border: #262e3b;
-  --nx-border-strong: #364152;
-  --nx-fg: #e4e8ef;
-  --nx-fg-soft: #b7c0cd;
-  --nx-muted: #8a95a6;
-  --nx-accent: #8b7bff;
-  --nx-accent-soft: rgb(139 123 255 / 0.14);
-  --nx-accent-strong: #6552e8;
-  --nx-ok: #3fcf8e;
-  --nx-ok-soft: rgb(63 207 142 / 0.13);
-  --nx-warn: #f2b84b;
-  --nx-warn-soft: rgb(242 184 75 / 0.13);
-  --nx-err: #ff6b6b;
-  --nx-err-soft: rgb(255 107 107 / 0.13);
-  --nx-info: #5aa9ff;
-  --nx-info-soft: rgb(90 169 255 / 0.13);
+  --nx-bg: #0c1018;
+  --nx-surface: #141a25;
+  --nx-surface-2: #1b2330;
+  --nx-surface-3: #263040;
+  --nx-border: #293344;
+  --nx-border-strong: #3b4960;
+  --nx-fg: #f3f5fa;
+  --nx-fg-soft: #c3ccda;
+  --nx-muted: #97a4b8;
+  --nx-accent: #a99cff;
+  --nx-accent-soft: rgb(151 135 255 / 0.16);
+  --nx-accent-strong: #7665e8;
+  --nx-ok: #4bd3a1;
+  --nx-ok-soft: rgb(75 211 161 / 0.13);
+  --nx-warn: #f1c06b;
+  --nx-warn-soft: rgb(241 192 107 / 0.13);
+  --nx-err: #ff7f88;
+  --nx-err-soft: rgb(255 127 136 / 0.13);
+  --nx-info: #7bbaff;
+  --nx-info-soft: rgb(123 186 255 / 0.13);
 }
 
 :root.light {
   color-scheme: light;
-  --nx-bg: #f4f5f8;
+  --nx-bg: #f5f6fa;
   --nx-surface: #ffffff;
-  --nx-surface-2: #f7f8fa;
-  --nx-surface-3: #eceef3;
-  --nx-border: #dfe2e8;
-  --nx-border-strong: #c7ccd6;
-  --nx-fg: #161a21;
-  --nx-fg-soft: #3c4452;
-  --nx-muted: #5c6575;
-  --nx-accent: #5b47e0;
-  --nx-accent-soft: rgb(91 71 224 / 0.1);
-  --nx-accent-strong: #5b47e0;
+  --nx-surface-2: #f0f2f8;
+  --nx-surface-3: #e6e9f2;
+  --nx-border: #e0e4ec;
+  --nx-border-strong: #c9d0df;
+  --nx-fg: #171e2b;
+  --nx-fg-soft: #455168;
+  --nx-muted: #67748b;
+  --nx-accent: #6656cf;
+  --nx-accent-soft: rgb(102 86 207 / 0.1);
+  --nx-accent-strong: #6656cf;
   --nx-ok: #13815a;
   --nx-ok-soft: rgb(19 129 90 / 0.1);
   --nx-warn: #8f5d00;
@@ -70,7 +70,7 @@
   --color-err-soft: var(--nx-err-soft);
   --color-info: var(--nx-info);
   --color-info-soft: var(--nx-info-soft);
-  --font-sans: "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
+  --font-sans: Inter, "Segoe UI Variable", "Segoe UI", system-ui, sans-serif;
   --font-mono: "Cascadia Code", "JetBrains Mono", Consolas, ui-monospace, monospace;
 }
 
@@ -95,8 +95,45 @@ body {
 
 :focus-visible {
   outline: 2px solid var(--nx-accent);
-  outline-offset: 1px;
+  outline-offset: 2px;
 }
+
+button, a, input, textarea, select {
+  transition: background-color .16s ease, border-color .16s ease, color .16s ease, box-shadow .16s ease;
+}
+
+button:not(:disabled), a, label {
+  -webkit-tap-highlight-color: transparent;
+}
+
+::selection {
+  background: var(--nx-accent-soft);
+  color: var(--nx-fg);
+}
+
+.nx-nav-link {
+  display: flex;
+  min-height: 39px;
+  flex-shrink: 0;
+  align-items: center;
+  gap: 10px;
+  border-radius: 10px;
+  padding: 7px 11px;
+  color: var(--nx-muted);
+  font-weight: 550;
+  white-space: nowrap;
+}
+.nx-nav-link:hover { background: var(--nx-surface-2); color: var(--nx-fg); }
+.nx-nav-active, .nx-nav-active:hover { background: var(--nx-accent-soft); color: var(--nx-accent); }
+.nx-nav-icon { display: inline-flex; width: 20px; justify-content: center; font-size: 18px; line-height: 1; }
+.nx-toolbar-button { display: inline-flex; min-width: 30px; min-height: 30px; align-items: center; justify-content: center; border-radius: 8px; color: var(--nx-muted); }
+.nx-toolbar-button:hover { background: var(--nx-surface-2); color: var(--nx-fg); }
+.nx-stat-card { border: 1px solid var(--nx-border); border-radius: 16px; background: var(--nx-surface); padding: 20px; box-shadow: 0 6px 24px rgb(0 0 0 / .035); }
+@media (max-width: 639px) { .nx-stat-card { padding: 14px; } }
+.nx-stat-icon { display: inline-flex; width: 32px; height: 32px; align-items: center; justify-content: center; border-radius: 10px; font-size: 17px; }
+.nx-filter-button { display: inline-flex; align-items: center; gap: 7px; border-radius: 8px; padding: 7px 11px; color: var(--nx-muted); font-size: 12px; font-weight: 600; }
+.nx-filter-button:hover { background: var(--nx-surface-2); color: var(--nx-fg); }
+.nx-filter-active, .nx-filter-active:hover { background: var(--nx-accent-soft); color: var(--nx-accent); }
 
 @keyframes nx-pulse {
   0%,

@@ -1,5 +1,5 @@
-<aside class="flex w-56 shrink-0 flex-col border-r border-border bg-surface" aria-label="Repos">
-  <h2 class="px-3 pt-3 pb-1.5 text-[11px] font-semibold tracking-wide text-muted uppercase">Repos</h2>
+<aside class="flex h-32 w-full shrink-0 flex-col border-b border-border bg-surface lg:h-auto lg:w-56 lg:border-r lg:border-b-0" aria-label="Repos">
+  <div class="border-b border-border px-4 py-4"><p class="text-[10px] font-bold tracking-[.15em] text-accent uppercase">Revisiones</p><h2 class="mt-1 text-[16px] font-semibold">Repositorios</h2></div>
   <nav class="min-h-0 flex-1 overflow-y-auto pb-2">
     @for (repo of repos(); track repo.name) {
       @let provider = providers.hasValue() ? providers.value()[repo.name] : undefined;
@@ -21,7 +21,7 @@
   </nav>
 </aside>
 
-<section class="flex w-[26rem] shrink-0 flex-col border-r border-border" aria-label="Pull requests">
+<section class="flex h-64 w-full shrink-0 flex-col border-b border-border lg:h-auto lg:w-[26rem] lg:border-r lg:border-b-0" aria-label="Pull requests">
   <div class="flex flex-col gap-2 border-b border-border p-3">
     <div class="flex items-center gap-2">
       <input

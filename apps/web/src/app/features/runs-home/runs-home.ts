@@ -19,6 +19,7 @@ type RunRow = {
   status: (typeof RUN_STATUS)[keyof typeof RUN_STATUS];
   error?: string;
   active: boolean;
+  statusKey: Run["status"];
 };
 
 const ACTIVE = new Set(["queued", "running", "paused", "waiting-rate-limit"]);
@@ -42,6 +43,22 @@ export class RunsHome {
       .filter((run) => !isPrReview(run))
       .map((run) => this.toRow(run, now));
   });
+  protected readonly query = signal("");
+  protected readonly filter = signal<"all" | "active" | "done" | "failed">("all");
+  protected readonly filteredRows = computed(() => {
+    const query = this.query().trim().toLocaleLowerCase();
+    return this.rows().filter((row) => {
+      const matchesFilter =
+        this.filter() === "all" ||
+        (this.filter() === "active" && row.active) ||
+        (this.filter() === "done" && row.statusKey === "done") ||
+        (this.filter() === "failed" && row.statusKey === "failed");
+      return matchesFilter && (!query || [row.title, row.ticketId, row.repos, row.profile].some((value) => value?.toLocaleLowerCase().includes(query)));
+    });
+  });
+  protected readonly activeCount = computed(() => this.rows().filter((row) => row.active).length);
+  protected readonly doneCount = computed(() => this.rows().filter((row) => row.statusKey === "done").length);
+  protected readonly failedCount = computed(() => this.rows().filter((row) => row.statusKey === "failed").length);
 
   protected readonly deleting = signal<string | null>(null);
   protected readonly error = signal<string | null>(null);
@@ -85,6 +102,7 @@ export class RunsHome {
       status: RUN_STATUS[run.status],
       error: run.error,
       active: ACTIVE.has(run.status),
+      statusKey: run.status,
     };
   }
 }

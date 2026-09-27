@@ -3,16 +3,17 @@
   its own and "Lanzar flujo" stays visible. Narrower screens stack everything with one scroll.
 -->
 <form
-  class="mx-auto grid max-w-[1480px] gap-4 px-4 py-4 xl:h-full xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_400px] xl:grid-rows-[auto_minmax(0,1fr)]"
+  class="mx-auto grid min-w-0 max-w-[1480px] grid-cols-[minmax(0,1fr)] gap-5 px-5 py-7 md:px-8 xl:h-full xl:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_400px] xl:grid-rows-[auto_minmax(0,1fr)]"
   (submit)="$event.preventDefault(); submit()"
 >
-  <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1 xl:col-span-3">
-    <h1 class="text-xl font-semibold tracking-tight">Nuevo flujo</h1>
-    <p class="text-muted">Cuanto mejor sea la entrada, menos huecos tendrá que rellenar el flujo (y menos gastará).</p>
+  <div class="xl:col-span-3">
+    <p class="text-[11px] font-bold tracking-[.18em] text-accent uppercase">Nueva ejecución</p>
+    <h1 class="mt-1 text-3xl font-bold tracking-tight">Prepara tu flujo</h1>
+    <p class="mt-1 text-[13px] text-muted">Añade el ticket, elige las tareas y configura cómo trabajarán los agentes.</p>
   </div>
 
   <!-- 1 · Ticket -->
-  <section class="relative flex min-h-[420px] flex-col rounded-lg border border-border bg-surface p-4 xl:min-h-0" aria-labelledby="ticket-title">
+  <section class="relative flex min-h-[420px] min-w-0 flex-col rounded-2xl border border-border bg-surface p-5 xl:min-h-0" aria-labelledby="ticket-title">
     <div class="mb-3 flex flex-wrap items-center gap-2">
       <h2 id="ticket-title" class="mr-1 font-semibold">Ticket <span class="text-err">*</span></h2>
       <div class="flex overflow-hidden rounded-md border border-border" role="radiogroup" aria-label="Origen del ticket">
@@ -98,8 +99,8 @@
   </section>
 
   <!-- 2 · Tasks + extra prompt -->
-  <div class="flex min-h-0 flex-col gap-4">
-    <section class="flex min-h-[260px] flex-1 flex-col rounded-lg border border-border bg-surface p-4 xl:min-h-0" aria-labelledby="tasks-title">
+  <div class="flex min-h-0 min-w-0 flex-col gap-4">
+    <section class="flex min-h-[260px] flex-1 flex-col rounded-2xl border border-border bg-surface p-5 xl:min-h-0" aria-labelledby="tasks-title">
       <div class="mb-3 flex flex-wrap items-center justify-between gap-2">
         <h2 id="tasks-title" class="font-semibold">
           Tareas <span class="font-normal text-muted">· {{ selectedTaskCount() }} de {{ tasks().length }}</span>
@@ -158,7 +159,7 @@
       </div>
     </section>
 
-    <section class="flex shrink-0 flex-col rounded-lg border border-border bg-surface p-4">
+    <section class="flex shrink-0 flex-col rounded-2xl border border-border bg-surface p-5">
       <label for="extra-prompt" class="font-semibold">
         Prompt adicional <span class="text-[12px] font-normal text-muted">· se añade a cada paso</span>
       </label>
@@ -174,7 +175,7 @@
   </div>
 
   <!-- 3 · Repos, profile, options, launch -->
-  <aside class="flex min-h-0 flex-col rounded-lg border border-border bg-surface">
+  <aside class="flex min-h-0 min-w-0 flex-col rounded-2xl border border-border bg-surface">
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4">
       <fieldset class="min-w-0">
         <legend class="mb-1.5 font-semibold">Repositorios <span class="text-err">*</span></legend>

@@ -1,10 +1,10 @@
 @if (run(); as run) {
   @let info = summary()!;
-  <header class="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-2 border-b border-border bg-surface px-4 py-2.5">
+  <header class="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-3 border-b border-border bg-surface px-5 py-4 md:px-7">
     <div class="min-w-0 flex-1">
       <div class="flex items-center gap-2">
         <nx-status-pill [tone]="status()!.tone" [label]="status()!.label" [live]="status()!.live" />
-        <h1 class="truncate text-[15px] font-semibold">
+        <h1 class="truncate text-[17px] font-semibold tracking-tight">
           @if (run.request.ticketId) {
             <span class="font-mono text-muted">#{{ run.request.ticketId }}</span>
           }

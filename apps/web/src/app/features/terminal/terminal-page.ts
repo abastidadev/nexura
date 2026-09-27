@@ -36,7 +36,7 @@ function projectOf(conversation: Conversation): string {
   selector: "nx-terminal-page",
   imports: [AgentControls, ConversationHistory, ConversationTerminal, NewConversation],
   templateUrl: "./terminal-page.html",
-  host: { class: "flex h-full min-h-0" },
+  host: { class: "flex h-full min-h-0 flex-col lg:flex-row" },
 })
 export class TerminalPage {
   private readonly api = inject(Api);

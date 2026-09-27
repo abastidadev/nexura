@@ -1,8 +1,9 @@
-<aside class="flex w-72 shrink-0 flex-col border-r border-border bg-surface" aria-label="Conversaciones">
-  <div class="flex items-center gap-2 border-b border-border p-2">
+<aside class="flex h-52 w-full shrink-0 flex-col border-b border-border bg-surface lg:h-auto lg:w-72 lg:border-r lg:border-b-0" aria-label="Conversaciones">
+  <div class="flex flex-col gap-3 border-b border-border p-4">
+    <div><p class="text-[10px] font-bold tracking-[.15em] text-accent uppercase">Trabajo interactivo</p><h2 class="mt-1 text-[16px] font-semibold">Conversaciones</h2></div>
     <button
       type="button"
-      class="flex-1 rounded-md bg-accent-strong px-3 py-1.5 font-medium text-white hover:opacity-90"
+      class="rounded-xl bg-accent-strong px-3 py-2 font-semibold text-white hover:brightness-110"
       (click)="creating.set(true)"
     >
       + Nueva conversación

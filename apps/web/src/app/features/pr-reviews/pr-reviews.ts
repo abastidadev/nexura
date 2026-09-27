@@ -34,7 +34,7 @@ type PrRow = {
   selector: "nx-pr-reviews",
   imports: [ModelPicker, StatusPill, PrReviewView],
   templateUrl: "./pr-reviews.html",
-  host: { class: "flex h-full min-h-0" },
+  host: { class: "flex h-full min-h-0 flex-col lg:flex-row" },
 })
 export class PrReviewsPage {
   private readonly api = inject(Api);

@@ -1,180 +1,64 @@
-<header class="flex h-11 shrink-0 items-stretch gap-2 border-b border-border bg-surface pl-3">
-  <a routerLink="/" class="mr-2 flex items-center gap-2 rounded" aria-label="Nexura, inicio">
-    <svg viewBox="0 0 24 24" class="size-5 text-accent" aria-hidden="true">
-      <path fill="currentColor" d="M12 2 21 7v10l-9 5-9-5V7l9-5Zm0 2.3L5 8.2v7.6l7 3.9 7-3.9V8.2l-7-3.9Z" />
-      <path fill="currentColor" d="M8.5 15.5v-7h1.6l3.9 4.6V8.5h1.5v7h-1.6l-3.9-4.6v4.6H8.5Z" />
-    </svg>
-    <span class="text-[14px] font-semibold tracking-tight">Nexura</span>
-    <span class="hidden text-[11px] text-muted sm:inline">by abastidadev</span>
-  </a>
-
-  <nav class="flex min-w-0 flex-1 items-stretch overflow-x-auto" aria-label="Flujos abiertos">
-    <a
-      routerLink="/"
-      routerLinkActive="!text-fg border-accent"
-      [routerLinkActiveOptions]="{ exact: true }"
-      class="flex items-center gap-1.5 border-b-2 border-transparent px-3 text-muted hover:text-fg"
-    >
-      Flujos
-      @if (store.activeCount()) {
-        <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info">{{ store.activeCount() }}</span>
-      }
+<div class="flex h-full min-h-0 flex-col lg:flex-row">
+  <aside class="flex shrink-0 flex-col border-b border-border bg-surface lg:w-56 lg:border-r lg:border-b-0" aria-label="Navegación principal">
+    <a routerLink="/" class="flex h-16 items-center gap-3 px-5" aria-label="Nexura, inicio">
+      <span class="flex size-9 items-center justify-center rounded-xl bg-accent-strong text-lg font-bold text-white shadow-lg shadow-accent/15">N</span>
+      <span><span class="block text-[16px] font-bold tracking-tight">Nexura<span class="text-accent">.</span></span><span class="block text-[10px] font-semibold tracking-[.16em] text-muted">by abastidadev</span></span>
     </a>
-    @for (tab of tabs(); track tab.id) {
-      <a
-        [routerLink]="['/runs', tab.id]"
-        routerLinkActive="!text-fg border-accent bg-surface-2"
-        class="group relative flex max-w-60 cursor-grab items-center gap-2 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
-        [class.opacity-40]="dragging() === tab.id"
-        [attr.title]="tab.status.label + ' · arrastra para reordenar'"
-        draggable="true"
-        (dragstart)="onDragStart($event, tab.id)"
-        (dragover)="onDragOver($event, tab.id)"
-        (dragleave)="onDragLeave(tab.id)"
-        (drop)="onDrop($event, tab.id)"
-        (dragend)="onDragEnd()"
-      >
-        @if (dropTarget()?.id === tab.id) {
-          <span
-            class="pointer-events-none absolute inset-y-1 w-0.5 rounded bg-accent"
-            [class]="dropTarget()!.side === 'before' ? '-left-px' : '-right-px'"
-            aria-hidden="true"
-          ></span>
-        }
-        <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.status.live" aria-hidden="true"></span>
-        <span class="truncate">{{ tab.label }}</span>
-        @if (tab.comments) {
-          <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info" [attr.title]="tab.comments + ' comentario(s) pendiente(s) en la PR'">💬{{ tab.comments }}</span>
-        }
-        <button
-          type="button"
-          class="-mr-1 rounded px-1 text-muted opacity-60 hover:bg-surface-3 hover:text-fg group-hover:opacity-100"
-          [attr.aria-label]="'Cerrar pestaña ' + tab.label"
-          (click)="closeTab($event, tab.id)"
-        >
-          ×
-        </button>
-      </a>
-    }
-    <a
-      routerLink="/reviews"
-      routerLinkActive="!text-fg border-accent"
-      class="flex items-center gap-1.5 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
-      title="Revisa PRs abiertas de tus repos (GitHub o Azure DevOps)"
-    >
-      Revisiones
-      @if (store.activeReviews()) {
-        <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info" [attr.title]="store.activeReviews() + ' revisión(es) en marcha'">{{ store.activeReviews() }}</span>
-      }
-      @if (store.unseenReviews().length) {
-        <span class="rounded-full bg-accent-strong px-1.5 text-[10px] font-semibold text-white" [attr.title]="store.unseenReviews().length + ' revisión(es) terminada(s) sin ver'">{{ store.unseenReviews().length }}</span>
-      }
-    </a>
-    <a
-      routerLink="/terminal"
-      routerLinkActive="!text-fg border-accent"
-      class="flex items-center gap-1.5 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
-      title="Claude Code, Codex o Copilot en tus proyectos, sin salir de Nexura"
-    >
-      Terminal
-      @if (store.runningConversations()) {
-        <span class="rounded-full bg-ok-soft px-1.5 text-[10px] font-semibold text-ok" [attr.title]="store.runningConversations() + ' conversación(es) en marcha'">{{ store.runningConversations() }}</span>
-      }
-    </a>
-    <a
-      routerLink="/agents"
-      routerLinkActive="!text-fg border-accent"
-      class="flex items-center gap-1.5 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
-    >
-      Agentes
-      @if (workingAgents()) {
-        <span class="rounded-full bg-info-soft px-1.5 text-[10px] font-semibold text-info" [attr.title]="workingAgents() + ' agente(s) trabajando'">{{ workingAgents() }}</span>
-      }
-    </a>
-    <a
-      routerLink="/metrics"
-      routerLinkActive="!text-fg border-accent"
-      class="flex items-center border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
-    >
-      Métricas
-    </a>
-    <a
-      routerLink="/new"
-      routerLinkActive="!text-fg border-accent"
-      class="flex items-center gap-1 border-b-2 border-l border-transparent border-l-border px-3 text-muted hover:text-fg"
-    >
-      <span class="text-[15px] leading-none" aria-hidden="true">+</span> Nuevo flujo
-    </a>
-  </nav>
-
-  <div class="flex shrink-0 items-center gap-2 pr-3 sm:gap-4">
-    <nx-quota-meter />
-    <button
-      type="button"
-      class="rounded px-1 text-muted hover:text-fg"
-      [class.!text-accent]="store.notificationsEnabled()"
-      [attr.aria-pressed]="store.notificationsEnabled()"
-      [attr.title]="store.notificationsEnabled() ? 'Notificaciones del sistema activadas' : 'Activar notificaciones del sistema'"
-      aria-label="Notificaciones del sistema"
-      (click)="store.toggleNotifications()"
-    >
-      {{ store.notificationsEnabled() ? "🔔" : "🔕" }}
-    </button>
-    <button
-      type="button"
-      class="rounded px-1 text-muted hover:text-fg"
-      [class.!text-accent]="notifier.soundEnabled()"
-      [attr.aria-pressed]="notifier.soundEnabled()"
-      [attr.title]="notifier.soundEnabled() ? 'Sonido al terminar activado' : 'Activar sonido al terminar'"
-      aria-label="Sonido al terminar"
-      (click)="notifier.toggleSound()"
-    >
-      {{ notifier.soundEnabled() ? "🔊" : "🔇" }}
-    </button>
-    <a routerLink="/config" routerLinkActive="!text-fg" class="text-muted hover:text-fg" aria-label="Configuración" title="Configuración">⚙</a>
-    <span
-      class="flex items-center gap-1.5 text-[11px]"
-      [class]="store.connected() ? 'text-muted' : 'text-err'"
-      role="status"
-      [attr.aria-label]="store.connected() ? 'Conectado' : 'Sin conexión'"
-    >
-      <span class="size-2 rounded-full" [class]="store.connected() ? 'bg-ok' : 'bg-err nx-pulse'" aria-hidden="true"></span>
-      <span class="hidden sm:inline">{{ store.connected() ? "Conectado" : "Sin conexión" }}</span>
-    </span>
-    <button
-      type="button"
-      class="rounded px-1.5 py-1 text-muted hover:bg-surface-3 hover:text-fg"
-      [attr.aria-label]="store.theme() === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'"
-      (click)="store.toggleTheme()"
-    >
-      {{ store.theme() === "dark" ? "☀" : "☾" }}
-    </button>
-  </div>
-</header>
-
-@if (loadError(); as error) {
-  <div class="border-b border-err bg-err-soft px-4 py-2 text-err" role="alert">{{ error }}</div>
-}
-
-<main class="min-h-0 flex-1">
-  <router-outlet />
-</main>
-
-<div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2" aria-live="polite">
-  @for (toast of store.toasts(); track toast.id) {
-    <div class="pointer-events-auto rounded-lg border bg-surface p-3 shadow-lg" [class]="toastBorder[toast.tone]" role="status">
-      <div class="flex items-start gap-2">
-        <button
-          type="button"
-          class="min-w-0 flex-1 text-left"
-          [disabled]="!toast.runId && !toast.link"
-          (click)="openToast(toast)"
-        >
-          <span class="block truncate font-medium">{{ toast.title }}</span>
-          <span class="block text-[12px] text-fg-soft">{{ toast.body }}</span>
-        </button>
-        <button type="button" class="text-muted hover:text-fg" aria-label="Cerrar aviso" (click)="store.dismissToast(toast.id)">×</button>
+    <nav class="flex min-w-0 flex-1 items-center gap-1 overflow-x-auto px-3 pb-3 lg:flex-col lg:items-stretch lg:overflow-y-auto lg:pt-5" aria-label="Secciones">
+      <span class="hidden px-3 pb-2 text-[10px] font-bold tracking-[.16em] text-muted uppercase lg:block">Principal</span>
+      <a routerLink="/" routerLinkActive="nx-nav-active" [routerLinkActiveOptions]="{ exact: true }" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">▦</span><span>Flujos</span>@if (store.activeCount()) { <span class="ml-auto rounded-md bg-info-soft px-1.5 text-[10px] font-semibold text-info">{{ store.activeCount() }}</span> }</a>
+      <a routerLink="/reviews" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">◇</span><span>Revisiones</span>@if (store.unseenReviews().length) { <span class="ml-auto rounded-md bg-accent-soft px-1.5 text-[10px] font-semibold text-accent">{{ store.unseenReviews().length }}</span> }</a>
+      <a routerLink="/terminal" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">⌘</span><span>Terminal</span>@if (store.runningConversations()) { <span class="ml-auto size-2 rounded-full bg-ok nx-pulse" aria-label="Conversaciones activas"></span> }</a>
+      <a routerLink="/agents" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">✦</span><span>Agentes</span>@if (workingAgents()) { <span class="ml-auto size-2 rounded-full bg-info nx-pulse" aria-label="Agentes trabajando"></span> }</a>
+      <span class="hidden px-3 pt-7 pb-2 text-[10px] font-bold tracking-[.16em] text-muted uppercase lg:block">Análisis y ajustes</span>
+      <a routerLink="/metrics" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">▥</span><span>Métricas</span></a>
+      <a routerLink="/config" routerLinkActive="nx-nav-active" class="nx-nav-link"><span class="nx-nav-icon" aria-hidden="true">⚙</span><span>Configuración</span></a>
+    </nav>
+    <div class="hidden border-t border-border p-3 lg:block">
+      <a routerLink="/new" class="flex items-center justify-center gap-2 rounded-xl bg-accent-strong px-3 py-2.5 font-semibold text-white shadow-lg shadow-accent/15 transition hover:brightness-110"><span class="text-lg leading-none">+</span> Nuevo flujo</a>
+      <div class="mt-4 flex items-center justify-between rounded-xl bg-surface-2 px-3 py-2.5">
+        <span class="flex items-center gap-2 text-[11px] text-fg-soft"><span class="size-2 rounded-full" [class]="store.connected() ? 'bg-ok' : 'bg-err nx-pulse'"></span>{{ store.connected() ? "Sistema conectado" : "Sin conexión" }}</span>
+        <button type="button" class="rounded-md px-1.5 py-1 text-muted hover:bg-surface-3 hover:text-fg" [attr.aria-label]="store.theme() === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'" (click)="store.toggleTheme()">{{ store.theme() === "dark" ? "☀" : "☾" }}</button>
       </div>
     </div>
+  </aside>
+  <div class="flex min-h-0 min-w-0 flex-1 flex-col">
+    <header class="flex h-14 shrink-0 items-center gap-3 border-b border-border bg-surface/80 px-4 backdrop-blur-sm md:px-6">
+      <div class="hidden min-w-0 flex-1 items-center gap-2 lg:flex">
+        <span class="text-[10px] font-bold tracking-[.15em] text-muted uppercase">En curso</span>
+        <nav class="flex min-w-0 items-center gap-1 overflow-x-auto" aria-label="Flujos abiertos">
+          @for (tab of tabs(); track tab.id) {
+            <a [routerLink]="['/runs', tab.id]" routerLinkActive="!border-accent !bg-accent-soft !text-fg" class="group relative flex max-w-48 cursor-grab items-center gap-2 rounded-lg border border-transparent px-2.5 py-1.5 text-[12px] text-muted hover:bg-surface-2 hover:text-fg" [class.opacity-40]="dragging() === tab.id" [attr.title]="tab.status.label + ' · arrastra para reordenar'" draggable="true" (dragstart)="onDragStart($event, tab.id)" (dragover)="onDragOver($event, tab.id)" (dragleave)="onDragLeave(tab.id)" (drop)="onDrop($event, tab.id)" (dragend)="onDragEnd()">
+              @if (dropTarget()?.id === tab.id) { <span class="pointer-events-none absolute inset-y-1 w-0.5 rounded bg-accent" [class]="dropTarget()!.side === 'before' ? '-left-px' : '-right-px'" aria-hidden="true"></span> }
+              <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.status.live" aria-hidden="true"></span><span class="truncate">{{ tab.label }}</span>
+              @if (tab.comments) { <span class="rounded-md bg-info-soft px-1 text-[10px] text-info">{{ tab.comments }}</span> }
+              <button type="button" class="rounded px-1 text-muted hover:bg-surface-3 hover:text-fg" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">×</button>
+            </a>
+          }
+        </nav>
+      </div>
+      <a routerLink="/new" class="flex items-center gap-1.5 rounded-lg bg-accent-strong px-3 py-1.5 font-semibold text-white lg:hidden">+ Nuevo flujo</a>
+      <div class="ml-auto flex shrink-0 items-center gap-2 md:gap-3">
+        <nx-quota-meter class="hidden md:block" />
+        <span class="mx-1 hidden h-5 w-px bg-border md:block"></span>
+        <button type="button" class="nx-toolbar-button" [class.!text-accent]="store.notificationsEnabled()" [attr.aria-pressed]="store.notificationsEnabled()" [attr.title]="store.notificationsEnabled() ? 'Notificaciones activadas' : 'Activar notificaciones'" aria-label="Notificaciones del sistema" (click)="store.toggleNotifications()">{{ store.notificationsEnabled() ? "🔔" : "🔕" }}</button>
+        <button type="button" class="nx-toolbar-button" [class.!text-accent]="notifier.soundEnabled()" [attr.aria-pressed]="notifier.soundEnabled()" [attr.title]="notifier.soundEnabled() ? 'Sonido activado' : 'Activar sonido'" aria-label="Sonido al terminar" (click)="notifier.toggleSound()">{{ notifier.soundEnabled() ? "🔊" : "🔇" }}</button>
+        <button type="button" class="nx-toolbar-button lg:hidden" [attr.aria-label]="store.theme() === 'dark' ? 'Cambiar a tema claro' : 'Cambiar a tema oscuro'" (click)="store.toggleTheme()">{{ store.theme() === "dark" ? "☀" : "☾" }}</button>
+      </div>
+    </header>
+    @if (tabs().length) {
+      <nav class="flex shrink-0 gap-1 overflow-x-auto border-b border-border bg-surface px-3 py-1 lg:hidden" aria-label="Flujos abiertos">
+        @for (tab of tabs(); track tab.id) {
+          <a [routerLink]="['/runs', tab.id]" routerLinkActive="!bg-accent-soft !text-accent" class="flex max-w-40 shrink-0 items-center gap-2 rounded-lg px-2 py-1.5 text-[11px] text-muted"><span class="size-1.5 rounded-full" [class]="tab.dot"></span><span class="truncate">{{ tab.label }}</span><button type="button" [attr.aria-label]="'Cerrar pestaña ' + tab.label" (click)="closeTab($event, tab.id)">×</button></a>
+        }
+      </nav>
+    }
+    @if (loadError(); as error) { <div class="border-b border-err bg-err-soft px-4 py-2 text-err" role="alert">{{ error }}</div> }
+    <main class="min-h-0 flex-1"><router-outlet /></main>
+  </div>
+</div>
+<div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-80 flex-col gap-2" aria-live="polite">
+  @for (toast of store.toasts(); track toast.id) {
+    <div class="pointer-events-auto rounded-xl border bg-surface p-3 shadow-xl" [class]="toastBorder[toast.tone]" role="status"><div class="flex items-start gap-2"><button type="button" class="min-w-0 flex-1 text-left" [disabled]="!toast.runId && !toast.link" (click)="openToast(toast)"><span class="block truncate font-medium">{{ toast.title }}</span><span class="block text-[12px] text-fg-soft">{{ toast.body }}</span></button><button type="button" class="text-muted hover:text-fg" aria-label="Cerrar aviso" (click)="store.dismissToast(toast.id)">×</button></div></div>
   }
 </div>

@@ -30,7 +30,7 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
   selector: "nx-settings",
   imports: [GeneralSettings, MemoryBrowser, ProfilesList, ProfileForm, StepsList, StepsEditor, StepCreate, ReposList, RepoForm],
   template: `
-    <div class="mx-auto flex max-w-6xl flex-col gap-4 px-6 py-6">
+    <div class="mx-auto flex max-w-7xl flex-col gap-5 px-5 py-7 md:px-8 md:py-9">
       @switch (screen()) {
         @case ("repo-form") {
           <nx-repo-form [name]="edit()" />
@@ -46,8 +46,9 @@ const TABS: { id: SettingsTab; label: string; help: string }[] = [
         }
         @default {
           <div>
-            <h1 class="text-xl font-semibold tracking-tight">Configuración</h1>
-            <p class="mt-1 text-muted">
+            <p class="text-[11px] font-bold tracking-[.18em] text-accent uppercase">Preferencias</p>
+            <h1 class="mt-1 text-3xl font-bold tracking-tight">Configuración</h1>
+            <p class="mt-1 text-[13px] text-muted">
               Perfiles, pasos y repos se guardan en <code class="font-mono">config/</code> del repo de Nexura (versiónalos con git); lo general y las
               notas aprendidas, en <code class="font-mono">data/</code>.
             </p>
