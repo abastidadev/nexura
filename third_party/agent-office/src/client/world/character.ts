@@ -5,9 +5,10 @@ import type { CarriedIssue, Theme, WorkerAction, WorkerStatus, WorkerTask } from
 import type { Drink } from '../../shared/rooftop';
 import { isAsleep } from '../../shared/status';
 import { HIPS } from '../player';
+import { OpenBook } from './book';
 import { HeldCard } from './card';
 import { UNDEAD_SKIN, elfBoot, elfHat, elfWorker, santaHat, warlockHat, zombieWorker } from './costumes';
-import { cardSprite, disposeSprite, mesh, roundedBox, textSprite, toon, toonUnique } from './toon';
+import { cardSprite, disposeSprite, mesh, textSprite, toon, toonUnique } from './toon';
 
 export type Pose = 'stand' | 'walk' | 'sit' | 'type';
 
@@ -36,6 +37,35 @@ export function emoteEnvelope(t: number, seconds: number): number {
 export function popCurve(p: number): number {
   const u = Math.min(1, p) - 1;
   return 1 + 2.7 * u * u * u + 1.7 * u * u;
+}
+
+/** How far round the club goes, from pointing down at the ball: back over the right shoulder, and on through to the finish. */
+const BACKSWING = 2.4;
+const FOLLOW = 2.5;
+/** The swing's plane leans out from upright this far, down to the ball in front of the feet (world/golf.ts STANCE). */
+const SWING_LEAN = 0.5;
+/** Where the swing turns, high in the chest; the club's head is CLUB down from it. */
+const SWING_AT = new THREE.Vector3(0, 0.95, 0.06);
+const CLUB = 1.04;
+/** Down through the ball, holding the finish, and back to the ball again, in seconds. */
+const DOWNSWING = 0.14;
+const FINISH = 1;
+const SETTLE = 0.5;
+/** A swing all on its own (someone else's) takes the club back for this long first. */
+export const BACKSWING_TIME = 0.45;
+/** How long after the downswing starts the club meets the ball. */
+export const IMPACT = 0.08;
+const DOWN = new THREE.Vector3(0, -1, 0);
+const hands = new THREE.Vector3();
+const armDir = new THREE.Vector3();
+
+/** A golf club, hanging down from the hands (its grip at 0): a wrapped grip, a steel shaft and the head at the bottom, its face toward +x. */
+function golfClub(): THREE.Group {
+  const club = new THREE.Group();
+  club.add(mesh(new THREE.CylinderGeometry(0.02, 0.017, 0.2, 8), toon('#2b2d42'), 0, -0.04, 0, false));
+  club.add(mesh(new THREE.CylinderGeometry(0.011, 0.009, CLUB - 0.36 - 0.05, 6), toon('#ced4da'), 0, -(CLUB - 0.36) / 2 - 0.05, 0, false));
+  club.add(mesh(new THREE.BoxGeometry(0.05, 0.05, 0.12), toon('#8d99ae'), 0.005, -(CLUB - 0.36), 0.03, false));
+  return club;
 }
 
 /** A full mug of coffee standing on y = 0, with its handle on the -x side. */
@@ -296,6 +326,13 @@ export class Person {
   private glass: { id: string; group: THREE.Group } | null = null;
   /** An issue card off the board, held out in front in both hands. */
   private card: HeldCard;
+  private cardHolder = new THREE.Group();
+  /** A book off the bookshelf, open in both hands while they read (see read). */
+  private book: OpenBook | null = null;
+  private bookHolder = new THREE.Group();
+  /** The basketball in both hands (the ball itself is the floor's, see world/hoop.ts), and seconds into a shot, or -1. */
+  private ball = false;
+  private shootT = -1;
   pose: Pose = 'stand';
   private cig: THREE.Group;
   private ember: THREE.MeshToonMaterial;
@@ -319,6 +356,12 @@ export class Person {
   private sitK = 0;
   /** Holding on to the ladder or a fire pole (see setGrip). */
   private grip: 'ladder' | 'pole' | null = null;
+  /**
+   * At the golf tee with a club (see setGolf): the club's swing, how far back it's been taken (and
+   * `want`, where it's going), and a swing under way (`swingT` seconds in, from `top`), or -1.
+   * `autoT` is a whole swing playing by itself (golfSwing), taken back to `power`.
+   */
+  private golf: { swing: THREE.Group; back: number; want: number; top: number; swingT: number; autoT: number; power: number } | null = null;
   /** Dressed up for a holiday (see setCostume): a warlock's hat and undead skin, or a Santa hat. */
   private costume: Theme | null = null;
   private hat: THREE.Object3D[] = [];
@@ -392,11 +435,17 @@ export class Person {
     this.cig.visible = false;
     this.armL.add(this.cig);
     // Between the hands when both arms are out in front (see update), its front to whoever they walk up to.
-    const holder = new THREE.Group();
+    const holder = this.cardHolder;
     holder.position.set(0, 0.8, 0.36);
     holder.rotation.x = -0.1;
     this.body.add(holder);
     this.card = new HeldCard(holder, 0.46);
+    // Held out at chest height, turned round and tipped up so the pages face their eyes, top edge
+    // away from them, with the hands on its bottom corners.
+    this.bookHolder.position.set(0, 1, 0.48);
+    this.bookHolder.rotation.set(0.85, Math.PI, 0);
+    this.bookHolder.scale.setScalar(1.25);
+    this.body.add(this.bookHolder);
     // Along the arm (the fist's -y) the finger points; the thumb sticks out of the front of the fist,
     // which is up once the arm is out in front.
     this.thumb = mesh(new THREE.CapsuleGeometry(0.035, 0.07, 4, 8).rotateX(Math.PI / 2), skin, 0, -0.38, 0.1, false);
@@ -585,7 +634,7 @@ export class Person {
   holdMug(on: boolean) {
     this.wantsMug = on;
     this.cup.visible = !this.glass;
-    this.mug.visible = (on || !!this.glass) && !this.card.held;
+    this.mug.visible = (on || !!this.glass) && !this.card.held && !this.book && !this.ball;
   }
 
   /** A drink from the rooftop bar in the left hand (in place of a mug), or none (null). */
@@ -608,6 +657,38 @@ export class Person {
   carry(card: CarriedIssue | null | undefined) {
     this.card.set(card);
     this.holdMug(this.wantsMug);
+  }
+
+  /** Opens a book in both hands and reads it, turning the pages (or closes it). A card they carry waits. */
+  read(on: boolean) {
+    if (on === !!this.book) return;
+    if (on) {
+      this.book = new OpenBook();
+      this.bookHolder.add(this.book.group);
+    } else {
+      this.bookHolder.remove(this.book!.group);
+      this.book!.dispose();
+      this.book = null;
+    }
+    this.cardHolder.visible = !on;
+    this.holdMug(this.wantsMug);
+  }
+
+  /** Turns a page of the book they're reading now. */
+  turnPage() {
+    this.book?.turn();
+  }
+
+  /** Holds the basketball out in front in both hands, or not. */
+  holdBall(on: boolean) {
+    if (on === this.ball) return;
+    this.ball = on;
+    this.holdMug(this.wantsMug);
+  }
+
+  /** Shoots: both arms up over the head and after the ball. */
+  shoot() {
+    this.shootT = 0;
   }
 
   /** Waves, gives a thumbs up, claps…: the gesture, with its emoji popping up over their head. */
@@ -760,6 +841,106 @@ export class Person {
     this.grip = grip;
   }
 
+  /** At the golf tee with a club in both hands, over the ball (the ball in front of their feet, the hole off to their left), or not. */
+  setGolf(on: boolean) {
+    if (on === !!this.golf) return;
+    if (!on) {
+      const { swing } = this.golf!;
+      this.body.remove(swing);
+      swing.traverse((o) => (o as THREE.Mesh).geometry?.dispose());
+      this.golf = null;
+      // The swing turned the arms and legs every which way; standing, they only swing back and forth.
+      for (const limb of [this.armL, this.armR, this.legL, this.legR]) limb.rotation.set(0, 0, 0);
+      return;
+    }
+    const swing = new THREE.Group();
+    swing.position.copy(SWING_AT);
+    const club = golfClub();
+    club.position.y = -0.36;
+    swing.add(club);
+    this.body.add(swing);
+    this.golf = { swing, back: 0, want: 0, top: 0, swingT: -1, autoT: -1, power: 0 };
+  }
+
+  /** Taking the club back, `k` of the way (0 at the ball, 1 as far as it goes), the harder to hit it. */
+  golfBack(k: number) {
+    const g = this.golf;
+    if (g && g.swingT < 0) g.want = THREE.MathUtils.clamp(k, 0, 1);
+  }
+
+  /** Down through the ball from wherever it was taken back to, up into the finish, and back to the ball. */
+  golfHit() {
+    const g = this.golf;
+    if (!g) return;
+    g.top = g.back;
+    g.swingT = 0;
+    g.autoT = -1;
+  }
+
+  /** A whole swing, all by itself: back `power` of the way over BACKSWING_TIME, then through (someone else's shot). */
+  golfSwing(power: number) {
+    const g = this.golf;
+    if (!g) return;
+    g.swingT = -1;
+    g.autoT = 0;
+    g.power = THREE.MathUtils.clamp(power, 0, 1);
+  }
+
+  /** The golf swing, over whatever the arms and legs were doing. */
+  private golfStep(dt: number) {
+    const g = this.golf!;
+    if (g.autoT >= 0) {
+      g.autoT += dt;
+      g.want = g.power * Math.min(1, g.autoT / BACKSWING_TIME);
+      if (g.autoT >= BACKSWING_TIME) this.golfHit();
+    }
+    let phi: number;
+    let finish = 0;
+    if (g.swingT >= 0) {
+      const s = (g.swingT += dt);
+      if (s < DOWNSWING) {
+        // Faster and faster down through the ball.
+        const u = (s / DOWNSWING) ** 2;
+        phi = THREE.MathUtils.lerp(-g.top * BACKSWING, FOLLOW, u);
+        finish = Math.max(0, phi / FOLLOW);
+      } else if (s < DOWNSWING + FINISH) {
+        phi = FOLLOW;
+        finish = 1;
+      } else if (s < DOWNSWING + FINISH + SETTLE) {
+        const u = (s - DOWNSWING - FINISH) / SETTLE;
+        finish = 1 - u * u * (3 - 2 * u);
+        phi = FOLLOW * finish;
+      } else {
+        g.swingT = -1;
+        g.back = g.want = 0;
+        phi = 0;
+      }
+      if (g.swingT >= 0) g.back = 0;
+    } else {
+      g.back += (g.want - g.back) * Math.min(1, dt * 12);
+      phi = -g.back * BACKSWING;
+    }
+    g.swing.rotation.set(-SWING_LEAN, 0, phi);
+    // Both hands on the grip, wherever the swing has it.
+    const r = 0.36;
+    const down = -Math.cos(phi) * r;
+    hands.set(SWING_AT.x + Math.sin(phi) * r, SWING_AT.y + down * Math.cos(SWING_LEAN), SWING_AT.z - down * Math.sin(SWING_LEAN));
+    for (const [arm, sx] of [
+      [this.armL, -0.33],
+      [this.armR, 0.33],
+    ] as const) {
+      armDir.set(hands.x - sx, hands.y - 0.9, hands.z).normalize();
+      arm.quaternion.setFromUnitVectors(DOWN, armDir);
+    }
+    // Shoulders turned away on the way back, round to the hole at the finish; eyes on the ball until it's gone.
+    const coil = Math.min(0, phi) / BACKSWING;
+    this.body.rotation.y = coil * 0.45 + finish * 0.5;
+    this.head.rotation.x = 0.4 * (1 - finish) + 0.05;
+    this.head.rotation.y = -coil * 0.35 + finish * 0.6;
+    this.legL.rotation.set(0, 0, -0.1);
+    this.legR.rotation.set(0, 0, 0.1);
+  }
+
   /** `pace` speeds up the walk cycle for someone walking faster than usual. */
   update(dt: number, t: number, moving: boolean, airborne: boolean, pace = 1) {
     const target = moving ? 1 : 0;
@@ -787,10 +968,27 @@ export class Person {
       for (const arm of [this.armL, this.armR]) arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, -0.55, sit);
     }
     if (this.smokeT >= 0) this.smokeStep(dt, moving, airborne);
-    if (this.card.held) {
-      // Both arms out in front, hands on the card's edges: it doesn't swing while they walk.
+    if (this.book) {
+      // Both arms out in front, hands under the book's bottom corners.
+      this.armL.rotation.set(-1.5, 0, 0.32);
+      this.armR.rotation.set(-1.5, 0, -0.32);
+      this.book.update(dt);
+    } else if (this.card.held || this.ball) {
+      // Both arms out in front, hands on the card's edges (or either side of the ball): they don't swing while they walk.
       this.armL.rotation.set(-1.25, 0, 0.3);
       this.armR.rotation.set(-1.25, 0, -0.3);
+    }
+    if (this.shootT >= 0) {
+      this.shootT += dt;
+      const k = reachCurve(this.shootT / 0.5);
+      for (const [arm, side] of [
+        [this.armL, 1],
+        [this.armR, -1],
+      ] as const) {
+        arm.rotation.x = THREE.MathUtils.lerp(arm.rotation.x, -2.75, k);
+        arm.rotation.z = THREE.MathUtils.lerp(arm.rotation.z, side * 0.12, k);
+      }
+      if (this.shootT >= 0.5) this.shootT = -1;
     }
     let reach = 0;
     if (this.reachT >= 0) {
@@ -832,10 +1030,12 @@ export class Person {
     this.smile.visible = !talking;
     this.mouth.visible = talking;
     if (talking) this.mouth.scale.set(0.07 * (1 - this.mouthOpen * 0.2), 0.01 + this.mouthOpen * 0.045, 0.05);
-    this.head.rotation.x = -this.mouthOpen * 0.08;
+    // Reading, they look down into the book.
+    this.head.rotation.x = -this.mouthOpen * 0.08 + (this.book ? 0.32 : 0);
     this.head.rotation.y = this.head.rotation.z = 0;
     this.body.rotation.y = this.body.rotation.z = 0;
     if (this.emoting) this.emoteStep(dt, moving || airborne ? 0 : 1 - sit);
+    if (this.golf && !sit && !airborne) this.golfStep(dt);
   }
 }
 
@@ -861,6 +1061,16 @@ const TASK_CHIP: Record<string, [string, string, string]> = {
   exited: ['💤 ASLEEP', STATUS_BULB.exited, '#ffffff'],
   offline: ['💤 ASLEEP', STATUS_BULB.offline, '#ffffff'],
 };
+
+/** A worker's pull request: still open, or merged (time to send it home). */
+export interface WorkerPr {
+  state: 'open' | 'merged';
+  number: number;
+}
+
+/** The outline of a worker's bubble, and its pill, once it has a pull request: GitHub's open green, or the PR board's merged purple. */
+const PR_INK: Record<WorkerPr['state'], string> = { open: '#2da44e', merged: '#9d4edd' };
+const PR_ICON: Record<WorkerPr['state'], string> = { open: '🔀', merged: '🎉' };
 
 /**
  * What a worker's body is doing: resting, arms up for joy, arms crossed waiting on you, typing, or
@@ -926,7 +1136,7 @@ function stanceOf(act: Act, t: number, s: Stance): Stance {
       s.look = -0.01 - ((t * 0.9) % 1) * 0.03;
       break;
     case 'test':
-      // Leaning back, hands behind its head, feet out: watching the bar fill.
+      // Leaning back, hands behind its head, feet out: waiting on the run.
       s.armLx = s.armRx = -3.3;
       s.armLz = 0.55;
       s.armRz = -0.55;
@@ -1016,17 +1226,6 @@ function papers(): { group: THREE.Group; page: THREE.Group } {
   return { group, page };
 }
 
-/** A progress bar that fills from left to right, its own +z toward whoever's watching. */
-function progressBar(): { group: THREE.Group; fill: THREE.Mesh } {
-  const group = new THREE.Group();
-  group.add(mesh(roundedBox(0.92, 0.2, 0.06, 0.07), toon('#2b2d42'), 0, 0, 0, false));
-  const geo = new THREE.BoxGeometry(0.8, 0.1, 0.04);
-  geo.translate(0.4, 0, 0);
-  const fill = mesh(geo, toon('#7cf29a', { emissive: '#1f7a3a' }), -0.4, 0, 0.02, false);
-  group.add(fill);
-  return { group, fill };
-}
-
 /** A little globe: blue sea, green blobs of land and a gold ring round its middle. */
 function globe(): { group: THREE.Group; ball: THREE.Group; ring: THREE.Mesh } {
   const group = new THREE.Group();
@@ -1082,6 +1281,8 @@ export class Worker {
   /** The bubble is a task card: it hangs from its tail instead of floating. */
   private bubbleIsCard = false;
   private task: WorkerTask | undefined;
+  /** Its pull request, open or merged: its bubble is outlined (and labelled, while it rests) to match. */
+  private pr: WorkerPr | undefined;
   private nameTag: THREE.Sprite | null = null;
   private eyes: THREE.Mesh[] = [];
   private blinkAt = Math.random() * 4;
@@ -1116,9 +1317,8 @@ export class Worker {
   private twirlT = -1;
   private flipT = 0;
   private papers: ReturnType<typeof papers>;
-  private bar: ReturnType<typeof progressBar>;
   private globe: ReturnType<typeof globe>;
-  /** Beside its laptop, where the bar and the globe float (see setPropSpot). */
+  /** Beside its laptop, where the globe floats (see setPropSpot). */
   private spot = new THREE.Vector3(-1, 1.1, 1.3);
   private skin: THREE.MeshToonMaterial;
   /** Dressed up for a holiday (see setCostume), and what it's wearing. */
@@ -1178,20 +1378,19 @@ export class Worker {
       this.feet.push(foot);
     }
 
-    // What it acts out with: papers in its hands, and beside its laptop a progress bar or a globe.
+    // What it acts out with: papers in its hands, and a globe beside its laptop.
     this.papers = papers();
     this.papers.group.position.set(0, 0.86, 0.4);
     this.papers.group.rotation.x = 0.35;
     this.body.add(this.papers.group);
-    this.bar = progressBar();
     this.globe = globe();
-    for (const prop of [this.papers.group, this.bar.group, this.globe.group]) prop.visible = false;
-    this.root.add(this.bar.group, this.globe.group);
+    for (const prop of [this.papers.group, this.globe.group]) prop.visible = false;
+    this.root.add(this.globe.group);
 
     this.setName(name);
   }
 
-  /** Where the progress bar and the globe float, in its own space: beside its laptop, where the card over its head doesn't hide them. */
+  /** Where the globe floats, in its own space: beside its laptop, where the card over its head doesn't hide it. */
   setPropSpot(at: THREE.Vector3) {
     this.spot.copy(at);
   }
@@ -1286,6 +1485,11 @@ export class Worker {
     this.drawBubble();
   }
 
+  setPr(pr: WorkerPr | undefined) {
+    this.pr = pr;
+    this.drawBubble();
+  }
+
   /** Sent home: its light goes out, its face falls, and its things pop into a box in its arms. `farewell` goes over its head. */
   leave(farewell: string) {
     if (this.leaving) return;
@@ -1293,7 +1497,7 @@ export class Worker {
     this.cheerT = 0;
     this.bounceT = 0;
     this.twirlT = -1;
-    for (const prop of [this.papers.group, this.bar.group, this.globe.group]) prop.visible = false;
+    for (const prop of [this.papers.group, this.globe.group]) prop.visible = false;
     this.armL.position.set(-0.3, 0.55, 0.05);
     this.armR.position.set(0.3, 0.55, 0.05);
     this.feet.forEach((f, i) => f.position.set(i ? 0.12 : -0.12, 0.2, 0.05));
@@ -1336,12 +1540,15 @@ export class Worker {
 
   private drawBubble() {
     if (this.leaving) return;
-    const { status, bouncing: bounce, task } = this;
+    const { status, bouncing: bounce, task, pr } = this;
     const hot = status === 'needs_input' || (status === 'done' && bounce);
     const bg = hot ? (status === 'done' ? '#caffbf' : '#ffd6e0') : status === 'working' ? '#ffec99' : '#fffaf3';
+    const border = pr && PR_INK[pr.state];
+    // Not working on or waiting for something more: its pull request in place of ready / done / asleep.
+    const prLabel = pr && status !== 'working' && status !== 'needs_input' && status !== 'starting' ? `${PR_ICON[pr.state]} PR #${pr.number} ${pr.state}` : undefined;
     const bubble =
-      status === 'needs_input' ? '❗ needs you' : status === 'done' && bounce ? '✅ done!' : status === 'working' ? '⌨️ working' : isAsleep(status) ? '💤' : '';
-    const key = task ? `${status}|${bounce}|${task.name}|${task.summary}` : bubble;
+      prLabel ?? (status === 'needs_input' ? '❗ needs you' : status === 'done' && bounce ? '✅ done!' : status === 'working' ? '⌨️ working' : isAsleep(status) ? '💤' : '');
+    const key = `${border}|${prLabel}|${task ? `${status}|${bounce}|${task.name}|${task.summary}` : bubble}`;
     if (key === this.bubbleKey) return;
     this.bubbleKey = key;
     if (this.bubble) {
@@ -1351,16 +1558,15 @@ export class Worker {
     }
     this.bubbleIsCard = !!task;
     if (task) {
-      const [text, chipBg, color] = TASK_CHIP[status] ?? TASK_CHIP.idle;
-      this.bubble = cardSprite({ chip: { text, bg: chipBg, color }, title: task.name, body: task.summary, bg: isAsleep(status) ? '#e9ecef' : bg });
-    } else if (bubble) this.bubble = textSprite(bubble, { bg, size: 38 });
+      const [text, chipBg, color] = prLabel ? [prLabel.toUpperCase(), border!, '#ffffff'] : (TASK_CHIP[status] ?? TASK_CHIP.idle);
+      this.bubble = cardSprite({ chip: { text, bg: chipBg, color }, title: task.name, body: task.summary, bg: isAsleep(status) ? '#e9ecef' : bg, border });
+    } else if (bubble) this.bubble = textSprite(bubble, { bg, size: 38, border });
     if (this.bubble) this.root.add(this.bubble);
   }
 
-  /** `eye` is the camera, for the progress bar to face. */
-  update(dt: number, t: number, eye?: THREE.Vector3) {
+  update(dt: number, t: number) {
     if (this.leaving) return this.carry(this.leaving, dt, t);
-    if (this.dancing) return this.boogie(this.dancing, dt, t, eye);
+    if (this.dancing) return this.boogie(this.dancing, dt, t);
     this.cheerT = Math.max(0, this.cheerT - dt);
     // Waiting on you: a couple of seconds of jumping, then arms crossed and a tapping foot, and round again.
     this.waitT = this.status === 'needs_input' ? this.waitT + dt : 0;
@@ -1421,7 +1627,7 @@ export class Worker {
     }
     this.body.rotation.y = this.turnY + twirl;
     this.body.rotation.z = isAsleep(this.status) ? Math.sin(t * 1.5) * 0.08 : s.roll;
-    this.props(dt, t, eye);
+    this.props(dt, t);
     this.blink(dt, s.lid);
     this.bulbMesh.scale.setScalar(this.status === 'needs_input' ? 1 + Math.abs(Math.sin(t * 8)) * 0.5 : 1);
     if (this.bubble) this.bubble.position.y = (this.bubbleIsCard ? 1.74 : 1.95) + (hopping ? this.body.position.y : 0) + Math.sin(t * 3) * 0.03;
@@ -1462,8 +1668,8 @@ export class Worker {
     return out;
   }
 
-  /** The papers, the progress bar and the globe come and go with the act they belong to. */
-  private props(dt: number, t: number, eye?: THREE.Vector3) {
+  /** The papers and the globe come and go with the act they belong to. */
+  private props(dt: number, t: number) {
     const show = (prop: THREE.Object3D, act: Act) => {
       const w = this.acts.get(act) ?? 0;
       prop.visible = w > 0.02;
@@ -1476,16 +1682,6 @@ export class Worker {
       const f = Math.min(1, this.flipT / 0.45);
       this.papers.page.rotation.x = -ease(f) * Math.PI * 1.1;
       this.papers.page.visible = f < 1;
-    }
-    if (show(this.bar.group, 'test')) {
-      // Fills over a couple of seconds, holds full for a beat, starts over.
-      const c = t % 3;
-      this.bar.fill.scale.x = Math.max(0.02, ease(Math.min(1, c / 2.4)));
-      this.bar.group.position.copy(this.spot).y += Math.sin(t * 2) * 0.02;
-      if (eye) {
-        this.root.worldToLocal(v1.copy(eye));
-        this.bar.group.rotation.y = Math.atan2(v1.x - this.bar.group.position.x, v1.z - this.bar.group.position.z);
-      }
     }
     if (show(this.globe.group, 'web')) {
       this.globe.group.position.copy(this.spot).y += Math.sin(t * 2) * 0.03;
@@ -1524,13 +1720,13 @@ export class Worker {
   }
 
   /** Up on the desk dancing: hop up, groove side to side, twirl, jump twice, hop back down. */
-  private boogie(d: NonNullable<Worker['dancing']>, dt: number, t: number, eye?: THREE.Vector3): void {
+  private boogie(d: NonNullable<Worker['dancing']>, dt: number, t: number): void {
     d.t += dt;
     const { up, moves, down } = DANCE;
     if (d.t >= up + moves + down) {
       this.dancing = null;
       this.settle();
-      return this.update(0, t, eye);
+      return this.update(0, t);
     }
     // Between the seat (0) and the stage (1), with a hop's arc over the line between them.
     let on = 1;
@@ -1575,11 +1771,11 @@ export class Worker {
       lift = Math.abs(Math.sin((beat - 6) * Math.PI)) * 0.45;
       armZ = [-0.3, 0.3];
     }
-    // Whatever it was acting out waits: shoulders back in place, eyes ahead, the papers, bar and globe put away.
+    // Whatever it was acting out waits: shoulders back in place, eyes ahead, the papers and globe put away.
     this.armL.position.set(-0.3, 0.55, 0.05);
     this.armR.position.set(0.3, 0.55, 0.05);
     for (const p of this.pupils) p.position.y = 0.7;
-    for (const prop of [this.papers.group, this.bar.group, this.globe.group]) prop.visible = false;
+    for (const prop of [this.papers.group, this.globe.group]) prop.visible = false;
     const k = 1 - Math.exp(-dt * 18);
     [this.armL, this.armR].forEach((a, i) => {
       a.rotation.x += (armX[i] - a.rotation.x) * k;
