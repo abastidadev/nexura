@@ -57,7 +57,7 @@ async function fakeNexura(answer: (seen: Seen) => [number, unknown]) {
   });
   await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
   const { port } = server.address() as AddressInfo;
-  return { base: `http://127.0.0.1:${port}`, seen, close: () => server.close() };
+  return { base: `http://127.0.0.1:${port}`, seen, close: () => new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve())) };
 }
 
 test('nexura: the boards fill from Nexura, and actions go to it for this floor', async () => {
@@ -91,7 +91,7 @@ test('nexura: the boards fill from Nexura, and actions go to it for this floor',
     assert.equal(await t.review(5, file), 'https://dev.azure.com/x?discussionId=3');
     assert.deepEqual(nexura.seen.find((s) => s.path.endsWith('/review'))?.body, { body: 'Round 2: all good' });
   } finally {
-    nexura.close();
+    await nexura.close();
     rmSync(dir, { recursive: true, force: true });
   }
 });

@@ -1,9 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { accessSync, appendFileSync, chmodSync, constants, existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { rm } from 'node:fs/promises';
 import { execFileSync } from 'node:child_process';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
+import spawn from 'cross-spawn';
 import { Ledger } from '../src/server/usage.js';
 import { WorkerManager, type WorkerEvents } from '../src/server/workers.js';
 import type { AgentProvider, WorkerInfo } from '../src/shared/protocol.js';
@@ -31,9 +33,17 @@ type Fixture = {
   opencode: string;
   codex: string;
   custom: string;
+  track(worker: WorkerManager): WorkerManager;
   read(): Invocation[];
-  close(): void;
+  close(): Promise<void>;
 };
+
+const deferredCleanup = new Set<string>();
+process.once('exit', () => {
+  for (const dir of deferredCleanup) {
+    try { rmSync(dir, { recursive: true, force: true }); } catch { /* A Windows PTY may still own its cwd. */ }
+  }
+});
 
 /** Keep provider CLIs in this test fixture from seeing a user's config or credentials. */
 function isolateProviderEnvironment(f: Fixture, t: { after(fn: () => void): void }) {
@@ -83,7 +93,7 @@ const fakeAgent = `#!/usr/bin/env node
 const fs = require('node:fs');
 const path = require('node:path');
 const log = process.env.FAKE_AGENT_LOG;
-const kind = path.basename(process.argv[1]);
+const kind = path.basename(process.argv[1]).replace(/\\.cjs$/, '');
 const args = process.argv.slice(2);
 const record = (extra = {}) => fs.appendFileSync(log, JSON.stringify({
   kind,
@@ -114,25 +124,33 @@ const delay = Number(process.env.FAKE_AGENT_EXIT_MS || 0);
 if (delay > 0) setTimeout(() => process.exit(0), delay).unref();
 `;
 
+function npmShim(script: string): string {
+  return `@ECHO off\r\nGOTO start\r\n:find_dp0\r\nSET dp0=%~dp0\r\nEXIT /b\r\n:start\r\nSETLOCAL\r\nCALL :find_dp0\r\n\r\nIF EXIST "%dp0%\\node.exe" (\r\n  SET "_prog=%dp0%\\node.exe"\r\n) ELSE (\r\n  SET "_prog=node"\r\n  SET PATHEXT=%PATHEXT:;.JS;=;%\r\n)\r\n\r\nendLocal & goto #_undefined_# 2>NUL || title %COMSPEC% & "%_prog%"  "%dp0%\\${script}" %*\r\n`;
+}
+
 function fixture(): Fixture {
   const root = mkdtempSync(path.join(tmpdir(), 'agent-office-workers-'));
   const data = path.join(root, 'data');
   const bin = path.join(root, 'bin');
   const log = path.join(root, 'invocations.jsonl');
-  const claude = path.join(bin, 'claude');
-  const opencode = path.join(bin, 'opencode');
-  const custom = path.join(bin, 'custom-agent');
-  const codex = path.join(bin, 'codex');
+  const executable = (name: string): string => path.join(bin, `${name}${process.platform === 'win32' ? '.cmd' : ''}`);
+  const claude = executable('claude');
+  const opencode = executable('opencode');
+  const custom = executable('custom-agent');
+  const codex = executable('codex');
   mkdirSync(data, { recursive: true });
   mkdirSync(bin, { recursive: true });
-  writeFileSync(claude, fakeAgent, { mode: 0o700 });
-  writeFileSync(opencode, fakeAgent, { mode: 0o700 });
-  writeFileSync(custom, fakeAgent, { mode: 0o700 });
-  writeFileSync(codex, fakeAgent, { mode: 0o700 });
-  chmodSync(claude, 0o700);
-  chmodSync(opencode, 0o700);
-  chmodSync(custom, 0o700);
+  for (const [name, command] of [['claude', claude], ['opencode', opencode], ['custom-agent', custom], ['codex', codex]]) {
+    if (process.platform === 'win32') {
+      writeFileSync(path.join(bin, `${name}.cjs`), fakeAgent);
+      writeFileSync(command, npmShim(`${name}.cjs`));
+    } else {
+      writeFileSync(command, fakeAgent, { mode: 0o700 });
+      chmodSync(command, 0o700);
+    }
+  }
   writeFileSync(log, '');
+  const managers: WorkerManager[] = [];
   return {
     root,
     data,
@@ -141,12 +159,27 @@ function fixture(): Fixture {
     opencode,
     codex,
     custom,
+    track(worker) {
+      managers.push(worker);
+      return worker;
+    },
     read() {
       if (!existsSync(log)) return [];
       return readFileSync(log, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as Invocation);
     },
-    close() {
-      rmSync(root, { recursive: true, force: true });
+    async close() {
+      for (const worker of managers) worker.shutdown();
+      // ConPTY may release its worker's cwd after shutdown returns.
+      for (let attempt = 0; attempt < 20; attempt++) {
+        try {
+          await rm(root, { recursive: true, force: true });
+          return;
+        } catch (error) {
+          if (!['EPERM', 'EBUSY', 'ENOTEMPTY'].includes((error as NodeJS.ErrnoException).code ?? '')) throw error;
+          await new Promise((resolve) => setTimeout(resolve, 100));
+        }
+      }
+      deferredCleanup.add(root);
     },
   };
 }
@@ -166,7 +199,7 @@ function ledger(data: string): Ledger {
 }
 
 function manager(f: Fixture, cmd: string, updates: WorkerInfo[], args = ['--from-test']) {
-  return new WorkerManager(f.root, f.data, cmd, args, { url: 'http://127.0.0.1:1', token: '' }, events(updates), ledger(f.data));
+  return f.track(new WorkerManager(f.root, f.data, cmd, args, { url: 'http://127.0.0.1:1', token: '' }, events(updates), ledger(f.data)));
 }
 
 async function waitFor<T>(read: () => T, predicate: (value: T) => boolean, timeout = 4000): Promise<T> {
@@ -197,7 +230,7 @@ test('Claude workers use the configured executable, pass prompts and resume ids,
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
 
   const workers = manager(f, f.claude, updates);
@@ -252,7 +285,7 @@ test('OpenCode workers use OpenCode-only hooks/config, never invoke Claude namin
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
 
   const workers = manager(f, f.opencode, updates);
@@ -340,7 +373,7 @@ test('OpenCode model overrides configured model flags on first launch and is omi
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
 
   const workers = manager(f, f.opencode, updates, ['--model', 'old/model', '--keep', 'yes', '-m', 'older/model']);
@@ -377,7 +410,7 @@ test('OpenCode keeps configured model flags when no explicit model is selected, 
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
 
   const workers = manager(f, f.opencode, updates, ['--model', 'configured/model', '--keep', 'yes']);
@@ -434,7 +467,7 @@ test('an explicit Claude model/effort overrides --agent-args and persists across
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
 
   const workers = manager(f, f.claude, updates, ['--model', 'opus']);
@@ -452,8 +485,8 @@ test('an explicit Claude model/effort overrides --agent-args and persists across
   assert.equal(workers.handleHook(worker.id, firstInvocation.env.hookToken!, 'SessionStart', { session_id: 'claude-model-1' }), true);
   await waitFor(() => workers.get(worker.id)?.status, (status) => status === 'exited');
   assert.equal(workers.resume(worker.id), undefined);
-  const resumed = await waitFor(() => f.read(), (records) => records.filter((r) => r.kind === 'claude').length >= 2);
-  const secondInvocation = resumed.filter((r) => r.kind === 'claude')[1];
+  const resumed = await waitFor(() => f.read(), (records) => records.filter((r) => r.kind === 'claude' && r.args.includes('--settings')).length >= 2);
+  const secondInvocation = resumed.filter((r) => r.kind === 'claude' && r.args.includes('--settings'))[1];
   assert.ok(secondInvocation.args.includes('--model'));
   assert.ok(secondInvocation.args.includes('haiku'));
   assert.ok(secondInvocation.args.includes('--effort'));
@@ -477,7 +510,7 @@ test('a worker hired on Fable launches with --model fable and keeps it across a 
   t.after(() => {
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
 
   const workers = manager(f, f.claude, [], ['--model', 'opus']);
@@ -527,7 +560,7 @@ test('provider and hook boundaries reject invalid combinations', async (t) => {
     customWorkers.shutdown();
     if (customPreviousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = customPreviousLog;
-    customFixture.close();
+    return customFixture.close();
   });
   assert.equal(customWorkers.defaultProvider, 'custom');
   const custom = customWorkers.spawn('desk-4', 'test', 'custom wrapper task');
@@ -540,14 +573,28 @@ test('provider and hook boundaries reject invalid combinations', async (t) => {
   }
 });
 
+test('a custom Windows batch wrapper rejects multiline prompts before cmd.exe', { skip: process.platform !== 'win32' }, async (t) => {
+  const f = fixture();
+  t.after(() => f.close());
+  writeFileSync(f.claude, `@ECHO off\r\nREM custom setup\r\n${npmShim('claude.cjs')}`);
+  const updates: WorkerInfo[] = [];
+  const workers = manager(f, f.claude, updates);
+  const worker = workers.spawn('desk-1', 'test', 'First line\r\n& echo unsafe');
+  assert.equal(typeof worker, 'object');
+  if (typeof worker === 'string') return;
+  assert.equal(worker.status, 'exited');
+  assert.equal(worker.exitCode, -1);
+  assert.deepEqual(f.read(), []);
+});
+
 test('OpenCode usage snapshots replace totals, persist across restart, and never change status or Claude budget', async (t) => {
   const f = fixture();
   isolateProviderEnvironment(f, t);
   const oldLog = process.env.FAKE_AGENT_LOG;
   process.env.FAKE_AGENT_LOG = f.log;
-  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; f.close(); });
+  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; return f.close(); });
   const book = ledger(f.data);
-  const workers = new WorkerManager(f.root, f.data, f.opencode, [], { url: 'http://127.0.0.1:1', token: '' }, events([]), book);
+  const workers = f.track(new WorkerManager(f.root, f.data, f.opencode, [], { url: 'http://127.0.0.1:1', token: '' }, events([]), book));
   t.after(() => workers.shutdown());
   const worker = workers.spawn('desk-1', 'test');
   assert.notEqual(typeof worker, 'string'); if (typeof worker === 'string') return;
@@ -586,9 +633,9 @@ test('Codex workers preserve native approvals, follow authenticated root hooks, 
   isolateProviderEnvironment(f, t);
   const oldLog = process.env.FAKE_AGENT_LOG;
   process.env.FAKE_AGENT_LOG = f.log;
-  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; f.close(); });
+  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; return f.close(); });
   const book = ledger(f.data);
-  const workers = new WorkerManager(f.root, f.data, f.claude, ['--claude-only'], { url: 'http://127.0.0.1:1', token: '' }, events([]), book);
+  const workers = f.track(new WorkerManager(f.root, f.data, f.claude, ['--claude-only'], { url: 'http://127.0.0.1:1', token: '' }, events([]), book));
   t.after(() => workers.shutdown());
   const worker = workers.spawn('desk-1', 'test', '- fix the login', false, 'agent', 'codex');
   assert.notEqual(typeof worker, 'string'); if (typeof worker === 'string') return;
@@ -646,9 +693,9 @@ test('Codex token snapshots survive restart, preserve permissions, and stay outs
   process.env.CODEX_HOME = 'relative-codex-home';
   const oldLog = process.env.FAKE_AGENT_LOG;
   process.env.FAKE_AGENT_LOG = f.log;
-  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; f.close(); });
+  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; return f.close(); });
   const book = ledger(f.data);
-  const workers = new WorkerManager(f.root, f.data, f.codex, [], { url: 'http://127.0.0.1:1', token: '' }, events([]), book);
+  const workers = f.track(new WorkerManager(f.root, f.data, f.codex, [], { url: 'http://127.0.0.1:1', token: '' }, events([]), book));
   t.after(() => workers.shutdown());
   const worker = workers.spawn('desk-1', 'test');
   assert.notEqual(typeof worker, 'string'); if (typeof worker === 'string') return;
@@ -706,7 +753,7 @@ test('a board agent is hired with its brief on the first prompt, then prompted, 
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
   const workers = manager(f, f.claude, updates);
   t.after(() => workers.shutdown());
@@ -768,13 +815,13 @@ test('a worker nobody picked a model for starts on the office default, and a boa
   t.after(() => {
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
   const prompts: PromptSource = {
     text: (id) => (id === 'station.issues' ? 'You triage issues. The request:' : PROMPTS[id].text),
     agent: () => ({ provider: 'claude', model: 'sonnet', effort: 'low' }),
   };
-  const workers = new WorkerManager(f.root, f.data, f.claude, ['--from-test'], { url: 'http://127.0.0.1:1', token: '' }, events([]), ledger(f.data), undefined, prompts);
+  const workers = f.track(new WorkerManager(f.root, f.data, f.claude, ['--from-test'], { url: 'http://127.0.0.1:1', token: '' }, events([]), ledger(f.data), undefined, prompts));
   t.after(() => workers.shutdown());
   const launches = (id: string) => f.read().filter((r) => r.kind === 'claude' && r.args.includes('--settings') && r.stdin === undefined && r.env.workerId === id);
   const flag = (args: string[], name: string) => (args.includes(name) ? args[args.indexOf(name) + 1] : undefined);
@@ -809,7 +856,7 @@ test('the queue agent is launched without file-editing tools, and board agents g
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
   const workers = manager(f, f.claude, updates);
   t.after(() => workers.shutdown());
@@ -822,8 +869,12 @@ test('the queue agent is launched without file-editing tools, and board agents g
   };
 
   // The command is there, and runs the shipped script with the office's own node.
-  accessSync(path.join(bin, 'office-queue'), constants.X_OK);
-  assert.match(execFileSync(path.join(bin, 'office-queue'), ['--help'], { encoding: 'utf8' }), /office-queue add --title/);
+  const queueCommand = path.join(bin, process.platform === 'win32' ? 'office-queue.cmd' : 'office-queue');
+  accessSync(queueCommand, constants.X_OK);
+  const help = process.platform === 'win32'
+    ? spawn.sync(queueCommand, ['--help'], { encoding: 'utf8' }).stdout
+    : execFileSync(queueCommand, ['--help'], { encoding: 'utf8' });
+  assert.match(String(help), /office-queue add --title/);
 
   const hired = workers.station('station-queue', 'Ada', 'Fix the typo in the README');
   assert.equal(typeof hired, 'object');
@@ -870,7 +921,7 @@ test('a Claude worker acts out its latest tool call, and puts its head in its ha
     else process.env.FAKE_AGENT_EXIT_MS = previousExit;
     if (previousLog === undefined) delete process.env.FAKE_AGENT_LOG;
     else process.env.FAKE_AGENT_LOG = previousLog;
-    f.close();
+    return f.close();
   });
   const workers = manager(f, f.claude, []);
   t.after(() => workers.shutdown());
@@ -921,7 +972,7 @@ test('a worker is stamped with when it started waiting on someone, afresh each t
   isolateProviderEnvironment(f, t);
   const oldLog = process.env.FAKE_AGENT_LOG;
   process.env.FAKE_AGENT_LOG = f.log;
-  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; f.close(); });
+  t.after(() => { if (oldLog === undefined) delete process.env.FAKE_AGENT_LOG; else process.env.FAKE_AGENT_LOG = oldLog; return f.close(); });
   const workers = manager(f, f.claude, []);
   t.after(() => workers.shutdown());
   const worker = workers.spawn('desk-1', 'test', 'fix the login');

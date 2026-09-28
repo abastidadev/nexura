@@ -47,12 +47,14 @@ test('rejects foreign session metadata, outside paths and symlink escapes', t =>
   writeFileSync(file, header('foreign-thread') + event() + '\n');
   assert.equal(reader.read(file, 'thread-1', home), undefined);
   assert.equal(reader.read(file, '../thread-1', home), undefined);
-  const outside = path.join(home, 'rollout-other-thread-1.jsonl');
+  const outsideDir = path.join(home, 'outside');
+  mkdirSync(outsideDir);
+  const outside = path.join(outsideDir, 'rollout-link-thread-1.jsonl');
   writeFileSync(outside, header() + event() + '\n');
   assert.equal(reader.read(outside, 'thread-1', home), undefined);
-  const link = path.join(home, 'sessions', 'rollout-link-thread-1.jsonl');
-  symlinkSync(outside, link);
-  assert.equal(reader.read(link, 'thread-1', home), undefined);
+  const link = path.join(home, 'sessions', 'outside-link');
+  symlinkSync(outsideDir, link, process.platform === 'win32' ? 'junction' : 'dir');
+  assert.equal(reader.read(path.join(link, 'rollout-link-thread-1.jsonl'), 'thread-1', home), undefined);
 });
 
 test('bounded tail recovers cumulative usage after large non-metric records', t => {

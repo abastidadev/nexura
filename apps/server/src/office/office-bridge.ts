@@ -26,6 +26,31 @@ export type OfficeWorker = {
   createdAt: number;
   /** When it started waiting for the user (approval or quota). */
   waitingSince?: number;
+  /** What its laptop shows, the way a CLI's shows its terminal: the run's page, or its PR's. */
+  screen?: OfficeScreen;
+};
+
+/** A run's page in small, for the laptop at its desk (third_party/agent-office/src/client/nexura/screen.ts). */
+export type OfficeScreen = {
+  steps: { name: string; status: StepRun["status"] }[];
+  /** What it did lately, oldest first ("Edit app.ts", "Bash npm test"…). */
+  log: string[];
+  repos: string[];
+  agent?: string;
+  /** The PR it opened or reviews: then the laptop shows that PR's page. */
+  pr?: {
+    number: number;
+    title: string;
+    provider: "github" | "azure";
+    source?: string;
+    target?: string;
+    author?: string;
+    state: "open" | "merged" | "closed";
+    /** A review of it: how many comments, how many serious, and whether they are on the PR. */
+    review?: { comments: number; important: number; published: boolean };
+    /** Open comment threads on a flow's PR. */
+    threads?: number;
+  };
 };
 
 type Live = { stepRunId: string; bubble?: string; tool?: { name: string; command?: string } };
@@ -37,6 +62,8 @@ export const RECENT_MS = 15 * 60_000;
 const HEARTBEAT_MS = 20_000;
 const DEBOUNCE_MS = 300;
 const NAME_MAX = 18;
+/** Lines of activity a laptop keeps. */
+const LOG_LINES = 8;
 
 const PROVIDERS: Record<AgentKind, OfficeWorker["provider"]> = { claude: "claude", codex: "codex", copilot: "custom" };
 
@@ -96,10 +123,65 @@ function waitingText(run: Run): string | undefined {
   return undefined;
 }
 
+/** The steps as a pipeline: each step once, in the order it first ran, with how its last run went. */
+function pipeline(run: Run): OfficeScreen["steps"] {
+  const steps = new Map<string, StepRun["status"]>();
+  for (const step of run.steps) {
+    steps.set(step.step, step.status);
+  }
+  if (run.pendingStep && !steps.has(run.pendingStep.step)) {
+    steps.set(run.pendingStep.step, "pending");
+  }
+  return [...steps].map(([name, status]) => ({ name, status }));
+}
+
+function prStateOf(status: string | undefined): "open" | "merged" | "closed" {
+  return status === "completed" ? "merged" : status === "abandoned" ? "closed" : "open";
+}
+
+/** What the laptop at the run's desk shows. */
+export function screenOf(run: Run, log: readonly string[], step: StepRun | undefined): OfficeScreen {
+  const target = run.request.prReview;
+  const created = run.pullRequests?.[0];
+  const review = run.prReview;
+  let pr: OfficeScreen["pr"];
+  if (target) {
+    const published = new Set(review?.published?.commentIds ?? []);
+    const comments = review ? (review.published ? review.comments.filter((comment) => published.has(comment.id)) : review.comments) : [];
+    pr = {
+      number: target.id,
+      title: target.title,
+      provider: target.provider,
+      source: target.sourceBranch,
+      target: target.targetBranch,
+      author: target.author,
+      state: prStateOf(review?.followUp?.prStatus),
+      ...(review ? { review: { comments: comments.length, important: comments.filter((comment) => comment.severity === "blocker" || comment.severity === "major").length, published: Boolean(review.published) } } : {}),
+    };
+  } else if (created) {
+    const worktree = run.worktrees.find((candidate) => candidate.repo === created.repo);
+    pr = {
+      number: created.id,
+      title: created.title,
+      provider: /dev\.azure\.com|visualstudio\.com/i.test(created.url) ? "azure" : "github",
+      source: worktree?.branch,
+      state: prStateOf(run.reviewWatch?.prStatus),
+      threads: run.reviewWatch?.activeThreads,
+    };
+  }
+  return {
+    steps: pipeline(run),
+    log: log.slice(-LOG_LINES),
+    repos: run.request.repos,
+    ...(step && step.kind !== "builtin" ? { agent: `${step.agent ?? "claude"} · ${step.model}` } : {}),
+    ...(pr ? { pr } : {}),
+  };
+}
+
 /** The runs worth a desk: the live ones and those that finished a moment ago. */
 export function officeWorkers(
   runs: readonly Run[],
-  options: { repos: readonly RepoConfig[]; nexuraUrl: string; now: number; live?: ReadonlyMap<string, Live>; waitingSince?: ReadonlyMap<string, number> },
+  options: { repos: readonly RepoConfig[]; nexuraUrl: string; now: number; live?: ReadonlyMap<string, Live>; waitingSince?: ReadonlyMap<string, number>; logs?: ReadonlyMap<string, string[]> },
 ): OfficeWorker[] {
   const workers: OfficeWorker[] = [];
   for (const run of runs) {
@@ -128,6 +210,7 @@ export function officeWorkers(
       url: `${options.nexuraUrl.replace(/\/$/, "")}/runs/${run.id}`,
       createdAt: Date.parse(run.createdAt),
       waitingSince: status === "needs_input" ? (options.waitingSince?.get(run.id) ?? options.now) : undefined,
+      screen: screenOf(run, options.logs?.get(run.id) ?? [], step),
     });
   }
   return workers;
@@ -178,6 +261,8 @@ export type OfficeBridgeOptions = {
 export class OfficeBridge {
   private readonly live = new Map<string, Live>();
   private readonly waitingSince = new Map<string, number>();
+  /** What each run did lately, for its laptop. */
+  private readonly logs = new Map<string, string[]>();
   private timer: NodeJS.Timeout | undefined;
   private heartbeat: NodeJS.Timeout | undefined;
   private sent = "";
@@ -217,6 +302,10 @@ export class OfficeBridge {
         return;
       }
       this.live.set(message.runId, next);
+      const log = this.logs.get(message.runId) ?? [];
+      if (next.bubble && log.at(-1) !== next.bubble) {
+        this.logs.set(message.runId, [...log, next.bubble].slice(-LOG_LINES));
+      }
     } else if (message.type === "run") {
       const waiting = message.run.status === "paused" || message.run.status === "waiting-rate-limit";
       if (!waiting) {
@@ -230,6 +319,7 @@ export class OfficeBridge {
     } else if (message.type === "runDeleted") {
       this.live.delete(message.runId);
       this.waitingSince.delete(message.runId);
+      this.logs.delete(message.runId);
     } else {
       return;
     }
@@ -243,6 +333,7 @@ export class OfficeBridge {
       now: (this.options.now ?? Date.now)(),
       live: this.live,
       waitingSince: this.waitingSince,
+      logs: this.logs,
     });
   }
 

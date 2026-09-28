@@ -27,6 +27,7 @@ import { configuredProvider, isValidOpenCodeModel, validateWorkerEffort, validat
 import { mergeOpenCodeConfigContent, openCodePluginSpecifier, writeOpenCodePlugin, type OpenCodeStatusEvent } from './opencode.js';
 import { ScrollbackStore, searchTerminal, terminalTail } from './history.js';
 import { screenSnapshot } from './screen.js';
+import { npmNodeShim } from './windows-command.js';
 import type { Capacity } from './machine.js';
 
 type HeadlessTerminal = InstanceType<typeof headless.Terminal>;
@@ -952,6 +953,28 @@ export class WorkerManager {
       }
       if (isShell) {
         proc = this.host.spawn({ file: shell, args, ...where });
+      } else if (commandPath && WIN && /\.(?:cmd|bat)$/i.test(commandPath)) {
+        const shim = npmNodeShim(commandPath);
+        if (shim) {
+          // Run the JS behind an npm shim directly, preserving newlines and every argv boundary.
+          proc = this.host.spawn({ file: shim.file, args: [shim.script, ...args], ...where });
+        } else {
+          // cmd.exe can reinterpret line breaks in an argument as another command.
+          if (args.some((arg) => /[\r\n]/.test(arg))) throw new Error('Custom Windows batch agents cannot receive multiline arguments; use an npm shim or .exe');
+          // A custom batch file still needs cmd.exe for simple arguments.
+          const launcher = cmdLauncherScript();
+          if (!launcher) throw new Error('Windows agent launcher is missing');
+          proc = this.host.spawn({
+            file: process.execPath,
+            args: [launcher],
+            ...where,
+            env: {
+              ...env,
+              AGENT_OFFICE_CMD_TARGET: commandPath,
+              AGENT_OFFICE_CMD_ARGS: Buffer.from(JSON.stringify(args)).toString('base64url'),
+            },
+          });
+        }
       } else if (commandPath) {
         proc = this.host.spawn({ file: commandPath, args, ...where });
       } else {
@@ -1531,13 +1554,21 @@ function screenText(term: HeadlessTerminal, from = 0): string {
 }
 
 /** bin/office-queue.js in the install this office runs from (src/server under tsx, dist/server/server built). */
-function queueScript(): string | undefined {
+function binScript(name: string): string | undefined {
   let dir = path.dirname(fileURLToPath(import.meta.url));
   for (let i = 0; i < 4; i++, dir = path.dirname(dir)) {
-    const file = path.join(dir, 'bin', 'office-queue.js');
+    const file = path.join(dir, 'bin', name);
     if (existsSync(file)) return file;
   }
   return undefined;
+}
+
+function queueScript(): string | undefined {
+  return binScript('office-queue.js');
+}
+
+function cmdLauncherScript(): string | undefined {
+  return binScript('agent-office-cmd.js');
 }
 
 const WIN = process.platform === 'win32';

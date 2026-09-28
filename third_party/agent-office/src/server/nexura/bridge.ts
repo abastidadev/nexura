@@ -8,6 +8,7 @@ import path from 'node:path';
 import type { AgentProvider, ServerMsg, WorkerInfo, WorkerStatus } from '../../shared/protocol.js';
 import { BEANBAGS, DESKS } from '../../shared/layout.js';
 import { toolAction } from '../../shared/actions.js';
+import { parseNexuraScreen, type NexuraScreen } from '../../shared/nexura-screen.js';
 
 /** One run as Nexura sends it (OfficeWorker in Nexura). */
 export interface NexuraWorker {
@@ -26,6 +27,8 @@ export interface NexuraWorker {
   url: string;
   createdAt: number;
   waitingSince?: number;
+  /** What its laptop shows: the run's page in small, or its PR's. */
+  screen?: NexuraScreen;
 }
 
 /** What the bridge needs from a floor. */
@@ -92,6 +95,7 @@ export function parseWorker(raw: unknown): NexuraWorker | undefined {
     url,
     createdAt: num(r.createdAt) ?? Date.now(),
     waitingSince: num(r.waitingSince),
+    screen: parseNexuraScreen(r.screen),
   };
 }
 
@@ -135,7 +139,7 @@ export function workerInfo(w: NexuraWorker, deskId: string): WorkerInfo {
     action,
     task: { name: w.step ? `Nexura · ${w.step}` : 'Nexura', summary: w.activity ? `${w.title} — ${w.activity}` : w.title },
     pr: w.pr,
-    external: { source: 'nexura', runId: w.runId, url: w.url },
+    external: { source: 'nexura', runId: w.runId, url: w.url, ...(w.screen ? { screen: w.screen } : {}) },
   };
 }
 

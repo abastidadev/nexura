@@ -14,7 +14,7 @@ Qué hace cada parche y cómo se prueba está explicado en [docs/office-3d.md](.
 - **El código de Nexura vive en archivos propios**: `src/server/nexura/`, `src/client/nexura/` y `tests/nexura-*.test.ts`. Upstream nunca los toca.
 - **En los archivos de upstream solo hay enganches de una o pocas líneas.** Todos llevan `nexura` en un comentario, así que `grep -rn "nexura" src` los lista. Cuando sustituyen algo, el comentario dice qué había antes (`// nexura: was …`).
 - **No se añaden variantes a `ClientMsg`/`ServerMsg`**, solo campos opcionales.
-- **`package-lock.json` es siempre el de upstream**: `update:office` lo copia tal cual y `setup:office` usa `npm ci`.
+- **`package-lock.json` parte del de upstream**: `update:office` añade las dependencias locales declaradas en `package.json` con npm, y `setup:office` usa `npm ci`.
 - **La interfaz de los tableros se deriva de la clase `GitHub` de upstream**, con `Tracker = { [K in keyof GitHub]: GitHub[K] }`. Si upstream cambia un método, `NexuraTracker` deja de compilar y el typecheck de la oficina lo avisa al actualizar.
 
 ## Enganches en archivos de upstream
@@ -35,6 +35,7 @@ Qué hace cada parche y cómo se prueba está explicado en [docs/office-3d.md](.
 | `src/server/server.ts` | la ruta `/api/nexura/achievements` | Los logros de Nexura para la vitrina, y lo que haces en la oficina que cuenta para ellos. |
 | `src/client/world/office.ts` | `'nexura'` en `InteractKind`, `Interactable.nexura` y `nexuraExtras(...)` | La vitrina de logros y los patitos escondidos. |
 | `src/client/main.ts` | `nexuraUse` al principio de `interact`, `nexuraInteract`, `nexuraThingHint` y `nexura` en `REACH` | Lo que usas en la oficina cuenta para los logros; E en la vitrina o en un patito. |
+| `src/server/limits.ts`, `src/server/tasks.ts`, `src/server/workers.ts` | `npmNodeShim`, `cross-spawn` y lanzador PTY | En Windows, los shims completos de npm ejecutan su JS con Node, conservando los argumentos; los wrappers personalizados pasan por batch. Los límites y nombres de tareas también funcionan con `claude.cmd`. |
 
 ## Archivos propios
 
@@ -45,6 +46,7 @@ Qué hace cada parche y cómo se prueba está explicado en [docs/office-3d.md](.
 | `src/server/nexura/tracker.ts` | `NexuraTracker`: los tableros de Issues y PR de una planta ADO, pidiendo los datos a `NEXURA_URL/api/office/board/*`. |
 | `src/server/nexura/floors.ts` | Los repos de Nexura en el ascensor. |
 | `src/server/nexura/pulls.ts` | Remotos ADO, la nota `gh` → `az` para Claude, y crear y buscar PR a través de Nexura. |
+| `src/server/windows-command.ts`, `bin/agent-office-cmd.js` | Detectan el formato completo de un shim npm y lanzan wrappers batch personalizados desde un PTY. Rechazan prompts multilínea en batch para evitar que `cmd.exe` los interprete como comandos. |
 | `src/server/nexura/achievements.ts` | Pasa a Nexura (`NEXURA_URL/api/achievements`) la lista de logros y, validados campo a campo, los eventos de la oficina. |
 | `src/client/nexura/achievements.ts` | La vitrina 3D (copas por nivel), los cinco patitos, los secretos (código Konami, turno de noche, hoyo en uno), la ventana de logros y el toast de trofeo cuando la oficina no está dentro de Nexura. |
 | `src/client/nexura/external.ts` | Todo lo del cliente: abrir el flujo en Nexura (`postMessage` o una pestaña nueva), la barra de ayuda, el portátil, el botón "Resolve with Nexura" y, en plantas de Azure DevOps, un `MutationObserver` que cambia "GitHub" por "Azure DevOps" en los diálogos (nunca en el Markdown ni en lo que escribe la gente) y apunta los `#N` al work item. |
@@ -57,8 +59,8 @@ Qué hace cada parche y cómo se prueba está explicado en [docs/office-3d.md](.
   - **Merge**: Azure DevOps completa los PR de forma asíncrona; el tablero vuelve a mirar a los 5 s para mostrarlo como merged.
   - **Agentes**: los tres agentes de tablero y los prompts configurables de la oficina siguen escritos para `gh`. En esas plantas, Claude recibe con `--append-system-prompt` cómo traducirlo a `az`, lo que exige tener `az` con la extensión `azure-devops` y `az login`. Codex y OpenCode no reciben esa nota.
 - **Ascensor**: al elegir un repo de Nexura, el pie del ascensor sigue diciendo "Cloned into … with gh". La planta se abre igualmente en la carpeta del repo, sin clonar.
-- **Upstream en Windows con `claude.cmd`**: la oficina lanza `claude -p` (límites del plan, nombres de tareas) con `spawn` sin shell, y Node no puede ejecutar un `.cmd` así (`spawn EINVAL`). No afecta a quien tiene `claude.exe` (instalador nativo); sí a una instalación con npm.
+- **Wrappers batch personalizados en Windows**: los argumentos multilínea se rechazan porque `cmd.exe` puede interpretarlos como comandos. Usa el shim estándar de npm o un `.exe` para esos prompts.
 
-## Tests de upstream que fallan en Windows
+## Tests de upstream en Windows
 
-Fallan los 17 tests de `tests/workers.test.ts`. Todos fallan por timeout, también sin nuestros parches: lanzan agentes falsos escritos como scripts `#!/usr/bin/env node` con `chmod` dentro de un PTY, y Windows no puede ejecutarlos. El resto de la suite pasa.
+Los agentes falsos de `tests/workers.test.ts` usan shims npm `.cmd` en Windows; `codex-usage.test.ts` usa una junction de directorio. `npm test --prefix third_party/agent-office` ejecuta los tests de trabajadores por separado para cerrar ConPTY al terminar.

@@ -17,11 +17,13 @@ const CLOCK_MS = 1000;
 const NOTIFY_KEY = "nexura.notifications";
 const NOTICES_KEY = "nexura.noticeCenter";
 const UNSEEN_REVIEWS_KEY = "nexura.unseenReviews";
+/** The Nexura window the user used last: the one that opens what the 3D office asks for. */
+const ACTIVE_WINDOW_KEY = "nexura.activeWindow";
 const TOAST_MS = 8000;
 const MAX_TOASTS = 4;
 const MAX_NOTICES = 30;
 /** How long a trophy stays on screen before the next one (if any) takes its place. */
-const TROPHY_MS = 6500;
+const TROPHY_MS = 20_000;
 
 /** Where clicking a toast (or its system notification) takes the user. */
 export type ToastLink = { path: string[]; queryParams?: Record<string, string> };
@@ -92,6 +94,7 @@ export class NexuraStore {
   /** Bumps with every trophy won, for views that show achievements to reload. */
   public readonly achievementsVersion = signal(0);
   private trophyTimer?: ReturnType<typeof setTimeout>;
+  private readonly windowId = crypto.randomUUID();
   /** PR reviews that finished while the user was not looking at them. */
   public readonly unseenReviews = signal<string[]>(readStorage<string[]>(UNSEEN_REVIEWS_KEY, []));
 
@@ -133,6 +136,17 @@ export class NexuraStore {
       writeStorage(THEME_KEY, this.themePreference());
     });
     matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (event) => this.systemDark.set(event.matches));
+    // The office in its own window opens runs in the Nexura window used last (see "open").
+    const claim = (): void => writeStorage(ACTIVE_WINDOW_KEY, this.windowId);
+    if (document.hasFocus() || !readStorage<string | null>(ACTIVE_WINDOW_KEY, null)) {
+      claim();
+    }
+    window.addEventListener("focus", claim);
+    window.addEventListener("pagehide", () => {
+      if (readStorage<string | null>(ACTIVE_WINDOW_KEY, null) === this.windowId) {
+        writeStorage(ACTIVE_WINDOW_KEY, null);
+      }
+    });
   }
 
   public async init(): Promise<void> {
@@ -187,7 +201,7 @@ export class NexuraStore {
     }
   }
 
-  /** A trophy was won: its toast (after any already on screen), its chime and an entry in the notice center. */
+  /** A trophy was won: its toast (after any already on screen), its chime and an entry in the notice center. No system notification: it would be a second toast. */
   private trophy(achievement: AchievementView): void {
     this.freshAchievements.update((count) => count + 1);
     this.achievementsVersion.update((version) => version + 1);
@@ -199,14 +213,6 @@ export class NexuraStore {
     const title = `🏆 ${achievement.title}`;
     const link: ToastLink = { path: ["/achievements"] };
     this.notices.update((notices) => [{ id: ++this.toastSeq, title, body: "Logro desbloqueado", tone: "accent" as Tone, link, createdAt: Date.now(), seen: false }, ...notices].slice(0, MAX_NOTICES));
-    if (this.notificationsEnabled() && this.notifier.inBackground() && "Notification" in window && Notification.permission === "granted") {
-      const notification = new Notification(title, { body: `Logro desbloqueado · ${achievement.description}`, tag: `achievement-${achievement.id}`, silent: this.notifier.soundEnabled() });
-      notification.onclick = () => {
-        window.focus();
-        notification.close();
-        this.follow(link);
-      };
-    }
   }
 
   /** Puts the first trophy of the queue on screen, with its chime, and schedules the next. */
@@ -553,6 +559,20 @@ export class NexuraStore {
       case "achievement":
         this.trophy(message.achievement);
         break;
+      case "open": {
+        // Only one window follows: the one used last (any, if none is known).
+        const active = readStorage<string | null>(ACTIVE_WINDOW_KEY, null);
+        if (active && active !== this.windowId) {
+          break;
+        }
+        const [page, runId] = message.path;
+        if (page === "/runs" && runId) {
+          this.openRun(runId);
+        } else {
+          void this.router.navigate(message.path, { queryParams: message.queryParams });
+        }
+        break;
+      }
       case "event":
         this.eventSignal(message.stepRunId).update((current) =>
           mergeEvents(current, [{ seq: message.seq, ts: message.ts, event: message.event }]),

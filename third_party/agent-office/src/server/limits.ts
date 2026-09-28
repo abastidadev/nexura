@@ -3,9 +3,10 @@
 // its stream-json protocol with the numbers its /usage screen shows. Asking starts no conversation
 // and costs nothing, and Claude Code deals with the sign-in (keychain, token refresh) itself.
 
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
 import os from 'node:os';
 import type { PlanLimits, PlanWindow } from '../shared/protocol.js';
+import { npmNodeShim } from './windows-command.js';
 
 const POLL_MS = 2 * 60_000;
 /** Someone walking in, or clicking the meter, reads again, at most this often. */
@@ -130,19 +131,35 @@ function ask(claude: string, env: Record<string, string>): Promise<any> {
   return new Promise((resolve) => {
     let settled = false;
     let buf = '';
-    const child = spawn(claude, args, { cwd: os.tmpdir(), env, stdio: ['pipe', 'pipe', 'ignore'] });
+    const shim = npmNodeShim(claude);
+    const launch = () => spawn(shim?.file ?? claude, shim ? [shim.script, ...args] : args, { cwd: os.tmpdir(), env, stdio: ['pipe', 'pipe', 'ignore'] });
+    let child: ReturnType<typeof launch>;
+    try {
+      child = launch();
+    } catch {
+      // A malformed or unavailable executable must not stop the office.
+      resolve(null);
+      return;
+    }
+    const input = child.stdin;
+    const output = child.stdout;
+    if (!input || !output) {
+      child.kill();
+      resolve(null);
+      return;
+    }
     const finish = (v: any) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       resolve(v);
       // No prompt was sent, so a closed stdin ends the session; a stuck one is killed.
-      child.stdin.end();
+      input.end();
       setTimeout(() => child.exitCode === null && child.signalCode === null && child.kill('SIGKILL'), 10_000).unref();
     };
     const timer = setTimeout(() => finish(null), TIMEOUT_MS);
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (d: string) => {
+    output.setEncoding('utf8');
+    output.on('data', (d: string) => {
       buf += d;
       let nl: number;
       while ((nl = buf.indexOf('\n')) >= 0) {
@@ -160,7 +177,7 @@ function ask(claude: string, env: Record<string, string>): Promise<any> {
     });
     child.on('error', () => finish(null));
     child.on('close', () => finish(null));
-    child.stdin.on('error', () => {});
-    child.stdin.write(JSON.stringify({ type: 'control_request', request_id: 'usage', request: { subtype: 'get_usage', skip_behaviors: true } }) + '\n');
+    input.on('error', () => {});
+    input.write(JSON.stringify({ type: 'control_request', request_id: 'usage', request: { subtype: 'get_usage', skip_behaviors: true } }) + '\n');
   });
 }

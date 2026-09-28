@@ -60,7 +60,7 @@ if (target === pin.commit) {
 const log = gitOk(["log", "--oneline", "--no-decorate", `${pin.commit}..${target}`]);
 console.log(`${log.split("\n").filter(Boolean).length} commits nuevos (${pin.commit.slice(0, 7)} → ${target.slice(0, 7)}).`);
 
-// The lockfile is always taken verbatim from upstream: our copy only drifts through npm versions.
+// Start from upstream's lockfile, then restore dependencies added by Nexura patches.
 const tmp = mkdtempSync(join(tmpdir(), "nexura-office-"));
 const patch = join(tmp, "upstream.patch");
 try {
@@ -83,7 +83,7 @@ try {
 
 writeFileSync(pinFile, `${JSON.stringify({ ...pin, commit: target }, null, 2)}\n`);
 // Staged like the files `git apply --3way` just merged, so the whole update reads as one diff.
-git(["add", "--", `${dir}/package-lock.json`, "third_party/agent-office.upstream.json"]);
+git(["add", "--", "third_party/agent-office.upstream.json"]);
 
 const conflicts = gitOk(["diff", "--name-only", "--diff-filter=U"]);
 if (conflicts) {
@@ -93,6 +93,12 @@ if (conflicts) {
   );
   process.exit(2);
 }
+
+if (npmCli && !runNpm("install", "--package-lock-only", "--ignore-scripts", "--prefix", dir)) {
+  console.error("No se pudo actualizar el lockfile con las dependencias locales de Nexura.");
+  process.exit(1);
+}
+git(["add", "--", `${dir}/package-lock.json`]);
 
 console.log("\nCambios de upstream aplicados sin conflictos. Recompilando y probando la oficina…");
 const ok =

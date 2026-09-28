@@ -10,6 +10,7 @@ import type { JukeboxState } from './jukebox.js';
 import type { PromptId } from './prompts.js';
 import type { DrinkId } from './rooftop.js';
 import type { WbElement, WbPointer, WhiteboardView } from './whiteboard.js';
+import type { NexuraScreen } from './nexura-screen.js'; // nexura
 
 export type WorkerStatus =
   | 'starting' // PTY launched, agent booting
@@ -127,7 +128,7 @@ export interface WorkerInfo {
   /** The meeting it was called to, for a worker at the meeting room's table (see Meeting). */
   meeting?: string;
   /** nexura: a Nexura run shown at a desk, with no terminal; opening it opens the run (see server/nexura/bridge.ts). */
-  external?: { source: 'nexura'; runId: string; url: string };
+  external?: { source: 'nexura'; runId: string; url: string; screen?: NexuraScreen }; // nexura: `screen` is what its laptop shows
 }
 
 /** Session usage. The persistent office ledger continues to cover Claude Code only. */

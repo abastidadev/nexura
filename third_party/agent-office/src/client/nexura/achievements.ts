@@ -44,7 +44,7 @@ const CATEGORY_LABEL: Record<Category, string> = { tickets: 'Tickets', reviews: 
 /** What the office's interactables are called by Nexura (its OfficeUse). */
 const USES = new Set(['desk', 'station', 'issues', 'pulls', 'services', 'queue', 'tv', 'coffee', 'decor', 'smoke', 'elevator', 'gong', 'dog', 'jukebox', 'seat', 'whiteboard', 'cabinet', 'ladder', 'pole', 'meeting', 'bar', 'dj', 'golf', 'ball', 'bookshelf']);
 const POLL_MS = 30_000;
-const TOAST_MS = 6500;
+const TOAST_MS = 20_000;
 const GOLF_KEY = 'agent-office.golf';
 const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
 

@@ -11,7 +11,7 @@ npm run update:office            # rama main de upstream
 npm run update:office -- <ref>   # otra rama, tag o commit
 ```
 
-El script exige que `third_party/agent-office/` no tenga cambios sin confirmar, descarga el ref con `git fetch` (sin añadir remotos) y aplica el diff de upstream entre el commit fijado y el nuevo como merge a tres bandas sobre nuestra copia. El `package-lock.json` se toma tal cual de upstream. Si algún cambio de upstream choca con un parche local, deja marcadores de conflicto, lista los archivos y se detiene; si no, reinstala y recompila la oficina (`npm run setup:office`) y ejecuta su typecheck y sus tests. Nunca confirma: revisa el diff y haz commit tú. Conviene actualizar de forma periódica, no a diario, para trabajar sobre una versión probada.
+El script exige que `third_party/agent-office/` no tenga cambios sin confirmar, descarga el ref con `git fetch` (sin añadir remotos) y aplica el diff de upstream entre el commit fijado y el nuevo como merge a tres bandas sobre nuestra copia. Parte del `package-lock.json` de upstream y añade las dependencias locales con npm. Si algún cambio de upstream choca con un parche local, deja marcadores de conflicto, lista los archivos y se detiene; si no, reinstala y recompila la oficina (`npm run setup:office`) y ejecuta su typecheck y sus tests. Nunca confirma: revisa el diff y haz commit tú. Conviene actualizar de forma periódica, no a diario, para trabajar sobre una versión probada.
 
 ## Arranque
 
@@ -60,6 +60,8 @@ En una planta cuyo `origin` está en Azure DevOps (`dev.azure.com`, `visualstudi
 
 En la ventana de un issue (de ADO o de GitHub), **🚀 Resolve with Nexura** abre **Nuevo flujo** en Nexura con el ticket, el origen y el repo rellenados. No lanza nada hasta que eliges perfil y modelo y confirmas.
 
+Si la oficina está en una ventana aparte y Nexura ya está abierto, los flujos y **Resolve with Nexura** se abren en esa ventana de Nexura sin crear otra pestaña. El portátil de cada trabajador de Nexura muestra una vista reducida del flujo o de su PR, con pasos y actividad reciente.
+
 ### Trabajadores de la oficina en repos de Azure DevOps
 
 - **Plantas**: el ascensor ofrece los repos configurados en Nexura como `nexura/<nombre>`. Al elegir uno, su carpeta se abre como planta tal cual, sin clonar, porque `gh` no puede clonar desde ADO.
@@ -74,7 +76,7 @@ Los logros de Nexura (sección **Logros**) también están en la oficina. Todo p
 - **Vitrina**: en la pared este, entre el tablero Services y la tele. Muestra una copa por logro conseguido, con el color de su nivel, y siluetas de los que faltan. Con E se abre la lista completa, con los secretos ocultos.
 - **Lo que haces en la oficina cuenta**: acariciar al perro, tomar café, tocar el gong, jugar en la recreativa, bajar por la barra, subir a la azotea… Cada E sobre un objeto se manda a Nexura (`POST /api/nexura/achievements`, validado en los dos servidores).
 - **Secretos**: cinco patitos de goma escondidos, el código Konami, pasar por la oficina de madrugada y un hoyo en uno en el golf del balcón. Dónde están los patitos está en `src/client/nexura/achievements.ts` (`DUCKS`).
-- **Aviso**: dentro de Nexura, el toast del trofeo lo pone Nexura; con la oficina en su propia ventana, lo pone la oficina, arriba a la derecha.
+- **Aviso**: dentro de Nexura, el toast del trofeo lo pone Nexura; con la oficina en su propia ventana, lo pone la oficina, arriba a la derecha. Dura 20 segundos y no genera una segunda notificación del navegador.
 
 ### Probar sin cuota
 
@@ -91,4 +93,4 @@ Agent Office guarda sus datos en `~/agent-office` por defecto y puede crear chec
 
 El paquete publicado en npm como `agent-office` tiene una versión y un binario distintos de los del repositorio fijado aquí. Las dependencias de esta copia se instalan dentro de `third_party/agent-office/` mediante su propio `package-lock.json`.
 
-Los tests de la oficina se ejecutan con `npm test --prefix third_party/agent-office`; los de nuestra integración, con `node --import tsx --test tests/nexura-*.test.ts` dentro de esa carpeta. En Windows fallan 17 tests de upstream (`tests/workers.test.ts`) que dependen de scripts con shebang.
+Los tests de la oficina se ejecutan con `npm test --prefix third_party/agent-office`; los de nuestra integración, con `node --import tsx --test tests/nexura-*.test.ts` dentro de esa carpeta. En Windows, el script de tests ejecuta aparte `workers.test.ts` para que ConPTY no mantenga abierta la suite al terminar.

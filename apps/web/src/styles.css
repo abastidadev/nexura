@@ -577,7 +577,7 @@
   animation: nx-rise 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
-/* ---------- trophies: the toast slides in, shines once, and its bar runs out (TROPHY_MS) ---------- */
+/* ---------- trophies: the toast slides in, shines once, and its bar runs out (TROPHY_MS, 20 s) ---------- */
 @keyframes nx-trophy-in {
   0% {
     opacity: 0;
@@ -625,7 +625,7 @@
 }
 
 .nx-trophy-timer {
-  animation: nx-trophy-timer 6.5s linear both;
+  animation: nx-trophy-timer 20s linear both;
 }
 
 @keyframes nx-medal-glow {

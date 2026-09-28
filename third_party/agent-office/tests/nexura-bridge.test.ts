@@ -101,7 +101,7 @@ async function post(b: NexuraBridge, body: string, auth?: string, method = 'POST
     const res = await fetch(`http://127.0.0.1:${port}/nexura/workers`, { method, body: method === 'POST' ? body : undefined, headers: auth ? { authorization: auth } : {} });
     return { status: res.status, body: await res.json() };
   } finally {
-    server.close();
+    await new Promise<void>((resolve, reject) => server.close((error) => error ? reject(error) : resolve()));
   }
 }
 

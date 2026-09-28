@@ -3,9 +3,10 @@
 // the worker's prompts and recent tool calls, told how by the 'office.namer' prompt (shared/prompts.ts).
 // Without it, the card falls back to the prompt itself.
 
-import { spawn } from 'node:child_process';
+import spawn from 'cross-spawn';
 import os from 'node:os';
 import type { WorkerTask } from '../shared/protocol.js';
+import { npmNodeShim } from './windows-command.js';
 
 /** What a worker has been asked and has been doing lately. */
 export interface TaskContext {
@@ -143,28 +144,43 @@ function run(claude: string, env: Record<string, string>, system: string, input:
   return new Promise((resolve) => {
     let out = '';
     let settled = false;
+    let timer: NodeJS.Timeout | undefined;
     const finish = (v: string | null) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       resolve(v);
     };
-    const child = spawn(claude, args, {
-      // A neutral directory, so it doesn't pick up the project's CLAUDE.md.
-      cwd: os.tmpdir(),
-      env: { ...env, MAX_THINKING_TOKENS: '0' },
-      stdio: ['pipe', 'pipe', 'ignore'],
-    });
-    const timer = setTimeout(() => {
+    const shim = npmNodeShim(claude);
+    let child: ReturnType<typeof spawn>;
+    try {
+      child = spawn(shim?.file ?? claude, shim ? [shim.script, ...args] : args, {
+        // A neutral directory, so it doesn't pick up the project's CLAUDE.md.
+        cwd: os.tmpdir(),
+        env: { ...env, MAX_THINKING_TOKENS: '0' },
+        stdio: ['pipe', 'pipe', 'ignore'],
+      });
+    } catch {
+      finish(null);
+      return;
+    }
+    const inputPipe = child.stdin;
+    const output = child.stdout;
+    if (!inputPipe || !output) {
+      child.kill();
+      finish(null);
+      return;
+    }
+    timer = setTimeout(() => {
       child.kill('SIGKILL');
       finish(null);
     }, TIMEOUT_MS);
-    child.stdout.setEncoding('utf8');
-    child.stdout.on('data', (d: string) => (out += d));
+    output.setEncoding('utf8');
+    output.on('data', (d: string) => (out += d));
     child.on('error', () => finish(null));
     child.on('close', (code) => finish(code === 0 ? out : null));
-    child.stdin.on('error', () => {});
-    child.stdin.end(input);
+    inputPipe.on('error', () => {});
+    inputPipe.end(input);
   });
 }
 

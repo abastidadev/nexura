@@ -727,4 +727,6 @@ export type ServerMessage =
   | { type: "ticketDraft"; draft: TicketDraft }
   | { type: "ticketDraftDeleted"; id: string }
   /** A trophy just unlocked. */
-  | { type: "achievement"; achievement: AchievementView };
+  | { type: "achievement"; achievement: AchievementView }
+  /** The 3D office, in its own window, asks the Nexura window the user last used to show this page. */
+  | { type: "open"; path: string[]; queryParams?: Record<string, string> };

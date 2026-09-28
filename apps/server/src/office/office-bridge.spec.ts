@@ -58,6 +58,25 @@ describe("officeWorkers", () => {
       url: "http://localhost:4310/runs/r1",
       createdAt: Date.parse("2026-09-28T11:58:00Z"),
       waitingSince: undefined,
+      screen: { steps: [{ name: "implement", status: "running" }], log: [], repos: ["app"], agent: "claude · opus" },
+    });
+  });
+
+  it("gives its laptop the run's page, or the page of the PR it opened or reviews", () => {
+    const logs = new Map([["r1", ["Read a.ts", "Edit a.ts"]]]);
+    const done = run({
+      status: "done",
+      steps: [step({ step: "plan", status: "succeeded" }), step({ status: "failed" }), step({ status: "succeeded" })],
+      pullRequests: [{ repo: "app", id: 77, url: "https://dev.azure.com/o/p/_git/app/pullrequest/77", title: "SSO" }],
+      worktrees: [{ repo: "app", repoPath: "C:/code/app", path: "C:/w", branch: "feature/4521", baseRef: "main" }],
+      reviewWatch: { checkedAt: "", activeThreads: 2, prStatus: "completed" },
+    });
+    expect(officeWorkers([done], { ...options, logs })[0]?.screen).toEqual({
+      steps: [{ name: "plan", status: "succeeded" }, { name: "implement", status: "succeeded" }],
+      log: ["Read a.ts", "Edit a.ts"],
+      repos: ["app"],
+      agent: "claude · opus",
+      pr: { number: 77, title: "SSO", provider: "azure", source: "feature/4521", state: "merged", threads: 2 },
     });
   });
 

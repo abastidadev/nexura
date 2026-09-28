@@ -43,6 +43,7 @@ import { NextUp, waitingInOrder, waitingLabel } from './nextup';
 import { $, h, clip, closeAllModals, doingNow, modalOpen, onDoingChange, onModalChange, openModal, readingNow, toast, STATUS_LABEL } from './ui/dom';
 import { nexuraCardRefusal, nexuraDeskKey, nexuraHint, nexuraScreen, openNexuraRun, watchForgeWords } from './nexura/external'; // nexura
 import { nexuraInteract, nexuraThingHint, nexuraUse } from './nexura/achievements'; // nexura
+import { nexuraLaptopScreen } from './nexura/screen'; // nexura
 import { openTerminal, openTerminalFor, routeTerminalMessage, type TerminalFind } from './ui/terminal';
 import { openSearch } from './ui/search';
 import { openChanges, openChangesFor, routeChangesMessage } from './ui/changes';
@@ -3327,7 +3328,7 @@ function frame(ts?: number) {
     v.model.held = d < (v.model.held ? HOLD_LEAVE : HOLD_NEAR);
     v.model.update(dt, t);
     // A board agent's kiosk has no laptop to paint (see buildKiosk).
-    if (!desk.station) v.laptop.update(dt, store.screens.get(id), Math.hypot(desk.x - camPos.x, desk.z - camPos.z));
+    if (!desk.station) v.laptop.update(dt, nexuraLaptopScreen(store.workers.get(id)) ?? store.screens.get(id), Math.hypot(desk.x - camPos.x, desk.z - camPos.z)); // nexura: was store.screens.get(id)
   }
   for (const a of idleAgents) if (a.view.vacancy.visible) a.model.update(dt, t);
   departures.update(dt, t);
