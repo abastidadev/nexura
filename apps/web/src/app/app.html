@@ -72,6 +72,13 @@
                 <span class="ml-auto size-2 rounded-full bg-ok nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="Conversaciones activas"></span>
               }
             }
+            @case ("/achievements") {
+              @if (store.freshAchievements()) {
+                <span class="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-semibold text-accent tabular-nums ring-2 ring-surface lg:top-1 lg:right-1" [class.lg:absolute]="collapsed()" [class.lg:ml-0]="collapsed()">
+                  {{ store.freshAchievements() > 99 ? "99+" : store.freshAchievements() }}<span class="sr-only"> logros nuevos</span>
+                </span>
+              }
+            }
             @case ("/agents") {
               @if (workingAgents()) {
                 <span class="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-info-soft px-1 text-[10px] font-semibold text-info tabular-nums ring-2 ring-surface lg:top-1 lg:right-1" [class.lg:absolute]="collapsed()" [class.lg:ml-0]="collapsed()">
@@ -264,6 +271,8 @@
     <main id="main" tabindex="-1" class="min-h-0 flex-1 outline-none"><router-outlet /></main>
   </div>
 </div>
+
+<nx-trophy-toast />
 
 <div class="pointer-events-none fixed right-4 bottom-4 z-50 flex w-[min(24rem,calc(100vw-2rem))] flex-col gap-2" aria-live="polite">
   @for (toast of store.toasts(); track toast.id) {

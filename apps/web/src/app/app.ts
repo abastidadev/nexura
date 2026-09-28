@@ -9,6 +9,7 @@ import { Notifier } from "./core/notifier";
 import { readStorage, writeStorage } from "./core/storage";
 import { Icon, type IconName } from "./shared/icon";
 import { QuotaMeter } from "./shared/quota-meter";
+import { TrophyToast } from "./shared/trophy-toast";
 
 const COLLAPSED_KEY = "nexura.sidebarCollapsed";
 
@@ -31,7 +32,7 @@ type HeaderTab = {
 
 @Component({
   selector: "nx-root",
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, DatePipe, QuotaMeter, Icon],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, DatePipe, QuotaMeter, Icon, TrophyToast],
   templateUrl: "./app.html",
   host: { class: "flex h-full flex-col" },
 })
@@ -59,6 +60,7 @@ export class App implements OnInit {
     { path: "/terminal", label: "Terminal", icon: "terminal" },
     { path: "/agents", label: "Agentes", icon: "agents" },
     { path: "/office-3d", label: "Oficina 3D", icon: "office" },
+    { path: "/achievements", label: "Logros", icon: "trophy" },
   ];
   protected readonly systemNav: NavItem[] = [
     { path: "/metrics", label: "Métricas", icon: "metrics" },

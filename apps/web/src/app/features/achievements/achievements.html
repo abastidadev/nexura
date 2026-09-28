@@ -1,0 +1,184 @@
+<div class="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-7 md:px-8 md:py-9">
+  <div>
+    <h1 class="text-2xl font-semibold tracking-tight md:text-[1.75rem]">Logros</h1>
+    <p class="mt-1 text-sm text-muted">Trabajo terminado, buenas revisiones y constancia. Algunos son secretos, y otros se esconden en la Oficina 3D.</p>
+  </div>
+
+  @if (loadError()) {
+    <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">No se pudieron cargar los logros. Comprueba que el servidor de Nexura sigue en marcha.</p>
+  }
+
+  @if (summary(); as summary) {
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1.35fr)_minmax(0,1fr)]">
+      <section class="nx-card relative overflow-hidden p-5 md:p-6" aria-labelledby="trophy-level">
+        <div class="pointer-events-none absolute -top-24 -right-16 size-72 rounded-full bg-accent/10 blur-3xl" aria-hidden="true"></div>
+        <div class="relative flex flex-col gap-6 sm:flex-row sm:items-center">
+          <div class="relative mx-auto size-32 shrink-0 sm:mx-0" role="img" [attr.aria-label]="'Nivel ' + level().level + ', ' + level().into + ' de ' + level().step + ' puntos para el siguiente'">
+            <svg viewBox="0 0 100 100" class="size-full -rotate-90" aria-hidden="true">
+              <circle cx="50" cy="50" r="42" fill="none" class="stroke-surface-3" stroke-width="8" />
+              <circle
+                cx="50"
+                cy="50"
+                r="42"
+                fill="none"
+                class="stroke-accent transition-[stroke-dashoffset] duration-700"
+                stroke-width="8"
+                stroke-linecap="round"
+                [attr.stroke-dasharray]="ring"
+                [attr.stroke-dashoffset]="ring * (1 - level().into / level().step)"
+              />
+            </svg>
+            <div class="absolute inset-0 flex flex-col items-center justify-center">
+              <span class="text-2xs font-semibold tracking-[0.12em] text-muted uppercase">Nivel</span>
+              <span id="trophy-level" class="text-4xl leading-none font-bold tabular-nums">{{ level().level }}</span>
+              <span class="mt-1 text-2xs text-muted tabular-nums">{{ level().into }}/{{ level().step }}</span>
+            </div>
+          </div>
+
+          <div class="min-w-0 flex-1">
+            <div class="flex flex-wrap items-baseline gap-x-3 gap-y-1">
+              <span class="text-3xl font-bold tracking-tight tabular-nums">{{ summary.points }}</span>
+              <span class="text-sm text-muted">de {{ summary.maxPoints }} puntos</span>
+            </div>
+            <div class="mt-3 flex items-center justify-between text-sm">
+              <span class="text-fg-soft"><span class="font-semibold text-fg tabular-nums">{{ summary.unlocked }}</span> de {{ summary.total }} logros</span>
+              <span class="font-semibold text-accent tabular-nums">{{ completion() }} %</span>
+            </div>
+            <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-surface-3" aria-hidden="true">
+              <div class="h-full rounded-full bg-linear-to-r from-accent-strong to-accent transition-[width] duration-700" [style.width.%]="completion()"></div>
+            </div>
+            <ul class="mt-5 grid grid-cols-2 gap-2 sm:grid-cols-4" aria-label="Logros por nivel">
+              @for (tier of tiers; track tier) {
+                <li class="flex items-center gap-2 rounded-xl bg-surface-2 px-2.5 py-2">
+                  <nx-achievement-medal [tier]="tier" [icon]="tier === 'platinum' ? '💎' : '🏆'" [size]="30" [locked]="!summary.byTier[tier].unlocked" />
+                  <span class="min-w-0">
+                    <span class="block text-2xs text-muted">{{ tierLabels[tier] }}</span>
+                    <span class="block text-sm font-semibold tabular-nums">{{ summary.byTier[tier].unlocked }}<span class="font-normal text-muted">/{{ summary.byTier[tier].total }}</span></span>
+                  </span>
+                </li>
+              }
+            </ul>
+          </div>
+        </div>
+      </section>
+
+      <section class="nx-card flex flex-col p-5" aria-labelledby="recent-trophies">
+        <h2 id="recent-trophies" class="font-semibold">Últimos conseguidos</h2>
+        <ul class="mt-3 flex flex-1 flex-col gap-1">
+          @for (achievement of recent(); track achievement.id) {
+            <li class="flex items-center gap-3 rounded-lg px-1 py-1.5">
+              <nx-achievement-medal [tier]="achievement.tier" [icon]="achievement.icon" [size]="36" />
+              <span class="min-w-0 flex-1">
+                <span class="block truncate text-sm font-medium">{{ achievement.title }}</span>
+                <span class="block text-2xs text-muted">{{ tierLabels[achievement.tier] }} · {{ achievement.unlockedAt | date: "d MMM y, HH:mm" }}</span>
+              </span>
+              @if (fresh().has(achievement.id)) {
+                <span class="rounded-full bg-accent px-2 py-0.5 text-2xs font-semibold text-on-accent">Nuevo</span>
+              }
+            </li>
+          } @empty {
+            <li class="flex flex-1 flex-col items-center justify-center gap-2 rounded-xl border border-dashed border-border px-4 py-6 text-center">
+              <span class="text-3xl" aria-hidden="true">🏆</span>
+              <span class="text-sm text-fg-soft">Aún no tienes trofeos. Resuelve tu primer ticket o publica una revisión para estrenar la vitrina.</span>
+            </li>
+          }
+        </ul>
+        <a routerLink="/office-3d" class="mt-3 flex items-center gap-3 rounded-xl bg-surface-2 px-3 py-2.5 text-sm hover:bg-surface-3">
+          <span class="text-xl" aria-hidden="true">🏛️</span>
+          <span class="min-w-0 flex-1">
+            <span class="block font-medium">Tu vitrina en la Oficina 3D</span>
+            <span class="block text-2xs text-muted">
+              @if (ducks(); as found) {
+                🦆 {{ found }}/{{ totalDucks }} patitos encontrados
+              } @else {
+                Los trofeos también se exponen allí. Pasea y fíjate bien.
+              }
+            </span>
+          </span>
+          <span class="text-accent">Ir</span>
+        </a>
+      </section>
+    </div>
+
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <div class="nx-seg max-w-full overflow-x-auto" role="radiogroup" aria-label="Categoría">
+        <button type="button" role="radio" [class]="category() === 'all' ? 'nx-seg-on' : ''" [attr.aria-checked]="category() === 'all'" (click)="category.set('all')">
+          Todos <span class="ml-1 text-2xs text-muted tabular-nums">{{ countIn("all") }}</span>
+        </button>
+        @for (item of categories; track item) {
+          <button type="button" role="radio" [class]="category() === item ? 'nx-seg-on' : ''" [attr.aria-checked]="category() === item" (click)="category.set(item)">
+            {{ categoryLabels[item] }} <span class="ml-1 text-2xs text-muted tabular-nums">{{ countIn(item) }}</span>
+          </button>
+        }
+      </div>
+      <div class="nx-seg" role="radiogroup" aria-label="Estado">
+        <button type="button" role="radio" [class]="state() === 'all' ? 'nx-seg-on' : ''" [attr.aria-checked]="state() === 'all'" (click)="state.set('all')">Todos</button>
+        <button type="button" role="radio" [class]="state() === 'won' ? 'nx-seg-on' : ''" [attr.aria-checked]="state() === 'won'" (click)="state.set('won')">Conseguidos</button>
+        <button type="button" role="radio" [class]="state() === 'pending' ? 'nx-seg-on' : ''" [attr.aria-checked]="state() === 'pending'" (click)="state.set('pending')">Pendientes</button>
+      </div>
+    </div>
+
+    @for (group of groups(); track group.category) {
+      <section class="flex flex-col gap-3" [attr.aria-labelledby]="'group-' + group.category">
+        <div class="flex items-baseline gap-2">
+          <h2 [id]="'group-' + group.category" class="font-semibold">{{ categoryLabels[group.category] }}</h2>
+          <span class="text-sm text-muted tabular-nums">{{ group.won }}/{{ group.total }}</span>
+        </div>
+        <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+          @for (achievement of group.items; track achievement.id) {
+            <article
+              class="nx-card relative flex gap-4 overflow-hidden p-4"
+              [class.ring-2]="fresh().has(achievement.id)"
+              [class.ring-accent]="fresh().has(achievement.id)"
+              [class.bg-surface-2]="!achievement.unlockedAt"
+            >
+              @if (achievement.unlockedAt) {
+                <span class="absolute inset-y-4 left-0 w-1 rounded-r-full" [class]="tierBar[achievement.tier]" aria-hidden="true"></span>
+              }
+              <nx-achievement-medal [tier]="achievement.tier" [icon]="achievement.icon" [size]="60" [locked]="!achievement.unlockedAt" [glow]="fresh().has(achievement.id)" />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-start gap-2">
+                  <h3 class="leading-snug font-semibold" [class.text-fg-soft]="!achievement.unlockedAt">{{ achievement.title }}</h3>
+                  @if (fresh().has(achievement.id)) {
+                    <span class="ml-auto shrink-0 rounded-full bg-accent px-2 py-0.5 text-2xs font-semibold text-on-accent">Nuevo</span>
+                  }
+                </div>
+                <p class="mt-1 text-sm text-fg-soft" [class.italic]="achievement.secret && !achievement.unlockedAt">{{ achievement.description }}</p>
+                <div class="mt-3 flex flex-wrap items-center gap-x-2 gap-y-1 text-2xs">
+                  <span class="rounded-full px-2 py-0.5 font-semibold ring-1 ring-inset" [class]="tierChip[achievement.tier]">{{ tierLabels[achievement.tier] }} · {{ tierPoints[achievement.tier] }} pts</span>
+                  @if (achievement.secret) {
+                    <span class="text-muted">🔒 Secreto</span>
+                  }
+                  @if (achievement.unlockedAt) {
+                    <span class="ml-auto text-muted">Conseguido el {{ achievement.unlockedAt | date: "d/M/y" }}</span>
+                  }
+                </div>
+                @if (!achievement.unlockedAt && achievement.progress; as progress) {
+                  <div class="mt-3">
+                    <div class="h-1.5 overflow-hidden rounded-full bg-surface-3" role="progressbar" [attr.aria-valuenow]="percent(achievement)" aria-valuemin="0" aria-valuemax="100" [attr.aria-label]="'Progreso de ' + achievement.title">
+                      <div class="h-full rounded-full transition-[width] duration-500" [class]="tierBar[achievement.tier]" [style.width.%]="percent(achievement)"></div>
+                    </div>
+                    <div class="mt-1 flex justify-between text-2xs text-muted tabular-nums">
+                      <span>{{ progress.current }}/{{ progress.goal }}</span>
+                      @if (progress.extra; as extra) {
+                        <span>{{ extra.current }}/{{ extra.goal }} {{ extra.label }}</span>
+                      }
+                    </div>
+                  </div>
+                }
+              </div>
+            </article>
+          }
+        </div>
+      </section>
+    } @empty {
+      <p class="rounded-lg border border-border bg-surface px-4 py-6 text-center text-sm text-muted">Nada con estos filtros.</p>
+    }
+  } @else if (!loadError()) {
+    <div class="grid gap-3 sm:grid-cols-2 xl:grid-cols-3" aria-hidden="true">
+      @for (placeholder of [1, 2, 3, 4, 5, 6]; track placeholder) {
+        <div class="nx-card h-32 animate-pulse bg-surface-2"></div>
+      }
+    </div>
+  }
+</div>

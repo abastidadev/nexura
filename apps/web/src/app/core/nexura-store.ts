@@ -1,6 +1,6 @@
 import { computed, DestroyRef, effect, inject, Service, signal, type Signal, type WritableSignal } from "@angular/core";
 import { Router } from "@angular/router";
-import type { Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage, TicketDraft } from "@nexura/shared";
+import type { AchievementView, Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage, TicketDraft } from "@nexura/shared";
 import { setCustomStepLabels, stepLabel, type Tone } from "./format";
 import { Api, type NexuraConfigView, type StoredEvent } from "./api";
 import { Notifier, type Chime } from "./notifier";
@@ -20,6 +20,8 @@ const UNSEEN_REVIEWS_KEY = "nexura.unseenReviews";
 const TOAST_MS = 8000;
 const MAX_TOASTS = 4;
 const MAX_NOTICES = 30;
+/** How long a trophy stays on screen before the next one (if any) takes its place. */
+const TROPHY_MS = 6500;
 
 /** Where clicking a toast (or its system notification) takes the user. */
 export type ToastLink = { path: string[]; queryParams?: Record<string, string> };
@@ -83,6 +85,13 @@ export class NexuraStore {
   public readonly notices = signal<Notice[]>(readStorage<Notice[]>(NOTICES_KEY, []).filter((notice) => !notice.seen));
   public readonly unreadNotices = computed(() => this.notices().filter((notice) => !notice.seen).length);
   public readonly notificationsEnabled = signal<boolean>(readStorage<boolean>(NOTIFY_KEY, false));
+  /** Trophies waiting to be shown, the one on screen first (PlayStation-style, top right). */
+  public readonly trophies = signal<AchievementView[]>([]);
+  /** Trophies won and not yet seen on the Logros page. */
+  public readonly freshAchievements = signal(0);
+  /** Bumps with every trophy won, for views that show achievements to reload. */
+  public readonly achievementsVersion = signal(0);
+  private trophyTimer?: ReturnType<typeof setTimeout>;
   /** PR reviews that finished while the user was not looking at them. */
   public readonly unseenReviews = signal<string[]>(readStorage<string[]>(UNSEEN_REVIEWS_KEY, []));
 
@@ -128,6 +137,7 @@ export class NexuraStore {
 
   public async init(): Promise<void> {
     this.connect();
+    void this.refreshAchievements();
     const [runs, config, quota, settings, conversations, drafts] = await Promise.all([
       this.api.listRuns(),
       this.api.getConfig(),
@@ -167,6 +177,59 @@ export class NexuraStore {
         ...notices,
       ].slice(0, MAX_NOTICES);
     });
+  }
+
+  /** How many trophies wait on the Logros page; a failure just leaves the badge off. */
+  public async refreshAchievements(): Promise<void> {
+    const summary = await this.api.getAchievements().catch(() => undefined);
+    if (summary) {
+      this.freshAchievements.set(summary.achievements.filter((achievement) => achievement.fresh).length);
+    }
+  }
+
+  /** A trophy was won: its toast (after any already on screen), its chime and an entry in the notice center. */
+  private trophy(achievement: AchievementView): void {
+    this.freshAchievements.update((count) => count + 1);
+    this.achievementsVersion.update((version) => version + 1);
+    const wasEmpty = this.trophies().length === 0;
+    this.trophies.update((queue) => [...queue, achievement]);
+    if (wasEmpty) {
+      this.showTrophy();
+    }
+    const title = `🏆 ${achievement.title}`;
+    const link: ToastLink = { path: ["/achievements"] };
+    this.notices.update((notices) => [{ id: ++this.toastSeq, title, body: "Logro desbloqueado", tone: "accent" as Tone, link, createdAt: Date.now(), seen: false }, ...notices].slice(0, MAX_NOTICES));
+    if (this.notificationsEnabled() && this.notifier.inBackground() && "Notification" in window && Notification.permission === "granted") {
+      const notification = new Notification(title, { body: `Logro desbloqueado · ${achievement.description}`, tag: `achievement-${achievement.id}`, silent: this.notifier.soundEnabled() });
+      notification.onclick = () => {
+        window.focus();
+        notification.close();
+        this.follow(link);
+      };
+    }
+  }
+
+  /** Puts the first trophy of the queue on screen, with its chime, and schedules the next. */
+  private showTrophy(): void {
+    clearTimeout(this.trophyTimer);
+    if (!this.trophies().length) {
+      return;
+    }
+    if (this.notifier.soundEnabled()) {
+      this.notifier.playTrophy();
+    }
+    this.trophyTimer = setTimeout(() => this.dismissTrophy(), TROPHY_MS);
+  }
+
+  public dismissTrophy(): void {
+    this.trophies.update((queue) => queue.slice(1));
+    this.showTrophy();
+  }
+
+  /** The Logros page was opened: nothing is new any more. */
+  public async markAchievementsSeen(): Promise<void> {
+    this.freshAchievements.set(0);
+    await this.api.markAchievementsSeen().catch(() => undefined);
   }
 
   public async reloadConfig(): Promise<void> {
@@ -486,6 +549,9 @@ export class NexuraStore {
         break;
       case "ticketDraftDeleted":
         this.forgetTicketDraft(message.id);
+        break;
+      case "achievement":
+        this.trophy(message.achievement);
         break;
       case "event":
         this.eventSignal(message.stepRunId).update((current) =>

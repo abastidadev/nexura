@@ -8,3 +8,4 @@ export const DATA_DIR = resolve(process.env.NEXURA_DATA_DIR ?? join(NEXURA_HOME,
 export const RUNS_DIR = join(DATA_DIR, "runs");
 export const DB_FILE = join(DATA_DIR, "nexura.sqlite");
 export const MEMORY_DB_FILE = join(DATA_DIR, "memory.sqlite");
+export const ACHIEVEMENTS_DB_FILE = join(DATA_DIR, "achievements.sqlite");

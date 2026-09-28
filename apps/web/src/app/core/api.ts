@@ -2,6 +2,7 @@ import { HttpClient } from "@angular/common/http";
 import { inject, Service } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 import type {
+  AchievementsSummary,
   AgentAccountUsage,
   AgentInfo,
   AgentKind,
@@ -273,6 +274,14 @@ export class Api {
   /** Which agent CLIs are installed (the server runs their `--version`, no tokens). */
   public getAgents(refresh = false): Promise<AgentInfo[]> {
     return firstValueFrom(this.http.get<AgentInfo[]>(refresh ? "/api/agents?refresh=1" : "/api/agents"));
+  }
+
+  public getAchievements(): Promise<AchievementsSummary> {
+    return firstValueFrom(this.http.get<AchievementsSummary>("/api/achievements"));
+  }
+
+  public markAchievementsSeen(): Promise<void> {
+    return firstValueFrom(this.http.post<void>("/api/achievements/seen", {}));
   }
 
   public getOffice(): Promise<{ url: string; bridge: boolean }> {

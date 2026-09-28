@@ -577,6 +577,71 @@
   animation: nx-rise 0.32s cubic-bezier(0.2, 0.7, 0.2, 1) both;
 }
 
+/* ---------- trophies: the toast slides in, shines once, and its bar runs out (TROPHY_MS) ---------- */
+@keyframes nx-trophy-in {
+  0% {
+    opacity: 0;
+    transform: translateX(calc(100% + 1.5rem));
+  }
+  70% {
+    opacity: 1;
+    transform: translateX(-6px);
+  }
+  100% {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.nx-trophy-in {
+  animation: nx-trophy-in 0.55s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes nx-trophy-shine {
+  from {
+    transform: translateX(-120%) skewX(-20deg);
+  }
+  to {
+    transform: translateX(220%) skewX(-20deg);
+  }
+}
+
+.nx-trophy-shine::after {
+  content: "";
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 45%;
+  background: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.16), transparent);
+  animation: nx-trophy-shine 1.1s 0.45s ease-out both;
+}
+
+@keyframes nx-trophy-timer {
+  from {
+    transform: scaleX(1);
+  }
+  to {
+    transform: scaleX(0);
+  }
+}
+
+.nx-trophy-timer {
+  animation: nx-trophy-timer 6.5s linear both;
+}
+
+@keyframes nx-medal-glow {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.nx-medal-glow {
+  animation: nx-medal-glow 1.8s ease-in-out infinite;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,

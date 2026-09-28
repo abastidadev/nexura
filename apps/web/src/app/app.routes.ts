@@ -48,6 +48,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/office-3d/office-3d").then((m) => m.Office3DPage),
   },
   {
+    path: "achievements",
+    title: "Nexura · Logros",
+    loadComponent: () => import("./features/achievements/achievements").then((m) => m.AchievementsPage),
+  },
+  {
     path: "metrics",
     title: "Nexura · Métricas",
     loadComponent: () => import("./features/metrics/metrics").then((m) => m.MetricsPage),

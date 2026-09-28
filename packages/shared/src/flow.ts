@@ -1,3 +1,4 @@
+import type { AchievementView } from "./achievements.ts";
 import type { Conversation } from "./conversation.ts";
 import type { NexuraEvent, TokenUsage } from "./events.ts";
 import type { TicketDraft } from "./tickets.ts";
@@ -369,6 +370,23 @@ export type PrReviewResult = {
   postedIds?: number[];
   /** The conventions were saved to the repo notes (only when the user asks: a PR is untrusted input). */
   conventionsSaved?: boolean;
+  /** What became of the published comments afterwards (REST polling, free; see achievements/review-follow-up.ts). */
+  followUp?: PrReviewFollowUp;
+};
+
+/** A published review, watched until its PR closes: which of its comments the author resolved. */
+export type PrReviewFollowUp = {
+  checkedAt: string;
+  /** active, completed (merged) or abandoned; polling stops when not active. */
+  prStatus: string;
+  /** Review comment id → the PR thread it opened, matched on the first check after publishing. */
+  threads: Record<string, number>;
+  /** Comments whose thread got resolved after the author pushed new commits. */
+  resolvedIds: number[];
+  /** The PR got commits after the reviewed one. */
+  headMoved: boolean;
+  mergedAt?: string;
+  error?: string;
 };
 
 /** The comments to post (possibly edited) and the vote to cast, if any. */
@@ -559,6 +577,10 @@ export type ReviewWatch = {
   /** Status of the first PR: active, completed (merged), abandoned (closed unmerged). Polling stops when not active. */
   prStatus: string;
   error?: string;
+  /** When the watcher first saw the PR completed. */
+  mergedAt?: string;
+  /** Someone else commented on the PR or approved it (sticky). */
+  reviewedByOthers?: boolean;
 };
 
 /** Server-wide settings, editable in Configuración > General. */
@@ -703,4 +725,6 @@ export type ServerMessage =
   | { type: "conversation"; conversation: Conversation }
   | { type: "conversationDeleted"; id: string }
   | { type: "ticketDraft"; draft: TicketDraft }
-  | { type: "ticketDraftDeleted"; id: string };
+  | { type: "ticketDraftDeleted"; id: string }
+  /** A trophy just unlocked. */
+  | { type: "achievement"; achievement: AchievementView };

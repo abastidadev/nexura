@@ -203,8 +203,13 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     return this.store.listRuns(1000);
   }
 
-  /** Small out-of-band updates (e.g. reviewWatch) on a run that is not executing. */
-  public patchRun(runId: string, patch: Partial<Pick<Run, "reviewWatch">>): void {
+  /** A configured repo by name (the review follow-up needs its folder). */
+  public repo(name: string): NexuraConfig["repos"][number] | undefined {
+    return this.config.repos.find((repo) => repo.name === name);
+  }
+
+  /** Small out-of-band updates (e.g. reviewWatch, a review's follow-up) on a run that is not executing. */
+  public patchRun(runId: string, patch: Partial<Pick<Run, "reviewWatch" | "prReview">>): void {
     if (this.contexts.has(runId)) {
       return; // Executing: its own persists would overwrite the patch anyway.
     }

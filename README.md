@@ -119,6 +119,15 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
   - Codex elige su propio id de sesión: Nexura lo encuentra en su `sessions/` (el primer rollout de esa carpeta desde que arrancó). Claude y Copilot reciben el id de Nexura (`--session-id`).
 - **Configuración** (⚙): editor de perfiles (pasos, modelo, esfuerzo, vueltas; duplicar/borrar), de pasos (plantilla del prompt con sus variables, `--tools` con Skills y Subagentes, permitidas/prohibidas, timeout, servidores MCP del repo) y de repos (ruta, rama base, prefijo, checks, node_modules). Todo se guarda en `config/`; desde el panel de depuración de un paso hay un enlace directo a su plantilla.
 
+## Logros
+
+La sección **Logros** premia el trabajo terminado, las buenas revisiones y la constancia: 42 trofeos de bronce, plata, oro y uno de platino, con puntos y nivel. Algunos son secretos (solo se ve una pista hasta conseguirlos) y otros se ganan en la Oficina 3D, que tiene una vitrina con tus copas y cinco patitos de goma escondidos ([docs/office-3d.md](docs/office-3d.md#logros)).
+
+- Salen de lo que Nexura ya ve, sin tokens: flujos de tickets terminados, revisiones publicadas de PRs ajenas (no las que abrieron tus flujos), PRs integradas, tickets creados en Tickets y lo que haces en la oficina.
+- **Comentarios corregidos**: cada `prPollSeconds`, Nexura sigue por REST las PRs de tus revisiones publicadas. Un comentario tuyo (salvo los *nit*) cuenta como corregido cuando su hilo deja de estar activo después de que el autor suba commits nuevos.
+- Se guardan en `data/achievements.sqlite`, aparte de los flujos: borrar un flujo no quita un trofeo. Lo anterior a esta versión cuenta: al arrancar se desbloquea en silencio y aparece como *Nuevo*.
+- Al ganar uno aparece un aviso arriba a la derecha, como en las consolas, con su sonido. El catálogo está en `packages/shared/src/achievements.ts` y las reglas en `apps/server/src/achievements/rules.ts`; los umbrales son una primera propuesta.
+
 ## Métricas y ajuste
 
 - **Métricas** (pestaña de la cabecera): flujos, % que terminan bien, coste total y medio, tokens y vueltas review/QA→implement; tabla por paso y modelo (ejecuciones, fallos, turnos, coste medio y total), por perfil y coste por día. Todo sale de SQLite, sin tokens.

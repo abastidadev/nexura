@@ -1,6 +1,6 @@
-import type { Run } from "@nexura/shared";
+import type { Run, Worktree } from "@nexura/shared";
 import type { Orchestrator } from "../orchestrator/orchestrator.ts";
-import { getPrStatus } from "./forge.ts";
+import { getPrStatus, getPullRequestDetail } from "./forge.ts";
 
 const MS_PER_SECOND = 1000;
 
@@ -62,8 +62,16 @@ export class PrWatcher {
     try {
       const prStatus = await getPrStatus(worktree, pr.id);
       const activeThreads = prStatus === "active" ? (await this.orchestrator.reviewThreads(run.id)).length : 0;
+      const checkedAt = new Date().toISOString();
+      const merged = prStatus === "completed";
       this.orchestrator.patchRun(run.id, {
-        reviewWatch: { checkedAt: new Date().toISOString(), activeThreads, prStatus },
+        reviewWatch: {
+          checkedAt,
+          activeThreads,
+          prStatus,
+          ...(merged ? { mergedAt: checkedAt } : {}),
+          ...((previous?.reviewedByOthers || activeThreads > 0 || (merged && (await approvedByOthers(worktree, pr.id)))) ? { reviewedByOthers: true } : {}),
+        },
       });
       const title = `PR #${pr.id} · ${run.request.ticketId ? `#${run.request.ticketId}` : run.id}`;
       if (activeThreads > (previous?.activeThreads ?? 0)) {
@@ -89,10 +97,21 @@ export class PrWatcher {
           checkedAt: new Date().toISOString(),
           activeThreads: previous?.activeThreads ?? 0,
           prStatus: previous?.prStatus ?? "active",
+          ...(previous?.reviewedByOthers ? { reviewedByOthers: true } : {}),
           error: error instanceof Error ? error.message : String(error),
         },
       });
     }
+  }
+}
+
+/** Whether a reviewer approved the merged PR (or approved with suggestions). A failure counts as no. */
+async function approvedByOthers(worktree: Worktree, prId: number): Promise<boolean> {
+  try {
+    const detail = await getPullRequestDetail(worktree, prId);
+    return detail.reviewers.some((reviewer) => reviewer.state === "approved" || reviewer.state === "suggestions");
+  } catch {
+    return false;
   }
 }
 

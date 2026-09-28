@@ -42,6 +42,7 @@ import { DesktopNotifier, askNotifyPermission, notifyPermission, waitingOnSomeon
 import { NextUp, waitingInOrder, waitingLabel } from './nextup';
 import { $, h, clip, closeAllModals, doingNow, modalOpen, onDoingChange, onModalChange, openModal, readingNow, toast, STATUS_LABEL } from './ui/dom';
 import { nexuraCardRefusal, nexuraDeskKey, nexuraHint, nexuraScreen, openNexuraRun, watchForgeWords } from './nexura/external'; // nexura
+import { nexuraInteract, nexuraThingHint, nexuraUse } from './nexura/achievements'; // nexura
 import { openTerminal, openTerminalFor, routeTerminalMessage, type TerminalFind } from './ui/terminal';
 import { openSearch } from './ui/search';
 import { openChanges, openChangesFor, routeChangesMessage } from './ui/changes';
@@ -1655,6 +1656,7 @@ function watchShare() {
 /** `note` is the issue note you're pointing at on the issues board, if any (see aimedNote). */
 function interact(target: Interactable | null, key: DeskKey, note = aimedNote) {
   if (!target) return;
+  nexuraUse(target.kind, key); // nexura: counts towards the office's trophies
   if (target.kind !== 'issues') note = null;
   if (key === 'E' && carrying && dropCard(target, carrying, note)) return;
   if (target.kind === 'desk' && target.deskId) {
@@ -1711,6 +1713,7 @@ function interact(target: Interactable | null, key: DeskKey, note = aimedNote) {
   else if (target.kind === 'dj') blowHorn();
   else if (target.kind === 'golf') teeOff();
   else if (target.kind === 'ball') takeBall();
+  else if (target.kind === 'nexura') nexuraInteract(target); // nexura
 }
 
 // ---- The rooftop bar ---------------------------------------------------------------------------------
@@ -2393,6 +2396,8 @@ function hintFor(it: Interactable): Hint {
       const about = left !== null ? `your game's paused at ${scoreText(left)}` : best ? `🏆 ${clip(best.name, 24)} · ${scoreText(best.score)}` : 'no high score yet';
       return { k: `${left}|${best?.name}|${best?.score}`, parts: [title(`🕹️ ${GAME}`), aside(about), key('E', left !== null ? 'Carry on' : 'Play')] };
     }
+    case 'nexura':
+      return nexuraThingHint(it, title, key, aside); // nexura
     case 'bookshelf': {
       const names = [...store.peers.values()].filter((p) => p.reading && p.id !== store.you && store.onMyFloor(p)).map((p) => p.name).join(', ');
       return { k: names, parts: [title('📚 Bookshelf'), aside(names ? `📖 ${clip(names, 40)} reading` : "the project's docs"), key('E', 'Read the docs')] };
@@ -2899,7 +2904,7 @@ document.addEventListener('pointerlockchange', () => {
 const raycaster = new THREE.Raycaster();
 const CROSSHAIR = new THREE.Vector2(0, 0);
 /** How close (meters from your eyes) you must be to use each kind of thing. */
-const REACH: Record<InteractKind, number> = { desk: 4.5, station: 4.5, coffee: 3, issues: 9, pulls: 9, services: 9, queue: 9, tv: 10, decor: 9, smoke: 3, elevator: 4.5, gong: 3.5, dog: 3.2, jukebox: 4, seat: 3, whiteboard: 7, cabinet: 4, ladder: 3, pole: 4, meeting: 7, bar: 3.5, dj: 6, golf: 3.5, ball: 3.2, bookshelf: 4 };
+const REACH: Record<InteractKind, number> = { desk: 4.5, station: 4.5, coffee: 3, issues: 9, pulls: 9, services: 9, queue: 9, tv: 10, decor: 9, smoke: 3, elevator: 4.5, gong: 3.5, dog: 3.2, jukebox: 4, seat: 3, whiteboard: 7, cabinet: 4, ladder: 3, pole: 4, meeting: 7, bar: 3.5, dj: 6, golf: 3.5, ball: 3.2, bookshelf: 4, nexura: 4 }; // nexura: was … bookshelf: 4 }
 const eye = new THREE.Vector3();
 
 /** What the ray through `ndc` lands on first, whether it is within reach (plus `slack` meters), and where it hit. */

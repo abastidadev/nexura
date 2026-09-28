@@ -9,6 +9,7 @@ import { buildElevator, type Elevator } from './elevator';
 import { buildGong, type Gong } from './gong';
 import { buildJukebox, type JukeboxView } from './jukebox';
 import { buildBookshelf } from './bookshelf';
+import { nexuraExtras } from '../nexura/achievements'; // nexura
 import { buildCabinet, type CabinetModel } from './cabinet';
 import { buildWhiteboard, type WhiteboardStand } from './whiteboard';
 import { buildGreen, buildTee, type Green, type Tee } from './golf';
@@ -29,7 +30,7 @@ export interface Collider {
   fence?: boolean;
 }
 
-export type InteractKind = 'desk' | 'station' | 'issues' | 'pulls' | 'services' | 'queue' | 'tv' | 'coffee' | 'decor' | 'smoke' | 'elevator' | 'gong' | 'dog' | 'jukebox' | 'seat' | 'whiteboard' | 'cabinet' | 'ladder' | 'pole' | 'meeting' | 'bar' | 'dj' | 'golf' | 'ball' | 'bookshelf';
+export type InteractKind = 'desk' | 'station' | 'issues' | 'pulls' | 'services' | 'queue' | 'tv' | 'coffee' | 'decor' | 'smoke' | 'elevator' | 'gong' | 'dog' | 'jukebox' | 'seat' | 'whiteboard' | 'cabinet' | 'ladder' | 'pole' | 'meeting' | 'bar' | 'dj' | 'golf' | 'ball' | 'bookshelf' | 'nexura'; // nexura: was … | 'bookshelf'
 
 /** Something you can use. Its scene object carries it as `userData.interact`, for clicking. */
 export interface Interactable {
@@ -46,6 +47,7 @@ export interface Interactable {
   pole?: number;
   /** Put away for now (a bean bag nobody needs yet): can't be used. */
   off?: boolean;
+  nexura?: string; // nexura: which of Nexura's things (the trophy case, a duck), see client/nexura/achievements.ts
 }
 
 /** A desk, a bean bag, a board agent's kiosk or a chair at the meeting table: somewhere a worker sits (or stands). */
@@ -1172,6 +1174,7 @@ export function buildOffice(): Office {
   colliders.push(shelf.collider);
   interactables.push(shelf.interactable);
   fixture('south', BOOKSHELF.x, (BOOKSHELF.height + 0.55) / 2, BOOKSHELF.width + 0.2, BOOKSHELF.height + 0.55);
+  nexuraExtras(group, colliders, interactables); // nexura: the trophy case and the hidden ducks
 
   // Kitchen corner: counter + coffee machine + fridge
   const kitchen = new THREE.Group();

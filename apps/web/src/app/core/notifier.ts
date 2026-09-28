@@ -129,6 +129,36 @@ export class Notifier {
       .catch(() => undefined); // Not unlocked yet: silence rather than an error.
   }
 
+  /** A trophy: a quick rising arpeggio with a bright shimmer on top, like a console's. */
+  public playTrophy(): void {
+    const context = this.context();
+    if (!context) {
+      return;
+    }
+    context
+      .resume()
+      .then(() => {
+        const start = context.currentTime + 0.02;
+        const note = (frequency: number, at: number, length: number, type: OscillatorType, peak: number): void => {
+          const oscillator = context.createOscillator();
+          const gain = context.createGain();
+          oscillator.type = type;
+          oscillator.frequency.value = frequency;
+          gain.gain.setValueAtTime(0.0001, at);
+          gain.gain.exponentialRampToValueAtTime(peak, at + 0.015);
+          gain.gain.exponentialRampToValueAtTime(0.0001, at + length);
+          oscillator.connect(gain).connect(context.destination);
+          oscillator.start(at);
+          oscillator.stop(at + length + 0.05);
+        };
+        // G5 C6 E6 G6, then the chord rings with a high sparkle over it.
+        [783.99, 1046.5, 1318.51, 1567.98].forEach((frequency, index) => note(frequency, start + index * 0.07, 0.35, "triangle", 0.16));
+        [1046.5, 1318.51, 1567.98].forEach((frequency) => note(frequency, start + 0.3, 0.9, "sine", 0.07));
+        note(3135.96, start + 0.34, 0.5, "sine", 0.03);
+      })
+      .catch(() => undefined);
+  }
+
   private context(): AudioContext | undefined {
     if (!this.audio && typeof AudioContext !== "undefined") {
       try {

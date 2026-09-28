@@ -32,6 +32,9 @@ Qué hace cada parche y cómo se prueba está explicado en [docs/office-3d.md](.
 | `src/server/building.ts` | `withNexuraRepos(...)`, `nexuraCheckout(...)` y el método `addCheckout` | Los repos de Nexura (`nexura/<nombre>`) aparecen en el ascensor y se abren como planta en su carpeta, sin clonar. |
 | `src/server/workers.ts` | `nexuraClaudeArgs` en `launch()`; `nexuraCreatePr` en `openPr`; `nexuraFindPr` en `findOpenPr` | Los trabajadores de una planta de ADO reciben la equivalencia `gh` → `az` y abren sus PR a través de Nexura. |
 | `src/server/changes.ts` | `nexuraCreatePr` antes de `gh pr create` | El PR que se abre desde la ventana Changes, en ADO. |
+| `src/server/server.ts` | la ruta `/api/nexura/achievements` | Los logros de Nexura para la vitrina, y lo que haces en la oficina que cuenta para ellos. |
+| `src/client/world/office.ts` | `'nexura'` en `InteractKind`, `Interactable.nexura` y `nexuraExtras(...)` | La vitrina de logros y los patitos escondidos. |
+| `src/client/main.ts` | `nexuraUse` al principio de `interact`, `nexuraInteract`, `nexuraThingHint` y `nexura` en `REACH` | Lo que usas en la oficina cuenta para los logros; E en la vitrina o en un patito. |
 
 ## Archivos propios
 
@@ -42,6 +45,8 @@ Qué hace cada parche y cómo se prueba está explicado en [docs/office-3d.md](.
 | `src/server/nexura/tracker.ts` | `NexuraTracker`: los tableros de Issues y PR de una planta ADO, pidiendo los datos a `NEXURA_URL/api/office/board/*`. |
 | `src/server/nexura/floors.ts` | Los repos de Nexura en el ascensor. |
 | `src/server/nexura/pulls.ts` | Remotos ADO, la nota `gh` → `az` para Claude, y crear y buscar PR a través de Nexura. |
+| `src/server/nexura/achievements.ts` | Pasa a Nexura (`NEXURA_URL/api/achievements`) la lista de logros y, validados campo a campo, los eventos de la oficina. |
+| `src/client/nexura/achievements.ts` | La vitrina 3D (copas por nivel), los cinco patitos, los secretos (código Konami, turno de noche, hoyo en uno), la ventana de logros y el toast de trofeo cuando la oficina no está dentro de Nexura. |
 | `src/client/nexura/external.ts` | Todo lo del cliente: abrir el flujo en Nexura (`postMessage` o una pestaña nueva), la barra de ayuda, el portátil, el botón "Resolve with Nexura" y, en plantas de Azure DevOps, un `MutationObserver` que cambia "GitHub" por "Azure DevOps" en los diálogos (nunca en el Markdown ni en lo que escribe la gente) y apunta los `#N` al work item. |
 | `tests/nexura-*.test.ts` | Tests de lo anterior (`node --import tsx --test tests/nexura-*.test.ts`). |
 

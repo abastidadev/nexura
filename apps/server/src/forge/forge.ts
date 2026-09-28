@@ -87,7 +87,7 @@ export async function pushAndCreatePr(worktree: Worktree, draft: PrDraft): Promi
 }
 
 /** active | completed | abandoned (GitHub's open/merged/closed mapped to these). */
-export async function getPrStatus(worktree: Worktree, prId: number): Promise<string> {
+export async function getPrStatus(worktree: Pick<Worktree, "repo" | "repoPath">, prId: number): Promise<string> {
   const remote = await requireRemote(worktree);
   return remote.provider === "azure" ? azurePrs.getPrStatus(remote, prId) : githubPrs.getPrStatus(remote, prId);
 }

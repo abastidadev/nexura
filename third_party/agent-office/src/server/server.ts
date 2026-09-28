@@ -40,6 +40,7 @@ import { lookFromSeed, sanitizeLook } from '../shared/avatar.js';
 import { EMOTE_EVERY, EmoteBucket, isEmote } from '../shared/emotes.js';
 import { frameHeaders as nexuraFrameHeaders } from './nexura/frame.js'; // nexura
 import { NexuraBridge } from './nexura/bridge.js'; // nexura
+import { handleAchievements as nexuraAchievements } from './nexura/achievements.js'; // nexura
 import { isThemePick } from '../shared/theme.js';
 import { PROMPTS, PROMPT_MAX, isPromptId } from '../shared/prompts.js';
 import { ROOF, isDrink } from '../shared/rooftop.js';
@@ -694,6 +695,7 @@ export async function startServer(cfg: Config) {
         return;
       }
       if (p === '/api/whoami') return send(res, 200, { ok: true, me: meOf(session.account?.id) });
+      if (p === '/api/nexura/achievements') return await nexuraAchievements(req, res, () => sameOrigin(req, cfg)); // nexura
       if (p === '/api/agents/opencode/models' && req.method === 'GET') {
         try {
           return send(res, 200, { models: await openCodeModels.get() });

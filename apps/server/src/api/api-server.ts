@@ -20,6 +20,7 @@ import {
   type ServerMessage,
   type StepName,
   type NewTicketDraft,
+  type OfficeAchievementEvent,
   type TicketDraftUpdate,
   type TicketSource,
   type WorkItemScope,
@@ -38,6 +39,7 @@ import {
 } from "../config/config-loader.ts";
 import { NEXURA_HOME } from "../config/paths.ts";
 import { rejectReason } from "./request-guard.ts";
+import { AchievementService } from "../achievements/achievement-service.ts";
 import { AzureError } from "../azure/azure-client.ts";
 import { ConversationManager } from "../conversations/conversation-manager.ts";
 import { ConversationStore } from "../conversations/conversation-store.ts";
@@ -126,6 +128,7 @@ export function createApiServer(
     settings: () => orchestrator.getSettings(),
     quotaUntil: (agent) => orchestrator.quotaPauseFor(agent),
   }),
+  achievements = new AchievementService(),
 ): Server {
   const routes: Route[] = [];
   const terminals = new TerminalServer(store);
@@ -467,6 +470,17 @@ export function createApiServer(
   });
   /** Panel: open PRs to review and the user's tickets across the configured repos (REST, zero tokens). */
   route("GET", "/api/dashboard/inbox", () => loadInbox(loadConfig().repos, store.listRuns(500)));
+  /** Trophies: progress of every achievement (secret ones masked until won). Zero tokens. */
+  route("GET", "/api/achievements", () => achievements.summary());
+  route("POST", "/api/achievements/seen", () => achievements.markSeen());
+  /** What the 3D office reports (through its server): something used, a duck found, a secret. */
+  route("POST", "/api/achievements/office", (_params, body) => {
+    try {
+      return { unlocked: achievements.office(body as OfficeAchievementEvent) };
+    } catch (error) {
+      throw new HttpError(400, error instanceof Error ? error.message : String(error));
+    }
+  });
   route("GET", "/api/metrics/cost-by-step", () => store.costByStep());
   route("GET", "/api/metrics", (_params, _body, url) => store.metrics(Number(url.searchParams.get("days")) || undefined));
   route("GET", "/api/metrics/account-usage", (_params, _body, url) => accountUsage(url.searchParams.has("refresh")));
@@ -544,9 +558,25 @@ export function createApiServer(
   orchestrator.on("message", broadcast);
   conversations.on("message", broadcast);
   tickets.on("message", broadcast);
+  // Achievements watch the same messages the UI gets; theirs (a trophy won) go out too.
+  achievements.sync(store.listRuns(1000), tickets.list());
+  achievements.on("message", broadcast);
+  orchestrator.on("message", (message) => {
+    if (message.type === "run") {
+      achievements.observeRun(message.run);
+    } else if (message.type === "runDeleted") {
+      achievements.forgetRun(message.runId);
+    }
+  });
+  tickets.on("message", (message) => {
+    if (message.type === "ticketDraft") {
+      achievements.observeDraft(message.draft);
+    }
+  });
   server.on("close", () => {
     conversations.dispose();
     tickets.dispose();
+    achievements.close();
   });
 
   return server;

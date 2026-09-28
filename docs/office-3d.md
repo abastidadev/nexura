@@ -67,6 +67,15 @@ En la ventana de un issue (de ADO o de GitHub), **🚀 Resolve with Nexura** abr
 - **PR**: los que se abren desde una mesa o desde **Changes** se crean a través de Nexura. Si el prompt dice `Closes #N`, el PR queda enlazado al work item N.
 - **Pendiente**: las limitaciones están en [`third_party/agent-office.patches.md`](../third_party/agent-office.patches.md).
 
+### Logros
+
+Los logros de Nexura (sección **Logros**) también están en la oficina. Todo pasa por el servidor de la oficina, que habla con `NEXURA_URL`; sin Nexura la vitrina queda vacía.
+
+- **Vitrina**: en la pared este, entre el tablero Services y la tele. Muestra una copa por logro conseguido, con el color de su nivel, y siluetas de los que faltan. Con E se abre la lista completa, con los secretos ocultos.
+- **Lo que haces en la oficina cuenta**: acariciar al perro, tomar café, tocar el gong, jugar en la recreativa, bajar por la barra, subir a la azotea… Cada E sobre un objeto se manda a Nexura (`POST /api/nexura/achievements`, validado en los dos servidores).
+- **Secretos**: cinco patitos de goma escondidos, el código Konami, pasar por la oficina de madrugada y un hoyo en uno en el golf del balcón. Dónde están los patitos está en `src/client/nexura/achievements.ts` (`DUCKS`).
+- **Aviso**: dentro de Nexura, el toast del trofeo lo pone Nexura; con la oficina en su propia ventana, lo pone la oficina, arriba a la derecha.
+
 ### Probar sin cuota
 
 `/try-fake` más una oficina con un `claude` falso por delante en el `PATH`:
