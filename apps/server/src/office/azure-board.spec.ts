@@ -211,11 +211,11 @@ describe("office routes", () => {
     }
   });
 
-  function api() {
+  function api(allowed: string[]) {
     const table: { method: string; pattern: RegExp; handler: (params: string[], body: unknown, url: URL) => unknown }[] = [];
     registerOfficeRoutes(
       (method, path, handler) => table.push({ method, pattern: new RegExp("^" + path.replace(/:\w+/g, "([^/]+)") + "$"), handler }),
-      () => [{ name: "web", path: dirs[0]!, baseBranch: "main", checks: [] }],
+      () => allowed.map((path, index) => ({ name: `repo-${index}`, path, baseBranch: "main", checks: [] })),
     );
     return async (method: string, target: string, body?: unknown) => {
       const url = new URL(target, "http://127.0.0.1");
@@ -232,18 +232,30 @@ describe("office routes", () => {
   it("says which provider a floor is on, and only serves boards for Azure DevOps checkouts", async () => {
     const azure = checkout("https://acme@dev.azure.com/acme/Shop/_git/web");
     const github = checkout("https://github.com/o/r.git");
-    const call = api();
+    const call = api([azure, github]);
     expect(await call("GET", `/api/office/board?dir=${encodeURIComponent(azure)}`)).toEqual({ provider: "azure", repo: { nameWithOwner: "Shop/web", methods: ["squash", "merge", "rebase"] } });
     expect(await call("GET", `/api/office/board?dir=${encodeURIComponent(github)}`)).toEqual({ provider: "github" });
     await expect(call("GET", `/api/office/board/issues?dir=${encodeURIComponent(github)}`)).rejects.toThrow("no está en Azure DevOps");
     await expect(call("GET", "/api/office/board/issues?dir=relative")).rejects.toThrow("Carpeta no válida");
-    expect(await call("GET", "/api/office/repos")).toEqual([{ name: "web", path: azure, provider: "azure" }]);
+    expect(await call("GET", "/api/office/repos")).toEqual([
+      { name: "repo-0", path: azure, provider: "azure" },
+      { name: "repo-1", path: github, provider: "github" },
+    ]);
+  });
+
+  it("refuses board access to a checkout outside the configured repos", async () => {
+    const configured = checkout("https://dev.azure.com/acme/Shop/_git/web");
+    const other = checkout("https://dev.azure.com/acme/Other/_git/private");
+    const call = api([configured]);
+    const dir = encodeURIComponent(other);
+    await expect(call("GET", `/api/office/board?dir=${dir}`)).rejects.toThrow("no está configurada");
+    await expect(call("POST", `/api/office/board/issues/7/comment?dir=${dir}`, { body: "No" })).rejects.toThrow("no está configurada");
   });
 
   it("comments on a work item from its board, and rejects empty comments and unknown boards", async () => {
     const azure = checkout("https://dev.azure.com/acme/Shop/_git/web");
     routes = [["POST Shop/_apis/wit/workItems/7/comments", () => ({ id: 31, createdBy: { displayName: "Ana Dev" }, createdDate: "t" })]];
-    const call = api();
+    const call = api([azure]);
     const dir = encodeURIComponent(azure);
     expect(await call("POST", `/api/office/board/issues/7/comment?dir=${dir}`, { body: "Voy con ello" })).toEqual({
       comment: { id: "31", author: "Ana Dev", body: "Voy con ello", createdAt: "t", url: "https://dev.azure.com/acme/Shop/_workitems/edit/7#31" },

@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import type { RepoConfig } from "@nexura/shared";
 import type { AzureRepo } from "../azure/repo-remote.ts";
@@ -18,12 +18,22 @@ export class OfficeApiError extends Error {
   }
 }
 
-/** A floor of the office is a local checkout: its `dir` says which repo (and remote) a call is about. */
-async function remoteOf(url: URL): Promise<{ dir: string; remote: AzureRepo }> {
+/** Only configured repos may use Nexura's Azure credentials through the office board. */
+function configuredDir(url: URL, repos: () => RepoConfig[]): string {
   const dir = url.searchParams.get("dir") ?? "";
   if (!isAbsolute(dir) || !existsSync(dir)) {
     throw new OfficeApiError(400, `Carpeta no válida: ${dir}`);
   }
+  const realDir = realpathSync(dir);
+  if (!repos().some((repo) => existsSync(repo.path) && realpathSync(repo.path) === realDir)) {
+    throw new OfficeApiError(403, "La carpeta no está configurada en Nexura");
+  }
+  return realDir;
+}
+
+/** A floor of the office is a configured local checkout: its `dir` identifies the Azure remote. */
+async function remoteOf(url: URL, repos: () => RepoConfig[]): Promise<{ dir: string; remote: AzureRepo }> {
+  const dir = configuredDir(url, repos);
   const remote = await repoRemoteOf(dir);
   if (remote?.provider !== "azure") {
     throw new OfficeApiError(400, "Este proyecto no está en Azure DevOps");
@@ -63,26 +73,25 @@ function names(value: unknown): string[] {
  */
 export function registerOfficeRoutes(route: Route, repos: () => RepoConfig[]): void {
   route("GET", "/api/office/board", async (_params, _body, url) => {
-    const dir = url.searchParams.get("dir") ?? "";
-    const remote = isAbsolute(dir) && existsSync(dir) ? await repoRemoteOf(dir) : undefined;
+    const remote = await repoRemoteOf(configuredDir(url, repos));
     if (remote?.provider !== "azure") {
       return { provider: remote?.provider ?? null };
     }
     return { provider: "azure", repo: board.repoInfo(remote) };
   });
-  route("GET", "/api/office/board/issues", async (_params, _body, url) => board.listIssues((await remoteOf(url)).remote));
+  route("GET", "/api/office/board/issues", async (_params, _body, url) => board.listIssues((await remoteOf(url, repos)).remote));
   route("GET", "/api/office/board/pulls", async (_params, _body, url) => {
-    const { dir, remote } = await remoteOf(url);
+    const { dir, remote } = await remoteOf(url, repos);
     return board.listPulls(remote, dir);
   });
-  route("GET", "/api/office/board/labels", async (_params, _body, url) => board.repoLabels((await remoteOf(url)).remote));
-  route("GET", "/api/office/board/viewer", async (_params, _body, url) => ({ name: (await board.viewer((await remoteOf(url)).remote)).name }));
+  route("GET", "/api/office/board/labels", async (_params, _body, url) => board.repoLabels((await remoteOf(url, repos)).remote));
+  route("GET", "/api/office/board/viewer", async (_params, _body, url) => ({ name: (await board.viewer((await remoteOf(url, repos)).remote)).name }));
   route("GET", "/api/office/board/pull-by-branch", async (_params, _body, url) => {
     const branch = url.searchParams.get("branch") ?? "";
     if (!branch) {
       throw new OfficeApiError(400, "Falta la rama");
     }
-    return { pull: (await board.findPull((await remoteOf(url)).remote, branch)) ?? null };
+    return { pull: (await board.findPull((await remoteOf(url, repos)).remote, branch)) ?? null };
   });
   route("POST", "/api/office/board/pulls", async (_params, body, url) => {
     const input = (body ?? {}) as Record<string, unknown>;
@@ -93,12 +102,12 @@ export function registerOfficeRoutes(route: Route, repos: () => RepoConfig[]): v
       throw new OfficeApiError(400, "Faltan la rama, la rama destino o el título");
     }
     const issue = typeof input.issue === "number" && Number.isInteger(input.issue) && input.issue > 0 ? input.issue : undefined;
-    return board.createPull((await remoteOf(url)).remote, { branch, base, title, body: text(input.body, 20_000), issue });
+    return board.createPull((await remoteOf(url, repos)).remote, { branch, base, title, body: text(input.body, 20_000), issue });
   });
-  route("GET", "/api/office/board/issues/:n", async ([n], _body, url) => board.issueDetail((await remoteOf(url)).remote, number(n)));
-  route("GET", "/api/office/board/pulls/:n", async ([n], _body, url) => board.pullDetail((await remoteOf(url)).remote, number(n)));
+  route("GET", "/api/office/board/issues/:n", async ([n], _body, url) => board.issueDetail((await remoteOf(url, repos)).remote, number(n)));
+  route("GET", "/api/office/board/pulls/:n", async ([n], _body, url) => board.pullDetail((await remoteOf(url, repos)).remote, number(n)));
   route("GET", "/api/office/board/pulls/:n/diff", async ([n], _body, url) => {
-    const { dir, remote } = await remoteOf(url);
+    const { dir, remote } = await remoteOf(url, repos);
     return { diff: await board.pullDiff(remote, dir, number(n)) };
   });
   route("POST", "/api/office/board/:kind/:n/comment", async ([kind, n], body, url) => {
@@ -106,11 +115,11 @@ export function registerOfficeRoutes(route: Route, repos: () => RepoConfig[]): v
     if (!text_.trim()) {
       throw new OfficeApiError(400, "El comentario está vacío");
     }
-    return { comment: await board.comment((await remoteOf(url)).remote, kindOf(kind), number(n), text_) };
+    return { comment: await board.comment((await remoteOf(url, repos)).remote, kindOf(kind), number(n), text_) };
   });
   route("POST", "/api/office/board/:kind/:n/close", async ([kind, n], body, url) => {
     const input = (body ?? {}) as Record<string, unknown>;
-    await board.close((await remoteOf(url)).remote, kindOf(kind), number(n), {
+    await board.close((await remoteOf(url, repos)).remote, kindOf(kind), number(n), {
       comment: text(input.comment, 60_000) || undefined,
       reason: input.reason === "not planned" ? "not planned" : "completed",
       deleteBranch: input.deleteBranch === true,
@@ -119,12 +128,12 @@ export function registerOfficeRoutes(route: Route, repos: () => RepoConfig[]): v
   });
   route("POST", "/api/office/board/:kind/:n/labels", async ([kind, n], body, url) => {
     const input = (body ?? {}) as Record<string, unknown>;
-    return { labels: await board.setLabels((await remoteOf(url)).remote, kindOf(kind), number(n), names(input.add), names(input.remove)) };
+    return { labels: await board.setLabels((await remoteOf(url, repos)).remote, kindOf(kind), number(n), names(input.add), names(input.remove)) };
   });
   route("POST", "/api/office/board/pulls/:n/merge", async ([n], body, url) => {
     const input = (body ?? {}) as Record<string, unknown>;
     const method = input.method === "merge" || input.method === "rebase" ? input.method : "squash";
-    await board.merge((await remoteOf(url)).remote, number(n), method, input.deleteBranch === true, input.auto === true);
+    await board.merge((await remoteOf(url, repos)).remote, number(n), method, input.deleteBranch === true, input.auto === true);
     return { ok: true };
   });
   route("POST", "/api/office/board/pulls/:n/review", async ([n], body, url) => {
@@ -132,10 +141,10 @@ export function registerOfficeRoutes(route: Route, repos: () => RepoConfig[]): v
     if (!text_.trim()) {
       throw new OfficeApiError(400, "La revisión está vacía");
     }
-    return { url: await board.review((await remoteOf(url)).remote, number(n), text_) };
+    return { url: await board.review((await remoteOf(url, repos)).remote, number(n), text_) };
   });
   route("POST", "/api/office/board/issues/:n/claim", async ([n], _body, url) => {
-    await board.claim((await remoteOf(url)).remote, number(n));
+    await board.claim((await remoteOf(url, repos)).remote, number(n));
     return { ok: true };
   });
 
