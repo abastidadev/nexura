@@ -1,7 +1,10 @@
-import { Component, computed, effect, inject, signal, type OnInit } from "@angular/core";
+import { DatePipe } from "@angular/common";
+import { Component, computed, effect, ElementRef, HostListener, inject, signal, viewChild, type OnInit } from "@angular/core";
 import { Router, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/router";
+import { Api } from "./core/api";
 import { RUN_STATUS, TONE_CLASSES, type Tone } from "./core/format";
-import { isPrReview, NexuraStore, reviewLink, type Toast } from "./core/nexura-store";
+import { draftStatus, draftTitle } from "./features/tickets/ticket-format";
+import { isPrReview, NexuraStore, reviewLink, type Notice, type Toast } from "./core/nexura-store";
 import { Notifier } from "./core/notifier";
 import { readStorage, writeStorage } from "./core/storage";
 import { Icon, type IconName } from "./shared/icon";
@@ -28,15 +31,17 @@ type HeaderTab = {
 
 @Component({
   selector: "nx-root",
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, QuotaMeter, Icon],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, DatePipe, QuotaMeter, Icon],
   templateUrl: "./app.html",
   host: { class: "flex h-full flex-col" },
 })
 export class App implements OnInit {
   private readonly router = inject(Router);
+  private readonly api = inject(Api);
   protected readonly store = inject(NexuraStore);
   protected readonly notifier = inject(Notifier);
   protected readonly loadError = signal<string | null>(null);
+  protected readonly noticeCenterOpen = signal(false);
   protected readonly toastDot: Record<Tone, string> = {
     ok: "bg-ok",
     err: "bg-err",
@@ -50,8 +55,10 @@ export class App implements OnInit {
     { path: "/", label: "Panel", icon: "dashboard" },
     { path: "/runs", label: "Flujos", icon: "flows" },
     { path: "/reviews", label: "Revisiones", icon: "reviews" },
+    { path: "/tickets", label: "Tickets", icon: "ticket" },
     { path: "/terminal", label: "Terminal", icon: "terminal" },
     { path: "/agents", label: "Agentes", icon: "agents" },
+    { path: "/office-3d", label: "Oficina 3D", icon: "office" },
   ];
   protected readonly systemNav: NavItem[] = [
     { path: "/metrics", label: "Métricas", icon: "metrics" },
@@ -74,10 +81,16 @@ export class App implements OnInit {
   private readonly everConnected = signal(false);
   protected readonly showDisconnected = signal(false);
 
-  /** Everything open in the header: flows, PR reviews and terminal conversations. */
+  /** Everything open in the header: flows, PR reviews, tickets and terminal conversations, with the names the user gave them. */
   protected readonly tabs = computed<HeaderTab[]>(() => {
+    const labels = this.store.tabLabels();
+    return this.autoTabs().map((tab) => (labels[tab.id] && tab.icon !== "terminal" ? { ...tab, label: labels[tab.id]! } : tab));
+  });
+
+  private readonly autoTabs = computed<HeaderTab[]>(() => {
     const runs = new Map(this.store.runs().map((run) => [run.id, run]));
     const conversations = new Map(this.store.conversations().map((conversation) => [conversation.id, conversation]));
+    const drafts = new Map(this.store.ticketDrafts().map((draft) => [draft.id, draft]));
     return this.store.openTabs().flatMap((id): HeaderTab[] => {
       const run = runs.get(id);
       if (run) {
@@ -121,9 +134,67 @@ export class App implements OnInit {
           comments: 0,
         }];
       }
+      const draft = drafts.get(id);
+      if (draft) {
+        const state = draftStatus(draft);
+        const title = draftTitle(draft);
+        return [{
+          id,
+          icon: "ticket",
+          label: title.slice(0, 28),
+          title: `Ticket · ${title}`,
+          status: state.label,
+          live: state.live,
+          dot: TONE_CLASSES[state.tone].dot,
+          link: ["/tickets"],
+          queryParams: { draft: id },
+          comments: 0,
+        }];
+      }
       return [];
     });
   });
+
+  // ---- renaming a tab (double click on its name)
+  protected readonly renaming = signal<string | null>(null);
+  private readonly renameInput = viewChild<ElementRef<HTMLInputElement>>("rename");
+
+  protected startRename(event: Event, tab: HeaderTab): void {
+    event.preventDefault();
+    event.stopPropagation();
+    this.renaming.set(tab.id);
+  }
+
+  /** Terminals rename their conversation (the same title everywhere); other tabs keep the name in this browser. */
+  protected async finishRename(tab: HeaderTab, value: string | null): Promise<void> {
+    if (this.renaming() !== tab.id) {
+      return;
+    }
+    this.renaming.set(null);
+    if (value === null) {
+      return;
+    }
+    if (tab.icon === "terminal") {
+      const title = value.trim();
+      if (title && title !== tab.label) {
+        this.store.upsertConversation(await this.api.updateConversation(tab.id, { title }));
+      }
+      return;
+    }
+    const automatic = this.autoTabs().find((candidate) => candidate.id === tab.id)?.label;
+    this.store.renameTab(tab.id, value.trim() === automatic ? "" : value);
+  }
+
+  protected onRenameKey(event: KeyboardEvent, tab: HeaderTab): void {
+    event.stopPropagation();
+    if (event.key === "Enter") {
+      event.preventDefault();
+      void this.finishRename(tab, (event.target as HTMLInputElement).value);
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      void this.finishRename(tab, null);
+    }
+  }
 
   /** Steps running right now in any flow (subagents are counted in the Agentes view). */
   protected readonly workingAgents = computed(() =>
@@ -132,6 +203,12 @@ export class App implements OnInit {
 
   public constructor() {
     effect(() => writeStorage(COLLAPSED_KEY, this.collapsed()));
+    // The rename box takes the focus with its text selected.
+    effect(() => {
+      const input = this.renameInput()?.nativeElement;
+      input?.focus();
+      input?.select();
+    });
     let timer: ReturnType<typeof setTimeout> | undefined;
     effect(() => {
       clearTimeout(timer);
@@ -211,7 +288,37 @@ export class App implements OnInit {
 
   protected openToast(toast: Toast): void {
     this.store.dismissToast(toast.id);
+    this.store.dismissNotice(toast.id);
     this.store.openToast(toast);
+  }
+
+  protected toggleNoticeCenter(): void {
+    if (this.noticeCenterOpen()) {
+      this.closeNoticeCenter();
+      return;
+    }
+    this.store.markNoticesSeen();
+    this.noticeCenterOpen.set(true);
+  }
+
+  protected closeNoticeCenter(): void {
+    if (!this.noticeCenterOpen()) {
+      return;
+    }
+    this.store.markNoticesSeen();
+    this.store.clearSeenNotices();
+    this.noticeCenterOpen.set(false);
+  }
+
+  protected openNotice(notice: Notice): void {
+    this.store.dismissNotice(notice.id);
+    this.closeNoticeCenter();
+    this.store.openToast(notice);
+  }
+
+  @HostListener("document:keydown.escape")
+  protected onEscape(): void {
+    this.closeNoticeCenter();
   }
 
   public ngOnInit(): void {

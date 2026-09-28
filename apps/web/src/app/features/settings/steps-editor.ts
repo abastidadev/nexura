@@ -1,6 +1,6 @@
 import { Component, computed, inject, input, linkedSignal, resource, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
-import { orderSteps, type MemoryMode } from "@nexura/shared";
+import { AUTO_MCP_SERVERS, orderSteps, type MemoryMode } from "@nexura/shared";
 import { Api, apiError, type StepDefinitionView } from "../../core/api";
 import { sourceLabel, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -84,6 +84,7 @@ export class StepsEditor {
     { value: "readwrite", label: "Leer y guardar (mem_save)" },
   ];
   protected readonly stepLabel = stepLabel;
+  protected readonly autoServers = AUTO_MCP_SERVERS.join(", ");
   protected readonly steps = computed(() => this.store.config()?.steps ?? []);
   protected readonly step = computed(() => this.steps().find((step) => step.name === this.name()));
   protected readonly notFound = computed(() => this.store.config() !== null && !this.step());
@@ -119,6 +120,16 @@ export class StepsEditor {
       }
     }
     return [...servers.values()].sort((a, b) => a.name.localeCompare(b.name));
+  });
+  /** Repo servers `@auto` never loads and the step does not name either: they stay off unless added by name. */
+  protected readonly skippedByAuto = computed(() => {
+    const names = lines(this.draft().mcpServers);
+    if (!names.includes("@auto")) {
+      return [];
+    }
+    return this.knownMcp()
+      .map((server) => server.name)
+      .filter((name) => !AUTO_MCP_SERVERS.includes(name) && !names.includes(name));
   });
 
   protected hasTool(tool: string): boolean {

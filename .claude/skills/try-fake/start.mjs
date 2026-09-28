@@ -42,7 +42,10 @@ const prs = [
     number: 1,
     branch: "feature/greet",
     title: "feat: saludo con nombre",
-    body: "Añade `greet(name)` para saludar al usuario.",
+    body: "Añade `greet(name)` para saludar al usuario.\n\nCloses #6",
+    closes: [{ number: 6, title: "Customers / Detail - Contact panel" }],
+    labels: [{ name: "enhancement" }],
+    requested_reviewers: [{ login: "nexura-fake" }],
     files: { "src/greet.js": 'export function greet(name) {\n  const who = name.trim();\n  return "Hola " + who;\n}\n' },
   },
   {
@@ -71,6 +74,10 @@ const prs = [
     head: { ref: pr.branch, sha },
     base: { ref: "main" },
     draft: pr.number === 2,
+    files: Object.entries(pr.files).map(([filename, content]) => ({ filename, status: "added", additions: content.split("\n").length - 1, deletions: 0 })),
+    labels: pr.labels ?? [],
+    requested_reviewers: pr.requested_reviewers ?? [],
+    closes: pr.closes ?? [],
     html_url: `https://github.com/nexura-fake/sandbox/pull/${pr.number}`,
     created_at: new Date().toISOString(),
   };

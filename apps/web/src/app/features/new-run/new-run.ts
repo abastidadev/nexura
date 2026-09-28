@@ -1,14 +1,16 @@
 import { Component, computed, effect, inject, input, linkedSignal, resource, signal, untracked } from "@angular/core";
 import { Router } from "@angular/router";
-import { orderSteps, type FlowProfile, type TaskItem, type TicketDetails, type TicketSource } from "@nexura/shared";
+import { AGENT_KINDS, AGENT_LABELS, AGENT_MODELS, modelsFor, orderSteps, type AgentKind, type Effort, type FlowProfile, type TaskItem, type TicketDetails, type TicketSource } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { modelDetail, stepLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { SOURCE_LABELS, TicketPicker } from "./ticket-picker";
 import { Icon } from "../../shared/icon";
+import { ModelPicker } from "../../shared/model-picker";
 
-export const AUTO_PROFILE = "auto";
-const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/;
+/** Default choice: one agent runs every step of BASE_PROFILE with its model and effort. */
+const SINGLE_AGENT = "single-agent";
+const BASE_PROFILE = "standard";
 
 type ProfileCard = {
   name: string;
@@ -17,10 +19,11 @@ type ProfileCard = {
   steps: { label: string; detail: string }[];
   maxLoops?: number;
 };
+const BULLET = /^\s*(?:[-*•]|\d+[.)])\s+(?:\[[ xX]\]\s*)?(.+)$/;
 
 @Component({
   selector: "nx-new-run",
-  imports: [TicketPicker, Icon],
+  imports: [TicketPicker, Icon, ModelPicker],
   templateUrl: "./new-run.html",
   host: { class: "block h-full overflow-y-auto" },
 })
@@ -40,7 +43,22 @@ export class NewRun {
   protected readonly prompt = signal("");
   protected readonly tasks = signal<TaskItem[]>([]);
   protected readonly newTask = signal("");
-  protected readonly profile = signal(AUTO_PROFILE);
+  protected readonly agentKinds = AGENT_KINDS;
+  protected readonly agentLabels = AGENT_LABELS;
+  protected readonly efforts: readonly Effort[] = ["low", "medium", "high", "xhigh"];
+  protected readonly agent = signal<AgentKind>("claude");
+  protected readonly model = signal("opus");
+  protected readonly effort = signal<Effort>("medium");
+  private readonly agentInfo = resource({ loader: () => this.api.getAgents() });
+  protected readonly agentModels = computed(() => modelsFor(this.agent(), this.agentInfo.hasValue() ? this.agentInfo.value() : undefined));
+  protected readonly profile = signal(SINGLE_AGENT);
+  protected readonly singleAgent = SINGLE_AGENT;
+  /** Per-step plans, for whoever wants other steps or to mix agents. Cheapest first: fewer enabled steps, then fewer loops. */
+  protected readonly profiles = computed<ProfileCard[]>(() =>
+    [...(this.store.config()?.profiles ?? [])]
+      .sort((a, b) => this.enabledCount(a) - this.enabledCount(b) || a.maxLoops - b.maxLoops)
+      .map((profile) => this.toCard(profile)),
+  );
   protected readonly stepByStep = signal(false);
   protected readonly createPr = signal(false);
   protected readonly submitting = signal(false);
@@ -108,19 +126,6 @@ export class NewRun {
     }
   }
 
-  protected readonly profiles = computed<ProfileCard[]>(() => [
-    {
-      name: AUTO_PROFILE,
-      title: "Automático",
-      description: "Un paso classify (haiku, esfuerzo bajo) lee el ticket y elige el perfil.",
-      steps: [{ label: stepLabel("classify"), detail: "haiku/low" }],
-    },
-    // Cheapest first: fewer enabled steps, then fewer loops.
-    ...[...(this.store.config()?.profiles ?? [])]
-      .sort((a, b) => this.enabledCount(a) - this.enabledCount(b) || a.maxLoops - b.maxLoops)
-      .map((profile) => this.toCard(profile)),
-  ]);
-
   protected readonly selectedTaskCount = computed(() => this.tasks().filter((task) => task.selected).length);
   protected readonly canSubmit = computed(
     () => this.ticketText().trim().length > 0 && this.selectedRepos().length > 0 && !this.submitting(),
@@ -128,6 +133,12 @@ export class NewRun {
 
   protected value(event: Event): string {
     return (event.target as HTMLInputElement | HTMLTextAreaElement).value;
+  }
+
+  protected setAgent(event: Event): void {
+    const agent = this.value(event) as AgentKind;
+    this.agent.set(agent);
+    this.model.set(modelsFor(agent, this.agentInfo.hasValue() ? this.agentInfo.value() : undefined)[0] ?? AGENT_MODELS[agent][0]!);
   }
 
   /** Fills the ticket text and the tasks (child work items or sub-issues) from Azure DevOps or GitHub. No tokens. */
@@ -162,11 +173,6 @@ export class NewRun {
     this.pickerOpen.set(false);
     this.ticketId.set(String(id));
     await this.loadTicket();
-  }
-
-  /** One-line step list for the collapsed profile rows. */
-  protected stepSummary(card: ProfileCard): string {
-    return card.steps.map((step) => step.label).join(" · ");
   }
 
   protected toggleRepo(name: string): void {
@@ -221,7 +227,8 @@ export class NewRun {
         repos: this.selectedRepos(),
         tasks: this.tasks(),
         prompt: this.prompt().trim(),
-        profile: this.profile(),
+        profile: this.profile() === SINGLE_AGENT ? BASE_PROFILE : this.profile(),
+        ...(this.profile() === SINGLE_AGENT ? { modelConfig: { agent: this.agent(), model: this.model(), effort: this.effort() } } : {}),
         stepByStep: this.stepByStep(),
         release: this.createPr() ? "pr" : "local",
       });
@@ -235,28 +242,27 @@ export class NewRun {
     }
   }
 
-  private enabledCount(profile: FlowProfile): number {
-    return Object.values(profile.steps).filter((step) => step?.enabled).length;
-  }
-
   private task(title: string, index: number): TaskItem {
     return { id: `t${index + 1}`, title, selected: true, done: false };
   }
 
+  private enabledCount(profile: FlowProfile): number {
+    return Object.values(profile.steps).filter((step) => step?.enabled).length;
+  }
+
   private toCard(profile: FlowProfile): ProfileCard {
+    const steps = this.store.config()?.steps ?? [];
     return {
       name: profile.name,
       title: profile.name.charAt(0).toUpperCase() + profile.name.slice(1),
       description: profile.description,
       maxLoops: profile.maxLoops,
-      steps: orderSteps(this.store.config()?.steps ?? [])
-        .map((definition) => definition.name)
-        .filter((name) => profile.steps[name]?.enabled)
-        .map((name) => {
-        const step = profile.steps[name]!;
-        const builtin = this.store.config()?.steps.find((definition) => definition.name === name)?.kind === "builtin";
-        return { label: stepLabel(name), detail: builtin ? "sin LLM" : modelDetail(step) };
-      }),
+      steps: orderSteps(steps)
+        .filter((definition) => profile.steps[definition.name]?.enabled)
+        .map((definition) => ({
+          label: stepLabel(definition.name),
+          detail: definition.kind === "builtin" ? "sin LLM" : modelDetail(profile.steps[definition.name]!),
+        })),
     };
   }
 }

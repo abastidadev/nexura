@@ -1,6 +1,6 @@
 import { computed, DestroyRef, effect, inject, Service, signal, type Signal, type WritableSignal } from "@angular/core";
 import { Router } from "@angular/router";
-import type { Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage } from "@nexura/shared";
+import type { Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage, TicketDraft } from "@nexura/shared";
 import { setCustomStepLabels, stepLabel, type Tone } from "./format";
 import { Api, type NexuraConfigView, type StoredEvent } from "./api";
 import { Notifier, type Chime } from "./notifier";
@@ -9,18 +9,23 @@ import { readStorage, writeStorage } from "./storage";
 export { readStorage, writeStorage };
 
 const TABS_KEY = "nexura.tabs";
+const TAB_LABELS_KEY = "nexura.tabLabels";
+const TAB_LABEL_MAX = 60;
 const THEME_KEY = "nexura.theme";
 const RECONNECT_MS = 2000;
 const CLOCK_MS = 1000;
 const NOTIFY_KEY = "nexura.notifications";
+const NOTICES_KEY = "nexura.noticeCenter";
 const UNSEEN_REVIEWS_KEY = "nexura.unseenReviews";
 const TOAST_MS = 8000;
 const MAX_TOASTS = 4;
+const MAX_NOTICES = 30;
 
 /** Where clicking a toast (or its system notification) takes the user. */
 export type ToastLink = { path: string[]; queryParams?: Record<string, string> };
 
 export type Toast = { id: number; title: string; body: string; tone: Tone; runId?: string; link?: ToastLink };
+export type Notice = Toast & { createdAt: number; seen: boolean };
 
 /** A PR review run (Revisiones) rather than a ticket flow. */
 export function isPrReview(run: Run): boolean {
@@ -49,9 +54,10 @@ export class NexuraStore {
   private readonly api = inject(Api);
   private readonly router = inject(Router);
   private readonly notifier = inject(Notifier);
-  private toastSeq = 0;
+  private toastSeq = Date.now();
   private readonly runsById = signal<Record<string, Run>>({});
   private readonly conversationsById = signal<Record<string, Conversation>>({});
+  private readonly ticketDraftsById = signal<Record<string, TicketDraft>>({});
   private readonly eventSignals = new Map<string, WritableSignal<StoredEvent[]>>();
   private readonly loadedEvents = new Set<string>();
   private socket?: WebSocket;
@@ -62,6 +68,8 @@ export class NexuraStore {
   public readonly connected = signal(false);
   public readonly now = signal(Date.now());
   public readonly openTabs = signal<string[]>(readStorage<string[]>(TABS_KEY, []));
+  /** Names the user gave to header tabs (flows, reviews, tickets); terminals rename the conversation itself. */
+  public readonly tabLabels = signal<Record<string, string>>(readStorage<Record<string, string>>(TAB_LABELS_KEY, {}));
   /** What the user picked; "system" follows the OS setting. */
   public readonly themePreference = signal<ThemePreference>(readStorage<ThemePreference>(THEME_KEY, "system"));
   private readonly systemDark = signal(matchMedia("(prefers-color-scheme: dark)").matches);
@@ -72,9 +80,9 @@ export class NexuraStore {
   });
   public readonly settings = signal<NexuraSettings | null>(null);
   public readonly toasts = signal<Toast[]>([]);
+  public readonly notices = signal<Notice[]>(readStorage<Notice[]>(NOTICES_KEY, []).filter((notice) => !notice.seen));
+  public readonly unreadNotices = computed(() => this.notices().filter((notice) => !notice.seen).length);
   public readonly notificationsEnabled = signal<boolean>(readStorage<boolean>(NOTIFY_KEY, false));
-  /** Runs waiting for the user (paused on a breakpoint or an approval). */
-  public readonly needsAttention = computed(() => this.runs().filter((run) => run.status === "paused").length);
   /** PR reviews that finished while the user was not looking at them. */
   public readonly unseenReviews = signal<string[]>(readStorage<string[]>(UNSEEN_REVIEWS_KEY, []));
 
@@ -86,6 +94,9 @@ export class NexuraStore {
     Object.values(this.conversationsById()).sort((a, b) => Number(Boolean(b.pinned)) - Number(Boolean(a.pinned)) || b.updatedAt.localeCompare(a.updatedAt)),
   );
   public readonly runningConversations = computed(() => this.conversations().filter((conversation) => conversation.status === "running").length);
+  /** Tickets section: drafts and created tickets, the most recently touched first. */
+  public readonly ticketDrafts = computed(() => Object.values(this.ticketDraftsById()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+  public readonly thinkingDrafts = computed(() => this.ticketDrafts().filter((draft) => draft.status === "thinking").length);
   public readonly activeCount = computed(
     () => this.runs().filter((run) => !isPrReview(run) && ["running", "queued", "waiting-rate-limit", "paused"].includes(run.status)).length,
   );
@@ -102,10 +113,12 @@ export class NexuraStore {
       this.socket?.close();
     });
     effect(() => writeStorage(TABS_KEY, this.openTabs()));
+    effect(() => writeStorage(TAB_LABELS_KEY, this.tabLabels()));
     effect(() => writeStorage(NOTIFY_KEY, this.notificationsEnabled()));
+    effect(() => writeStorage(NOTICES_KEY, this.notices()));
     effect(() => writeStorage(UNSEEN_REVIEWS_KEY, this.unseenReviews()));
-    // "(n)" on the tab title and the favicon while something waits for the user.
-    effect(() => this.notifier.attention.set(this.needsAttention() + this.unseenReviews().length));
+    // The tab title and favicon show notices that have not been reviewed yet.
+    effect(() => this.notifier.attention.set(this.unreadNotices()));
     effect(() => {
       document.documentElement.classList.toggle("light", this.theme() === "light");
       writeStorage(THEME_KEY, this.themePreference());
@@ -115,12 +128,13 @@ export class NexuraStore {
 
   public async init(): Promise<void> {
     this.connect();
-    const [runs, config, quota, settings, conversations] = await Promise.all([
+    const [runs, config, quota, settings, conversations, drafts] = await Promise.all([
       this.api.listRuns(),
       this.api.getConfig(),
       this.api.getQuota(),
       this.api.getSettings(),
       this.api.listConversations(),
+      this.loadTicketDrafts(),
     ]);
     this.settings.set(settings);
     this.conversationsById.set(Object.fromEntries(conversations.map((conversation) => [conversation.id, conversation])));
@@ -129,9 +143,30 @@ export class NexuraStore {
     if (quota) {
       this.quota.set(quota);
     }
-    // Drop tabs of flows, reviews and terminals that no longer exist.
-    this.openTabs.update((tabs) => tabs.filter((id) => runs.some((run) => run.id === id) || conversations.some((conversation) => conversation.id === id)));
+    // Drop tabs (and their names) of flows, reviews, terminals and tickets that no longer exist.
+    const exists = (id: string): boolean =>
+      runs.some((run) => run.id === id) || conversations.some((conversation) => conversation.id === id) || (drafts ?? []).some((draft) => draft.id === id);
+    this.openTabs.update((tabs) => tabs.filter(exists));
+    this.tabLabels.update((labels) => Object.fromEntries(Object.entries(labels).filter(([id]) => exists(id))));
     this.unseenReviews.update((ids) => ids.filter((id) => runs.some((run) => run.id === id)));
+    // Reviews left unseen by older versions also need an entry in the new center.
+    const unseen = new Set(this.unseenReviews());
+    this.notices.update((notices) => {
+      const missing = runs.filter((run) => unseen.has(run.id) && isPrReview(run) && !notices.some((notice) => notice.runId === run.id));
+      return [
+        ...missing.map((run): Notice => ({
+          id: ++this.toastSeq,
+          title: `PR #${run.request.prReview?.id ?? "?"} · ${run.request.prReview?.title ?? "Revisión terminada"}`,
+          body: "Revisión terminada. Consulta los resultados.",
+          tone: "accent",
+          runId: run.id,
+          link: reviewLink(run),
+          createdAt: Date.now(),
+          seen: false,
+        })),
+        ...notices,
+      ].slice(0, MAX_NOTICES);
+    });
   }
 
   public async reloadConfig(): Promise<void> {
@@ -149,6 +184,29 @@ export class NexuraStore {
 
   public upsertConversation(conversation: Conversation): void {
     this.conversationsById.update((all) => ({ ...all, [conversation.id]: conversation }));
+  }
+
+  /** Drafts of the Tickets section; a failure leaves the rest of the app working. */
+  private async loadTicketDrafts(): Promise<TicketDraft[] | undefined> {
+    const drafts = await this.api.listTicketDrafts().catch(() => undefined);
+    if (drafts) {
+      this.ticketDraftsById.set(Object.fromEntries(drafts.map((draft) => [draft.id, draft])));
+    }
+    return drafts;
+  }
+
+  public ticketDraft(id: string): Signal<TicketDraft | undefined> {
+    return computed(() => this.ticketDraftsById()[id]);
+  }
+
+  public upsertTicketDraft(draft: TicketDraft): void {
+    this.ticketDraftsById.update((all) => ({ ...all, [draft.id]: draft }));
+  }
+
+  public forgetTicketDraft(id: string): void {
+    this.ticketDraftsById.update(({ [id]: _removed, ...rest }) => rest);
+    this.closeTab(id);
+    this.renameTab(id, "");
   }
 
   public forgetConversation(id: string): void {
@@ -179,6 +237,12 @@ export class NexuraStore {
 
   public closeTab(id: string): void {
     this.openTabs.update((tabs) => tabs.filter((tab) => tab !== id));
+  }
+
+  /** The tab's own name; empty = back to the automatic one. */
+  public renameTab(id: string, label: string): void {
+    const name = label.trim().slice(0, TAB_LABEL_MAX);
+    this.tabLabels.update(({ [id]: _previous, ...rest }) => (name ? { ...rest, [id]: name } : rest));
   }
 
   /** Drag & drop of the header tabs: puts `id` right before or after `targetId`. */
@@ -214,6 +278,7 @@ export class NexuraStore {
     this.runsById.update(({ [id]: _removed, ...rest }) => rest);
     this.closeTab(id);
     this.markReviewSeen(id);
+    this.notices.update((notices) => notices.filter((notice) => notice.runId !== id));
     if (this.router.url.startsWith(`/runs/${id}`)) {
       void this.router.navigate(["/runs"]);
     }
@@ -233,6 +298,26 @@ export class NexuraStore {
 
   public dismissToast(id: number): void {
     this.toasts.update((toasts) => toasts.filter((toast) => toast.id !== id));
+  }
+
+  /** Opening the center acknowledges notices, including finished PR reviews, without navigating to them. */
+  public markNoticesSeen(): void {
+    const reviewIds = new Set(this.notices().map((notice) => notice.runId).filter((id): id is string => !!id));
+    this.unseenReviews.update((ids) => ids.filter((id) => !reviewIds.has(id)));
+    this.notices.update((notices) => notices.map((notice) => notice.seen ? notice : { ...notice, seen: true }));
+  }
+
+  /** The reviewed items stay visible while the center is open, then leave the list. */
+  public clearSeenNotices(): void {
+    this.notices.update((notices) => notices.filter((notice) => !notice.seen));
+  }
+
+  public dismissNotice(id: number): void {
+    const notice = this.notices().find((item) => item.id === id);
+    if (notice?.runId) {
+      this.markReviewSeen(notice.runId);
+    }
+    this.notices.update((notices) => notices.filter((item) => item.id !== id));
   }
 
   public openRun(runId: string): void {
@@ -262,6 +347,7 @@ export class NexuraStore {
   public toast(message: Omit<Toast, "id">): void {
     const toast = { ...message, id: ++this.toastSeq };
     this.toasts.update((toasts) => [...toasts, toast].slice(-MAX_TOASTS));
+    this.notices.update((notices) => [{ ...toast, createdAt: Date.now(), seen: false }, ...notices].slice(0, MAX_NOTICES));
     setTimeout(() => this.dismissToast(toast.id), TOAST_MS);
     if (this.notificationsEnabled() && this.notifier.inBackground() && "Notification" in window && Notification.permission === "granted") {
       // Shown by the OS (on Windows, a toast of the notification centre). Nexura plays its own chime.
@@ -269,6 +355,7 @@ export class NexuraStore {
       notification.onclick = () => {
         window.focus();
         notification.close();
+        this.dismissNotice(toast.id);
         this.openToast(message);
       };
     }
@@ -360,6 +447,7 @@ export class NexuraStore {
       void this.api
         .listConversations()
         .then((conversations) => this.conversationsById.set(Object.fromEntries(conversations.map((conversation) => [conversation.id, conversation]))));
+      void this.loadTicketDrafts();
     };
     socket.onmessage = (message) => this.handle(JSON.parse(String(message.data)) as ServerMessage);
     socket.onclose = () => {
@@ -392,6 +480,12 @@ export class NexuraStore {
         break;
       case "conversationDeleted":
         this.forgetConversation(message.id);
+        break;
+      case "ticketDraft":
+        this.upsertTicketDraft(message.draft);
+        break;
+      case "ticketDraftDeleted":
+        this.forgetTicketDraft(message.id);
         break;
       case "event":
         this.eventSignal(message.stepRunId).update((current) =>

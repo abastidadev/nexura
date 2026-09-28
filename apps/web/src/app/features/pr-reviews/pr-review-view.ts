@@ -22,9 +22,9 @@ type Draft = { selected: boolean; post: string };
   imports: [StatusPill, EventTimeline, PrReviewCommentCard, Icon],
   template: `
     @let target = run().request.prReview;
-    <header class="flex flex-wrap items-start gap-3 border-b border-border px-5 py-3">
+    <header class="flex flex-wrap items-center gap-3 border-b border-border px-5 py-2.5">
       <div class="min-w-0 flex-1">
-        <div class="flex flex-wrap items-center gap-2">
+        @if (showTarget()) {
           <h2 class="text-md font-semibold tracking-tight">
             @if (target) {
               <a class="hover:underline" [href]="target.url" target="_blank" rel="noopener">PR #{{ target.id }}</a> · {{ target.title }}
@@ -32,20 +32,20 @@ type Draft = { selected: boolean; post: string };
               {{ run().request.ticketText }}
             }
           </h2>
-          <nx-status-pill [tone]="status().tone" [label]="status().label" [live]="status().live" />
-        </div>
-        <p class="mt-0.5 text-sm text-muted">
-          @if (target) {
+        }
+        <p class="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm text-muted">
+          <nx-status-pill [tone]="status().tone" [label]="cancelling() ? 'Cancelando…' : status().label" [live]="status().live" />
+          @if (showTarget() && target) {
             <span class="font-mono">{{ target.sourceBranch }} → {{ target.targetBranch }}</span> · {{ target.author }} ·
           }
-          {{ agentLabel() }} {{ run().request.reviewConfig?.model }} ({{ run().request.reviewConfig?.effort }}) · {{ timeOfDay(run().createdAt) }} ·
-          {{ duration() }}
+          <span>{{ agentLabel() }} {{ run().request.reviewConfig?.model }} ({{ run().request.reviewConfig?.effort }}) · {{ timeOfDay(run().createdAt) }} · {{ duration() }}</span>
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
         @if (active()) {
-          <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="cancel()">
-            Cancelar
+          <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy() || cancelling()" (click)="cancel()">
+            <nx-icon name="stop" [size]="14" />
+            {{ cancelling() ? "Cancelando…" : "Cancelar" }}
           </button>
         } @else {
           @if (run().status === "failed" || run().status === "cancelled") {
@@ -53,15 +53,17 @@ type Draft = { selected: boolean; post: string };
               Reintentar
             </button>
           }
-          <button
-            type="button"
-            class="nx-btn nx-btn-sm"
-            [disabled]="busy()"
-            title="Lanza una revisión nueva del estado actual de la PR"
-            (click)="rereview.emit()"
-          >
-            Volver a revisar
-          </button>
+          @if (canRereview()) {
+            <button
+              type="button"
+              class="nx-btn nx-btn-sm"
+              [disabled]="busy()"
+              title="Elige agente y modelo y lanza una revisión nueva del estado actual de la PR"
+              (click)="rereview.emit()"
+            >
+              Revisar de nuevo…
+            </button>
+          }
           <button type="button" class="nx-btn nx-btn-sm nx-btn-ghost hover:text-err!" [disabled]="busy()" title="Borrar esta revisión" (click)="remove()"><nx-icon name="trash" [size]="15" /></button>
         }
       </div>
@@ -88,7 +90,7 @@ type Draft = { selected: boolean; post: string };
         @if (outdated()) {
           <p class="mb-3 rounded-md border border-warn/40 bg-warn-soft px-3 py-2 text-warn" role="status">
             La PR tiene commits nuevos desde esta revisión: no se puede votar sobre ellos. En GitHub los comentarios se anclan al commit revisado; en
-            Azure DevOps irán como comentarios generales citando fichero y línea. «Volver a revisar» revisa el último commit.
+            Azure DevOps irán como comentarios generales citando fichero y línea. «Revisar de nuevo» revisa el último commit.
           </p>
         }
         @if (!result.published && result.postedIds?.length) {
@@ -211,6 +213,10 @@ export class PrReviewView {
   public readonly run = input.required<Run>();
   /** Head commit of the PR right now (from the list); another one than the reviewed = outdated. */
   public readonly currentHead = input<string>();
+  /** Shows the PR's title and branches (when no PR header sits above, e.g. a PR already closed). */
+  public readonly showTarget = input(false);
+  /** The PR is still open: a new review can be launched. */
+  public readonly canRereview = input(true);
   public readonly rereview = output<void>();
   public readonly deleted = output<void>();
 
@@ -226,6 +232,9 @@ export class PrReviewView {
 
   protected readonly status = computed(() => RUN_STATUS[this.run().status]);
   protected readonly active = computed(() => ["queued", "running", "waiting-rate-limit", "paused"].includes(this.run().status));
+  /** From the click until the run stops: the server may need a moment (checkout, cleanup). Reset on every start and stop. */
+  private readonly cancelRequested = linkedSignal({ source: () => `${this.run().id}:${this.active()}`, computation: () => false });
+  protected readonly cancelling = computed(() => this.cancelRequested() && this.active());
   protected readonly agentLabel = computed(() => AGENT_LABELS[agentOf(this.run().request.reviewConfig)]);
   protected readonly duration = computed(() => {
     const step = this.run().steps.at(-1);
@@ -313,8 +322,12 @@ export class PrReviewView {
     return this.act(async () => this.store.upsertRun(await this.api.publishPrReview(this.run().id, { comments, vote })), "No se pudo publicar en la PR");
   }
 
-  protected cancel(): Promise<void> {
-    return this.act(() => this.api.cancel(this.run().id), "No se pudo cancelar");
+  protected async cancel(): Promise<void> {
+    this.cancelRequested.set(true);
+    await this.act(() => this.api.cancel(this.run().id), "No se pudo cancelar");
+    if (this.error()) {
+      this.cancelRequested.set(false);
+    }
   }
 
   protected retry(): Promise<void> {

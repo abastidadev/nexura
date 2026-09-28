@@ -5,8 +5,18 @@
     "commitMessage": { "type": "string", "description": "Conventional commit: type(scope): subject" },
     "tasksDone": { "type": "array", "items": { "type": "string" }, "description": "Ids de las tareas completadas" },
     "filesChanged": { "type": "array", "items": { "type": "string" } },
-    "notes": { "type": "string" }
+    "notes": { "type": "string" },
+    "prDescriptions": {
+      "type": "array",
+      "description": "Descripción de PR por repositorio, en el idioma que exijan sus convenciones.",
+      "items": {
+        "type": "object",
+        "properties": { "repo": { "type": "string" }, "description": { "type": "string" } },
+        "required": ["repo", "description"],
+        "additionalProperties": false
+      }
+    }
   },
-  "required": ["summary", "commitMessage", "tasksDone", "filesChanged", "notes"],
+  "required": ["summary", "commitMessage", "tasksDone", "filesChanged", "notes", "prDescriptions"],
   "additionalProperties": false
 }

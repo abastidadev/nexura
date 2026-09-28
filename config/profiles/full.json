@@ -4,11 +4,6 @@
   "maxLoops": 3,
   "reviewMode": "blind",
   "steps": {
-    "enrich": {
-      "model": "sonnet",
-      "effort": "medium",
-      "enabled": true
-    },
     "plan": {
       "model": "opus",
       "effort": "high",

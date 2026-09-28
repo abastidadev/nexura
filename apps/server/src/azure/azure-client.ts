@@ -37,11 +37,14 @@ export async function azureToken(): Promise<string> {
   }
 }
 
-/** JSON request against dev.azure.com; `path` is relative to the organisation, e.g. `Schedule/_apis/git/...`. */
+/**
+ * JSON request against dev.azure.com; `path` is relative to the organisation, e.g. `Schedule/_apis/git/...`.
+ * `contentType` for the few endpoints that want another one (creating a work item takes `application/json-patch+json`).
+ */
 export async function azureRequest<T>(
   organization: string,
   path: string,
-  init: { method?: string; body?: unknown; apiVersion?: string } = {},
+  init: { method?: string; body?: unknown; apiVersion?: string; contentType?: string } = {},
 ): Promise<T> {
   const url = new URL(`https://dev.azure.com/${organization}/${path}`);
   if (!url.searchParams.has("api-version")) {
@@ -51,7 +54,7 @@ export async function azureRequest<T>(
     method: init.method ?? "GET",
     headers: {
       authorization: `Bearer ${await azureToken()}`,
-      "content-type": "application/json",
+      "content-type": init.contentType ?? "application/json",
       accept: "application/json",
     },
     body: init.body === undefined ? undefined : JSON.stringify(init.body),

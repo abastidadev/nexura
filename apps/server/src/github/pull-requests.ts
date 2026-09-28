@@ -1,4 +1,4 @@
-import type { CreatedPr, PrDraft, PrVote, PullRequestSummary, ReviewReply, ReviewThread, Worktree } from "@nexura/shared";
+import type { CreatedPr, PrDraft, PrFileStatus, PrReviewerState, PrVote, PullRequestDetail, PullRequestSummary, ReviewReply, ReviewThread, Worktree } from "@nexura/shared";
 import { isInlinePost, type ReviewPost } from "../forge/review-post.ts";
 import { git, stripAttribution } from "../workspace/git.ts";
 import { githubGraphql, githubRequest } from "./github-client.ts";
@@ -31,6 +31,72 @@ export async function listOpenPrs(remote: GithubRepo): Promise<PullRequestSummar
     createdAt: pull.created_at,
     headSha: pull.head.sha,
   }));
+}
+
+type ApiPullDetail = ApiPull & {
+  additions?: number;
+  deletions?: number;
+  commits?: number;
+  changed_files?: number;
+  labels?: { name: string }[];
+  requested_reviewers?: { login?: string }[];
+};
+
+type ApiFile = { filename: string; status: string; additions?: number; deletions?: number };
+
+const FILE_STATUS: Record<string, PrFileStatus> = { added: "added", removed: "deleted", renamed: "renamed" };
+
+const REVIEW_STATE: Record<string, PrReviewerState> = { APPROVED: "approved", CHANGES_REQUESTED: "waiting", COMMENTED: "commented" };
+
+const LINKED_ISSUES_QUERY = `
+  query ($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        closingIssuesReferences(first: 20) { nodes { number title url } }
+      }
+    }
+  }`;
+
+/**
+ * What the PR changes and who looks at it: files (the first 100), line counts, labels,
+ * reviewers (their latest review, or pending when requested) and the issues it closes. No tokens.
+ */
+export async function getPrDetail(remote: GithubRepo, prId: number): Promise<PullRequestDetail> {
+  const base = `${repoApiPath(remote)}/pulls/${prId}`;
+  const [pull, files, reviews, linked] = await Promise.all([
+    githubRequest<ApiPullDetail>(base),
+    githubRequest<ApiFile[]>(`${base}/files?per_page=100`),
+    githubRequest<{ user?: { login?: string } | null; state: string }[]>(`${base}/reviews?per_page=100`),
+    // Linked issues are a nice-to-have: without them the rest still shows.
+    githubGraphql<{ repository: { pullRequest: { closingIssuesReferences?: { nodes: { number: number; title: string; url: string }[] } } | null } | null }>(
+      LINKED_ISSUES_QUERY,
+      { owner: remote.owner, name: remote.repo, number: prId },
+    ).catch(() => undefined),
+  ]);
+  const reviewers = new Map<string, PrReviewerState>();
+  for (const review of reviews) {
+    const state = REVIEW_STATE[review.state];
+    const login = review.user?.login;
+    // A later comment does not undo an approval or a change request.
+    if (login && state && !(state === "commented" && reviewers.has(login))) {
+      reviewers.set(login, state);
+    }
+  }
+  for (const requested of pull.requested_reviewers ?? []) {
+    if (requested.login) {
+      reviewers.set(requested.login, "pending");
+    }
+  }
+  return {
+    files: files.map((file) => ({ path: file.filename, status: FILE_STATUS[file.status] ?? "modified", additions: file.additions, deletions: file.deletions })),
+    changedFiles: pull.changed_files ?? files.length,
+    additions: pull.additions,
+    deletions: pull.deletions,
+    commits: pull.commits,
+    labels: (pull.labels ?? []).map((label) => label.name),
+    reviewers: [...reviewers].map(([name, state]) => ({ name, state })),
+    tickets: (linked?.repository?.pullRequest?.closingIssuesReferences?.nodes ?? []).map((issue) => ({ id: String(issue.number), title: issue.title, url: issue.url })),
+  };
 }
 
 /** GitHub has no "approved with suggestions": it is an approval that carries the comments. */

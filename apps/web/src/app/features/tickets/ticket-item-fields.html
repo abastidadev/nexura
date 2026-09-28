@@ -1,0 +1,133 @@
+@let current = item();
+<div class="flex flex-col gap-4">
+  <div class="flex flex-wrap items-center gap-2">
+    <div class="nx-seg" role="radiogroup" aria-label="Tipo">
+      @for (kind of kinds; track kind) {
+        <button type="button" role="radio" [class.nx-seg-on]="current.kind === kind" [attr.aria-checked]="current.kind === kind" [disabled]="disabled()" (click)="patch({ kind })">
+          {{ kindLabels[kind] }}
+        </button>
+      }
+    </div>
+    <div class="nx-seg" role="radiogroup" aria-label="Lado">
+      @for (side of sides; track side) {
+        <button type="button" role="radio" [class.nx-seg-on]="current.side === side" [attr.aria-checked]="current.side === side" [disabled]="disabled()" (click)="patch({ side })">
+          {{ sideLabels[side] }}
+        </button>
+      }
+    </div>
+  </div>
+
+  <label class="flex flex-col gap-1.5">
+    <span class="nx-label">Título</span>
+    <input class="nx-input" [value]="current.title" [disabled]="disabled()" (input)="patch({ title: $any($event.target).value })" />
+  </label>
+
+  @if (current.kind === "story") {
+    <label class="flex flex-col gap-1.5">
+      <span class="nx-label">Descripción</span>
+      <textarea class="nx-input font-mono text-sm" rows="9" [value]="current.description" [disabled]="disabled()" (input)="patch({ description: $any($event.target).value })"></textarea>
+    </label>
+    <label class="flex flex-col gap-1.5">
+      <span class="nx-label">Criterios de aceptación</span>
+      <textarea class="nx-input font-mono text-sm" rows="11" [value]="current.acceptanceCriteria" [disabled]="disabled()" (input)="patch({ acceptanceCriteria: $any($event.target).value })"></textarea>
+    </label>
+  } @else {
+    <label class="flex flex-col gap-1.5">
+      <span class="nx-label">Pasos para reproducir</span>
+      <textarea class="nx-input font-mono text-sm" rows="14" [value]="current.reproSteps" [disabled]="disabled()" (input)="patch({ reproSteps: $any($event.target).value })"></textarea>
+    </label>
+  }
+  <p class="nx-hint -mt-2">El asistente los rellena por ti. Los <code>**Encabezados:**</code> salen en negrita y las listas con guiones se pueden anidar con dos espacios.</p>
+
+  <div class="flex flex-col gap-1.5">
+    <span class="nx-label">{{ source() === "github" ? "Etiquetas" : "Tags" }}</span>
+    <div class="flex flex-wrap items-center gap-1.5">
+      @for (tag of current.tags; track tag) {
+        <span class="inline-flex items-center gap-1 rounded-full bg-surface-3 py-0.5 pr-1 pl-2.5 text-sm">
+          {{ tag }}
+          <button type="button" class="nx-icon-btn size-5" [attr.aria-label]="'Quitar ' + tag" [disabled]="disabled()" (click)="removeTag(tag)"><nx-icon name="x" [size]="12" /></button>
+        </span>
+      }
+      @if (source() === "azure") {
+        <input
+          class="nx-input w-36 py-1 text-sm"
+          placeholder="Añadir tag…"
+          aria-label="Añadir tag"
+          [disabled]="disabled()"
+          [value]="newTag()"
+          (input)="newTag.set($any($event.target).value)"
+          (keydown)="onTagKey($event)"
+          (blur)="addTag(newTag())"
+        />
+      }
+    </div>
+    @if (source() === "github" && labelSuggestions().length && !disabled()) {
+      <div class="flex flex-wrap gap-1.5">
+        @for (label of labelSuggestions(); track label) {
+          <button type="button" class="rounded-full border border-dashed border-border px-2.5 py-0.5 text-sm text-fg-soft hover:bg-surface-2" (click)="addTag(label)">+ {{ label }}</button>
+        }
+      </div>
+    }
+  </div>
+
+  <fieldset class="flex flex-col gap-3 rounded-md border border-border p-3">
+    <legend class="px-1 text-sm font-semibold">Dónde va</legend>
+    @if (options.error()) {
+      <p class="rounded-md border border-warn/40 bg-warn-soft px-2.5 py-1.5 text-sm text-warn" role="alert">{{ optionsError() }}</p>
+    }
+    <div class="grid gap-3 sm:grid-cols-2">
+      <label class="flex flex-col gap-1.5">
+        <span class="nx-label">Proyecto</span>
+        <select class="nx-input" [disabled]="disabled()" (change)="patch({ repo: $any($event.target).value, iteration: '', assignee: '', team: undefined, areaPath: '' })">
+          @for (repo of repos(); track repo) {
+            <option [value]="repo" [selected]="repo === current.repo">{{ repo }}</option>
+          }
+        </select>
+      </label>
+      @if (teams().length > 1) {
+        <label class="flex flex-col gap-1.5">
+          <span class="nx-label">Equipo</span>
+          <select class="nx-input" [disabled]="disabled()" (change)="patch({ team: $any($event.target).value, iteration: '', assignee: '' })">
+            @for (team of teams(); track team) {
+              <option [value]="team" [selected]="team === (current.team ?? defaultTeam())">{{ team }}</option>
+            }
+          </select>
+        </label>
+      }
+      <label class="flex flex-col gap-1.5">
+        <span class="nx-label">Sprint</span>
+        <select class="nx-input" [disabled]="disabled() || options.isLoading()" (change)="patch({ iteration: $any($event.target).value })">
+          <option value="" [selected]="!current.iteration">Sin sprint (backlog)</option>
+          @for (iteration of iterations(); track iteration.value) {
+            <option [value]="iteration.value" [selected]="iteration.value === current.iteration">{{ iteration.name }}{{ iteration.current ? " (actual)" : "" }}</option>
+          }
+        </select>
+      </label>
+      <label class="flex flex-col gap-1.5">
+        <span class="nx-label">Asignado a</span>
+        <select class="nx-input" [disabled]="disabled() || options.isLoading()" (change)="patch({ assignee: $any($event.target).value })">
+          <option value="" [selected]="!current.assignee">Sin asignar</option>
+          @for (person of people(); track person.value) {
+            <option [value]="person.value" [selected]="person.value === current.assignee">{{ person.value === me() ? "Yo (" + person.name + ")" : person.name }}</option>
+          }
+        </select>
+      </label>
+    </div>
+    @if (source() === "azure") {
+      <details class="group">
+        <summary class="cursor-pointer text-sm text-fg-soft select-none">Área</summary>
+        <input
+          class="nx-input mt-2 w-full"
+          aria-label="Área"
+          [placeholder]="defaultArea() ? 'La del equipo: ' + defaultArea() : 'La del equipo'"
+          [value]="current.areaPath"
+          [disabled]="disabled()"
+          (input)="patch({ areaPath: $any($event.target).value })"
+        />
+      </details>
+    }
+    @if (options.isLoading()) {
+      <p class="nx-hint">Consultando sprints y personas…</p>
+    }
+  </fieldset>
+</div>

@@ -1,5 +1,18 @@
-import type { RepoConfig, TicketDetails, TicketSource, WorkItemScope, WorkItemSummary } from "@nexura/shared";
+import type {
+  CreatedTicket,
+  RepoConfig,
+  TicketDetails,
+  TicketItem,
+  TicketKind,
+  TicketOptions,
+  TicketSample,
+  TicketSource,
+  WorkItemScope,
+  WorkItemSummary,
+} from "@nexura/shared";
+import { createWorkItem, similarWorkItems, ticketOptionsAzure, workItemApiUrl } from "../azure/work-item-create.ts";
 import { getTicket, listOpenTickets } from "../azure/work-items.ts";
+import { createIssue, similarIssues, ticketOptionsGithub } from "../github/issue-create.ts";
 import { getIssue, listOpenIssues } from "../github/issues.ts";
 import { parseOwnerRepo } from "../github/repo-remote.ts";
 import { PROVIDER_LABEL, repoRemoteOf } from "./remote.ts";
@@ -44,6 +57,56 @@ export function loadTicket(target: TicketTarget, id: number): Promise<TicketDeta
 /** Open work items or issues for the picker. Zero tokens. */
 export function listTickets(target: TicketTarget, scope: WorkItemScope): Promise<WorkItemSummary[]> {
   return target.source === "azure" ? listOpenTickets(target.organization, scope, target.project) : listOpenIssues(target, scope);
+}
+
+function projectOf(target: Extract<TicketTarget, { source: "azure" }>): string {
+  if (!target.project) {
+    throw new Error("Falta el proyecto de Azure DevOps (define NEXURA_AZURE_PROJECT o usa un repo de Azure DevOps)");
+  }
+  return target.project;
+}
+
+/** Sprints, people, types, labels and default area for a new ticket. Zero tokens. */
+export function ticketOptions(target: TicketTarget, team?: string): Promise<TicketOptions> {
+  return target.source === "azure" ? ticketOptionsAzure(target.organization, projectOf(target), team) : ticketOptionsGithub(target);
+}
+
+/** The latest tickets of that kind on the board, as the team's style for the assistant. Zero tokens. */
+export function similarTickets(target: TicketTarget, kind: TicketKind, types: TicketOptions["types"]): Promise<TicketSample[]> {
+  return target.source === "azure" ? similarWorkItems(target.organization, projectOf(target), types[kind]) : similarIssues(target, kind, types);
+}
+
+/**
+ * Creates the items that are not on the board yet, in order, each linked to the one created
+ * before it (Azure: a Related link; GitHub: a `Related:` line on both). `saved` runs after each
+ * one, so a failure halfway keeps what was created and a retry does not duplicate it.
+ */
+export async function createTickets(
+  items: TicketItem[],
+  targetOf: (item: TicketItem) => Promise<TicketTarget>,
+  saved: (items: TicketItem[]) => void,
+): Promise<TicketItem[]> {
+  const result = items.map((item) => ({ ...item }));
+  for (const item of result) {
+    if (item.created) {
+      continue;
+    }
+    const target = await targetOf(item);
+    const options = await ticketOptions(target, item.team);
+    const previous = result.find((other) => other !== item && other.created);
+    const previousTarget = previous ? await targetOf(previous) : undefined;
+    let created: CreatedTicket;
+    if (target.source === "azure") {
+      const relatedUrl = previous && previousTarget?.source === "azure" ? workItemApiUrl(previousTarget.organization, previous.created!.id) : undefined;
+      created = await createWorkItem(target.organization, projectOf(target), item, options, relatedUrl);
+    } else {
+      const related = previous && previousTarget?.source === "github" ? { remote: previousTarget, number: previous.created!.id } : undefined;
+      created = await createIssue(target, item, options, related);
+    }
+    item.created = created;
+    saved(result);
+  }
+  return result;
 }
 
 /** The ticket as the text the flow works from (title first, as the form expects). */

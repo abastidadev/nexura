@@ -2,7 +2,7 @@ import { existsSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { NexuraEvent } from "@nexura/shared";
-import { LineSplitter, normalize, parseLine } from "./stream-parser.ts";
+import { LineSplitter, normalize, parseLine, StreamUsage, usageBeyond } from "./stream-parser.ts";
 import { buildClaudeArgs } from "./claude-args.ts";
 import { claudeAdapter } from "./claude-adapter.ts";
 import { claudeEnv } from "./claude-process.ts";
@@ -169,5 +169,57 @@ describe("claudeEnv", () => {
       PATH: "p",
     });
     expect(env).toEqual({ CLAUDE_CONFIG_DIR: "C:/cfg", ANTHROPIC_API_KEY: "k", PATH: "p" });
+  });
+});
+
+describe("StreamUsage", () => {
+  const assistant = (id: string, usage: Record<string, number>, parent: string | null = null) => ({
+    type: "assistant",
+    parent_tool_use_id: parent,
+    message: { id, usage },
+  });
+
+  it("counts each message once, with its largest value per field", () => {
+    const tracker = new StreamUsage();
+    tracker.push(assistant("m1", { input_tokens: 2, output_tokens: 3, cache_read_input_tokens: 100, cache_creation_input_tokens: 10 }));
+    tracker.push(assistant("m1", { input_tokens: 2, output_tokens: 40, cache_read_input_tokens: 100, cache_creation_input_tokens: 10 }));
+    tracker.push(assistant("m2", { input_tokens: 1, output_tokens: 5, cache_read_input_tokens: 200, cache_creation_input_tokens: 0 }, "toolu_1"));
+    tracker.push({ type: "user", message: { id: "m3", usage: { input_tokens: 999 } } });
+    expect(tracker.total()).toEqual({ inputTokens: 3, outputTokens: 45, cacheReadTokens: 300, cacheCreationTokens: 10, thinkingTokens: 0 });
+  });
+
+  it("measures the main agent's first call (cache read or written) and the context size at its last one", () => {
+    const tracker = new StreamUsage();
+    expect(tracker.firstCall()).toBeUndefined();
+    expect(tracker.contextTokens()).toBeUndefined();
+    tracker.push(assistant("m1", { input_tokens: 5, output_tokens: 1, cache_read_input_tokens: 90_000, cache_creation_input_tokens: 800 }));
+    tracker.push(assistant("sub", { input_tokens: 3, output_tokens: 1, cache_read_input_tokens: 0, cache_creation_input_tokens: 40_000 }, "toolu_1"));
+    tracker.push(assistant("m2", { input_tokens: 7, output_tokens: 2, cache_read_input_tokens: 90_800, cache_creation_input_tokens: 1200 }));
+    expect(tracker.firstCall()).toMatchObject({ cacheReadTokens: 90_000, cacheCreationTokens: 800 });
+    // A subagent's own conversation is not the main context.
+    expect(tracker.contextTokens()).toBe(7 + 90_800 + 1200);
+  });
+
+  it("reports only what the final result left out", () => {
+    const observed = { inputTokens: 5, outputTokens: 10, cacheReadTokens: 900, cacheCreationTokens: 50, thinkingTokens: 0 };
+    const reported = { inputTokens: 5, outputTokens: 200, cacheReadTokens: 300, cacheCreationTokens: 50, thinkingTokens: 0 };
+    expect(usageBeyond(observed, reported)).toEqual({ inputTokens: 0, outputTokens: 0, cacheReadTokens: 600, cacheCreationTokens: 0, thinkingTokens: 0 });
+    expect(usageBeyond(observed, observed)).toBeUndefined();
+    expect(usageBeyond(observed, undefined)).toEqual(observed);
+  });
+
+  it("finds nothing unreported in a complete recorded run", () => {
+    const text = readFileSync(join(FIXTURES, "03-tool-use.jsonl"), "utf8");
+    const tracker = new StreamUsage();
+    let result: Record<string, number> | undefined;
+    for (const line of text.split(/\r?\n/).filter(Boolean)) {
+      const raw = parseLine(line);
+      tracker.push(raw);
+      if (raw?.type === "result") {
+        result = raw.usage;
+      }
+    }
+    const reported = { inputTokens: result!.input_tokens!, outputTokens: result!.output_tokens!, cacheReadTokens: result!.cache_read_input_tokens!, cacheCreationTokens: result!.cache_creation_input_tokens!, thinkingTokens: 0 };
+    expect(usageBeyond(tracker.total(), reported)).toBeUndefined();
   });
 });

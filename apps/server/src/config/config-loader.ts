@@ -73,8 +73,8 @@ export function saveStepPrompt(step: StepName, template: string, configDir = CON
 }
 
 const PROFILE_NAME = /^[a-z0-9-]+$/;
-const CLAUDE_MODELS = new Set(["haiku", "sonnet", "opus"]);
-const EFFORTS = new Set(["low", "medium", "high", "xhigh"]);
+const CLAUDE_MODELS = new Set(["haiku", "sonnet", "opus", "fable"]);
+export const EFFORTS: ReadonlySet<string> = new Set(["low", "medium", "high", "xhigh"]);
 /** A model id goes to the CLI as an argument: no leading dash, no spaces or quotes. */
 const MODEL_ID = /^[A-Za-z0-9][A-Za-z0-9._:/[\]-]{0,79}$/;
 
@@ -105,6 +105,9 @@ function profileFile(name: string, configDir: string): string {
 
 export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void {
   const file = profileFile(profile.name, configDir);
+  if (profile.autoSelect !== undefined && typeof profile.autoSelect !== "boolean") {
+    throw new Error("autoSelect debe ser booleano");
+  }
   if (!Number.isInteger(profile.maxLoops) || profile.maxLoops < 0) {
     throw new Error("maxLoops debe ser un entero >= 0");
   }
@@ -136,6 +139,7 @@ export function saveProfile(profile: FlowProfile, configDir = CONFIG_DIR): void 
     description: profile.description ?? "",
     maxLoops: profile.maxLoops,
     steps,
+    ...(profile.autoSelect !== undefined ? { autoSelect: profile.autoSelect } : {}),
     ...(profile.budgetUsd !== undefined ? { budgetUsd: profile.budgetUsd } : {}),
     ...(profile.reviewMode === "blind" ? { reviewMode: "blind" as const } : {}),
     ...(judgeB ? { judgeB } : {}),
@@ -184,7 +188,7 @@ export function saveStepDefinition(step: StepName, update: StepDefinitionUpdate,
   }
   const mcpServers = [...new Set(list(update.mcpServers))];
   // Names end up in `--allowedTools mcp__<name>` (comma separated) and in Codex's TOML keys.
-  const invalid = mcpServers.filter((name) => name !== "*" && !/^[\w-]+$/.test(name));
+  const invalid = mcpServers.filter((name) => name !== "*" && name !== "@auto" && !/^[\w-]+$/.test(name));
   if (invalid.length) {
     throw new Error(`Nombre de servidor MCP no válido: ${invalid.join(", ")} (letras, números, _ o -)`);
   }

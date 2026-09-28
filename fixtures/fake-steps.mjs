@@ -7,7 +7,7 @@
 //   FAKE_REVIEW_REJECTS   how many times codeReview answers "changes" before approving
 //                         (counts calls: a blind review makes two per round, whatever their agents)
 //   FAKE_REVIEW_SPLIT     each rejecting codeReview call flags a different file, so blind judges disagree
-//   FAKE_FAIL_MARKER      if the prompt contains it, enrich fails (unless resumed/overridden)
+//   FAKE_FAIL_MARKER      if the prompt contains it, enrich or plan (the investigating phase) fails (unless resumed/overridden)
 //   FAKE_DELAY_MS         pause between events, to watch a flow live in the UI (default 0)
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
@@ -27,6 +27,11 @@ export function bump(step) {
 
 /** The step a prompt belongs to: every template starts with "Eres el paso **<step>**"; classify with "Clasifica". */
 export function detectStep(prompt, resumed) {
+  // Automatic corrections keep a typed step prompt even when continuing a session.
+  const named = /paso \*\*(\w+)\*\*/.exec(prompt)?.[1];
+  if (named) {
+    return named;
+  }
   if (resumed) {
     return "resumed";
   }
@@ -55,17 +60,28 @@ export function stepAnswer({ step, count, prompt, hasSchema }) {
       output = { summary: "fake", relevantFiles: [], conventions: ["Usa inject() en vez de constructores"], risks: [], openQuestions: [] };
       break;
     case "plan":
-      output = { approach: "fake", changes: [], acceptanceCriteria: [{ description: "check", command: "npm run check" }] };
+      if (process.env.FAKE_FAIL_MARKER && prompt.includes(process.env.FAKE_FAIL_MARKER)) {
+        error = "fake plan failure";
+      }
+      output = {
+        approach: "fake",
+        changes: [],
+        acceptanceCriteria: [{ description: "check", command: "npm run check", repo: /- \*\*([^*]+)\*\*:/.exec(prompt)?.[1] ?? "sandbox", workdir: "." }],
+        conventions: ["Usa inject() en vez de constructores"],
+      };
       break;
     case "implement":
       writeFileSync(join(process.cwd(), `impl-${count}.txt`), `implement ${count}\n`);
-      writeFileSync(join(process.cwd(), "done.txt"), "ok\n");
+      if (!(process.env.FAKE_QA_FAIL_ONCE === "1" && count === 1)) {
+        writeFileSync(join(process.cwd(), "done.txt"), "ok\n");
+      }
       output = {
         summary: `implement ${count}`,
         commitMessage: `feat(fake): implement ${count}`,
         tasksDone: ["t1"],
         filesChanged: [`impl-${count}.txt`],
         notes: prompt.includes("[major]") ? "arreglado feedback" : "",
+        prDescriptions: [{ repo: "sandbox", description: `Implement change ${count}. Verified with npm run check.` }],
       };
       break;
     case "codeReview": {
@@ -146,6 +162,9 @@ export function stepAnswer({ step, count, prompt, hasSchema }) {
     case "resumed":
       output = { summary: "fake", relevantFiles: [], conventions: [], risks: [], openQuestions: [] };
       break;
+    case "ticketDraft":
+      output = ticketDraftAnswer(prompt);
+      break;
     default:
       if (hasSchema) {
         error = `fake: unknown step for prompt: ${prompt.slice(0, 80)}`;
@@ -156,6 +175,52 @@ export function stepAnswer({ step, count, prompt, hasSchema }) {
       }
   }
   return { output, error, text };
+}
+
+/**
+ * The Tickets assistant: the first turn asks two questions over a half-written bug, an answer
+ * completes it, and «Dividir en frontend y backend» returns the two linked items.
+ */
+function ticketDraftAnswer(prompt) {
+  const board = { areaPath: "", sprint: "current" };
+  const bug = (side, reproSteps) => ({ side, kind: "bug", title: `Orders / History – ${side === "frontend" ? "Empty status column" : "BFF - Orders. Status missing"}`, description: "", acceptanceCriteria: "", reproSteps, tags: [side === "frontend" ? "Frontend" : "Backend"] });
+  if (prompt.includes("Dividir en frontend y backend")) {
+    return {
+      message: "He separado el trabajo en dos: la pantalla (frontend) y los datos (backend).",
+      questions: [],
+      items: [
+        bug("frontend", "**Error description:**\n\nThe status column is empty.\n\n**Steps to reproduce the error:**\n\n1. Log in with the user demo.\n2. Open Orders / History.\n\n**Expected behavior:**\n\n- The status is shown."),
+        bug("backend", "**Error description:**\n\nThe orders endpoint returns no status.\n\n**Steps to reproduce the error:**\n\n1. Log in with the user demo.\n2. Inspect the orders request.\n\n**Expected behavior:**\n\n- Every order has its status."),
+      ],
+      board,
+      suggestSplit: false,
+      missing: [],
+      ready: true,
+    };
+  }
+  if (prompt.includes("## Lo que dice la persona")) {
+    return {
+      message: "Listo: con eso el bug queda completo. Revísalo y créalo cuando quieras.",
+      questions: [],
+      items: [bug("frontend", "**Error description:**\n\nWhen logging in with the user demo and opening Orders / History, the status column is empty.\n\n**Steps to reproduce the error:**\n\n1. Log in with the user demo.\n2. Navigate to Orders / History.\n3. Look at the Status column.\n\n**Expected behavior:**\n\n- Every order shows its status.\n  - Also the cancelled ones.\n- An empty column is never rendered.")],
+      board,
+      suggestSplit: true,
+      missing: [],
+      ready: true,
+    };
+  }
+  return {
+    message: "Entiendo que en el historial de pedidos no se ve el estado. He mirado la pantalla Pedidos / Historial.",
+    questions: [
+      { text: "¿Con qué usuario lo has visto?", options: ["demo", "admin", "Con todos"] },
+      { text: "¿Pasa con todos los pedidos?", options: ["Sí, con todos", "Solo con algunos"] },
+    ],
+    items: [bug("frontend", "**Error description:**\n\nThe status column of Orders / History is empty.")],
+    board,
+    suggestSplit: false,
+    missing: ["La cuenta con la que se reproduce"],
+    ready: false,
+  };
 }
 
 /** Keeps what a fake codex/copilot received, for the tests: `<agent>-<step>-<count>.json`. */

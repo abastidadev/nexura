@@ -6,6 +6,7 @@ Para cada hilo decide, con criterio y sin dar la razón por defecto:
 - `wontFix`: no procede cambiarlo; da el motivo técnico en una línea.
 
 Reglas:
+- Trabaja directamente en los worktrees indicados, sin delegar, lanzar otros agentes por CLI, crear worktrees adicionales ni dejar tareas en segundo plano. Ejecuta los checks pertinentes al cambio.
 - No hagas commit ni push: el orquestador hace el commit con tu `commitMessage` (sin líneas Co-Authored-By) y el usuario aprueba antes de subir y responder.
 - Respuestas cortas, concretas y en el idioma del comentario. Sin disculpas ni relleno.
 - Devuelve una entrada en `replies` por cada hilo, con su `repo` y `threadId`.

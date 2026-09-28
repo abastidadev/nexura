@@ -17,6 +17,26 @@ export async function gitRaw(cwd: string, args: string[]): Promise<string> {
   return stdout;
 }
 
+const USUAL_BASE_BRANCHES = ["main", "master", "develop", "dev"];
+
+/**
+ * The branch work usually starts from: the remote's default (`origin/HEAD`), else the first
+ * usual base branch that exists, else the checked out one. Undefined outside a git repo.
+ */
+export async function defaultBranch(repoPath: string): Promise<string | undefined> {
+  const remoteHead = await git(repoPath, ["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]).catch(() => "");
+  if (remoteHead.startsWith("origin/")) {
+    return remoteHead.slice("origin/".length);
+  }
+  for (const branch of USUAL_BASE_BRANCHES) {
+    if ((await refExists(repoPath, `refs/remotes/origin/${branch}`)) || (await refExists(repoPath, `refs/heads/${branch}`))) {
+      return branch;
+    }
+  }
+  const current = await git(repoPath, ["rev-parse", "--abbrev-ref", "HEAD"]).catch(() => "");
+  return current && current !== "HEAD" ? current : undefined;
+}
+
 async function refExists(cwd: string, ref: string): Promise<boolean> {
   try {
     await git(cwd, ["rev-parse", "--verify", "--quiet", ref]);

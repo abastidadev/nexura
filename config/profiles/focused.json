@@ -1,0 +1,24 @@
+{
+  "name": "focused",
+  "description": "Experimental, seleccionar explícitamente; no usar para clasificación automática. Un agente investiga e implementa, seguido de QA determinista y release. Requiere checks del repo configurados. Sin revisión independiente; comparar antes de adoptar.",
+  "maxLoops": 1,
+  "steps": {
+    "implement": {
+      "model": "opus",
+      "effort": "medium",
+      "enabled": true
+    },
+    "qaCode": {
+      "model": "haiku",
+      "effort": "low",
+      "enabled": true
+    },
+    "release": {
+      "model": "haiku",
+      "effort": "low",
+      "enabled": true
+    }
+  },
+  "autoSelect": false,
+  "budgetUsd": 10
+}

@@ -28,6 +28,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/pr-reviews/pr-reviews").then((m) => m.PrReviewsPage),
   },
   {
+    path: "tickets",
+    title: "Nexura · Tickets",
+    loadComponent: () => import("./features/tickets/tickets-page").then((m) => m.TicketsPage),
+  },
+  {
     path: "terminal",
     title: "Nexura · Terminal",
     loadComponent: () => import("./features/terminal/terminal-page").then((m) => m.TerminalPage),
@@ -36,6 +41,11 @@ export const routes: Routes = [
     path: "agents",
     title: "Nexura · Agentes",
     loadComponent: () => import("./features/agents/agents").then((m) => m.AgentsPage),
+  },
+  {
+    path: "office-3d",
+    title: "Nexura · Oficina 3D",
+    loadComponent: () => import("./features/office-3d/office-3d").then((m) => m.Office3DPage),
   },
   {
     path: "metrics",

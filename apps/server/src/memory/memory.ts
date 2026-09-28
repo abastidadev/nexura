@@ -18,7 +18,6 @@ const READ_TOOLS = ["mem_search", "mem_get", "mem_context"];
 const WRITE_TOOLS = ["mem_save"];
 const MAX_MEMORY_CHARS = 6000;
 const RELATED = 5;
-const RECENT = 5;
 
 let shared: MemoryStore | undefined;
 
@@ -36,24 +35,38 @@ export function closeMemoryStore(): void {
 
 /**
  * `{{memory}}`: what the memory has about the ticket (full-text search on its title) and
- * the latest of the repo, without repeating an observation. Read once per run: no turns
- * are spent on it. Empty when the project has nothing.
+ * relevant to the current step. Unrelated recent observations stay available through
+ * mem_context, but are not injected into every prompt. No agent turns are spent here.
  */
-export function readMemory(store: MemoryStore, project: string, query: string): string {
-  const related = store.search(project, query, RELATED);
-  const recent = store.recent(project, RECENT + related.length).filter((o) => !related.some((r) => r.id === o.id)).slice(0, RECENT);
+export function readMemory(store: MemoryStore, project: string, query: string | string[], maxChars = MAX_MEMORY_CHARS, excludeTopic?: string): string {
+  const groups = (Array.isArray(query) ? query : [query]).map((text) =>
+    store.search(project, text, excludeTopic ? RELATED * 3 : RELATED).filter((item) => !excludeTopic || item.topicKey !== excludeTopic).slice(0, RELATED));
+  // Interleave ranked results so a broad step query cannot crowd out the ticket query.
+  const matches = Array.from({ length: RELATED }, (_, rank) => groups.flatMap((group) => group[rank] ? [group[rank]!] : [])).flat();
+  const related = [...new Map(matches.map((observation) => [observation.id, observation])).values()].slice(0, RELATED);
   const text = [
     related.length ? `### Relacionado con este ticket\n${formatList(related, "")}` : "",
-    recent.length ? `### Reciente en el repo\n${formatList(recent, "")}` : "",
   ]
     .filter(Boolean)
     .join("\n\n");
-  return text.length > MAX_MEMORY_CHARS ? text.slice(0, MAX_MEMORY_CHARS) + "\n…" : text;
+  const limit = Math.min(MAX_MEMORY_CHARS, Math.max(2, maxChars));
+  return text.length > limit ? text.slice(0, limit - 2) + "\n…" : text;
 }
 
 const toolsFor = (mode: MemoryMode): string[] => (mode === "readwrite" ? [...READ_TOOLS, ...WRITE_TOOLS] : mode === "read" ? READ_TOOLS : []);
 
-export type MemoryStepContext = { project: string; step: string; runId: string; allowedTools: string[] };
+export type MemoryStepContext = {
+  project: string;
+  step: string;
+  runId: string;
+  allowedTools: string[];
+  excludeTopic?: string;
+  /**
+   * Pre-approve only this mode's tools while the server exposes those of `mode`: a phase of
+   * a shared session keeps the session's tool schemas (its prompt cache) but not its rights.
+   */
+  permitMode?: MemoryMode;
+};
 
 /**
  * What a step with memory adds to its claude options: the memory MCP server bound to the
@@ -71,10 +84,11 @@ export function memoryRunOptions(
   if (tools.length === 0) {
     return undefined;
   }
-  const args = ["--no-warnings", MCP_SERVER_FILE, "--db", dbFile, "--mode", mode, "--project", context.project, "--source", context.step, "--run", context.runId];
+  const args = ["--no-warnings", MCP_SERVER_FILE, "--db", dbFile, "--mode", mode, "--project", context.project, "--source", context.step, "--run", context.runId,
+    ...(context.excludeTopic ? ["--exclude-topic", context.excludeTopic] : [])];
   return {
     mcpConfig: { mcpServers: { [MEMORY_SERVER]: { command: process.execPath, args } } },
-    allowedTools: [...context.allowedTools, ...tools.map((tool) => `mcp__${MEMORY_SERVER}__${tool}`)],
+    allowedTools: [...context.allowedTools, ...toolsFor(context.permitMode ?? mode).filter((tool) => tools.includes(tool)).map((tool) => `mcp__${MEMORY_SERVER}__${tool}`)],
     appendSystemPrompt: memoryProtocol(mode, configDir),
   };
 }

@@ -50,16 +50,21 @@
           @switch (item.path) {
             @case ("/runs") {
               @if (store.activeCount()) {
-                <span class="ml-auto rounded-md bg-info-soft px-1.5 text-2xs font-semibold text-info tabular-nums" [class.lg:hidden]="collapsed()">
-                  {{ store.activeCount() }}<span class="sr-only"> en curso</span>
+                <span class="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-info-soft px-1 text-[10px] font-semibold text-info tabular-nums ring-2 ring-surface lg:top-1 lg:right-1" [class.lg:absolute]="collapsed()" [class.lg:ml-0]="collapsed()">
+                  {{ store.activeCount() > 99 ? "99+" : store.activeCount() }}<span class="sr-only"> en curso</span>
                 </span>
               }
             }
             @case ("/reviews") {
               @if (store.unseenReviews().length) {
-                <span class="ml-auto rounded-md bg-accent-soft px-1.5 text-2xs font-semibold text-accent tabular-nums" [class.lg:hidden]="collapsed()">
-                  {{ store.unseenReviews().length }}<span class="sr-only"> sin ver</span>
+                <span class="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-accent-soft px-1 text-[10px] font-semibold text-accent tabular-nums ring-2 ring-surface lg:top-1 lg:right-1" [class.lg:absolute]="collapsed()" [class.lg:ml-0]="collapsed()">
+                  {{ store.unseenReviews().length > 99 ? "99+" : store.unseenReviews().length }}<span class="sr-only"> sin ver</span>
                 </span>
+              }
+            }
+            @case ("/tickets") {
+              @if (store.thinkingDrafts()) {
+                <span class="ml-auto size-2 rounded-full bg-info nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="El asistente de tickets está pensando"></span>
               }
             }
             @case ("/terminal") {
@@ -69,7 +74,9 @@
             }
             @case ("/agents") {
               @if (workingAgents()) {
-                <span class="ml-auto size-2 rounded-full bg-info nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="Agentes trabajando"></span>
+                <span class="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-info-soft px-1 text-[10px] font-semibold text-info tabular-nums ring-2 ring-surface lg:top-1 lg:right-1" [class.lg:absolute]="collapsed()" [class.lg:ml-0]="collapsed()">
+                  {{ workingAgents() > 99 ? "99+" : workingAgents() }}<span class="sr-only"> agentes trabajando</span>
+                </span>
               }
             }
           }
@@ -92,27 +99,24 @@
       }
     </nav>
 
-    <div class="hidden flex-col gap-2 border-t border-border p-3 lg:flex">
-      <div class="flex items-center gap-2 px-1 text-xs" [class.justify-center]="collapsed()" role="status">
+    <div class="hidden items-center gap-1 border-t border-border p-3 lg:flex" [class.flex-col]="collapsed()">
+      <div class="flex min-w-0 items-center gap-2 px-1 text-xs" [class.justify-center]="collapsed()" [class.w-full]="collapsed()" role="status">
         <span class="size-2 shrink-0 rounded-full" [class]="store.connected() ? 'bg-ok' : 'bg-err nx-pulse'" aria-hidden="true"></span>
         <span [class.sr-only]="collapsed()" class="text-fg-soft">{{ store.connected() ? "Conectado" : "Sin conexión" }}</span>
       </div>
-      <div class="flex items-center gap-1" [class.flex-col]="collapsed()">
-        <button type="button" class="nx-icon-btn" [attr.aria-label]="themeLabel()" [attr.title]="themeLabel()" (click)="store.cycleTheme()">
-          <nx-icon [name]="themeIcon()" />
-        </button>
-        <button
-          type="button"
-          class="nx-icon-btn"
-          [class.ml-auto]="!collapsed()"
-          [attr.aria-label]="collapsed() ? 'Expandir la barra lateral' : 'Contraer la barra lateral'"
-          [attr.title]="collapsed() ? 'Expandir la barra lateral' : 'Contraer la barra lateral'"
-          [attr.aria-expanded]="!collapsed()"
-          (click)="toggleCollapsed()"
-        >
-          <nx-icon [name]="collapsed() ? 'chevronRight' : 'sidebar'" />
-        </button>
-      </div>
+      <button type="button" class="nx-icon-btn" [class.ml-auto]="!collapsed()" [attr.aria-label]="themeLabel()" [attr.title]="themeLabel()" (click)="store.cycleTheme()">
+        <nx-icon [name]="themeIcon()" />
+      </button>
+      <button
+        type="button"
+        class="nx-icon-btn"
+        [attr.aria-label]="collapsed() ? 'Expandir la barra lateral' : 'Contraer la barra lateral'"
+        [attr.title]="collapsed() ? 'Expandir la barra lateral' : 'Contraer la barra lateral'"
+        [attr.aria-expanded]="!collapsed()"
+        (click)="toggleCollapsed()"
+      >
+        <nx-icon [name]="collapsed() ? 'chevronRight' : 'sidebar'" />
+      </button>
     </div>
   </aside>
 
@@ -129,8 +133,8 @@
                 ariaCurrentWhenActive="page"
                 class="group relative flex h-9 max-w-56 shrink-0 cursor-grab items-center gap-2 rounded-lg border border-transparent pr-1 pl-3 text-sm text-fg-soft hover:bg-surface-2 hover:text-fg"
                 [class.opacity-40]="dragging() === tab.id"
-                [attr.title]="tab.title + ' · ' + tab.status + ' · arrastra para reordenar'"
-                draggable="true"
+                [attr.title]="tab.title + ' · ' + tab.status + ' · arrastra para reordenar, doble clic en el nombre para renombrar'"
+                [attr.draggable]="renaming() === tab.id ? 'false' : 'true'"
                 (dragstart)="onDragStart($event, tab.id)"
                 (dragover)="onDragOver($event, tab.id)"
                 (dragleave)="onDragLeave(tab.id)"
@@ -142,7 +146,19 @@
                 }
                 <span class="size-2 shrink-0 rounded-full" [class]="tab.dot" [class.nx-pulse]="tab.live" aria-hidden="true"></span>
                 <nx-icon [name]="tab.icon" [size]="14" class="shrink-0 text-muted" />
-                <span class="truncate">{{ tab.label }}</span>
+                @if (renaming() === tab.id) {
+                  <input
+                    #rename
+                    class="nx-input h-7 w-40 px-2 py-0 text-sm"
+                    aria-label="Nuevo nombre de la pestaña"
+                    [value]="tab.label"
+                    (click)="$event.preventDefault(); $event.stopPropagation()"
+                    (keydown)="onRenameKey($event, tab)"
+                    (blur)="finishRename(tab, rename.value)"
+                  />
+                } @else {
+                  <span class="truncate" (dblclick)="startRename($event, tab)">{{ tab.label }}</span>
+                }
                 <span class="sr-only">, {{ tab.status }}</span>
                 @if (tab.comments) {
                   <span class="rounded-md bg-info-soft px-1.5 text-2xs font-semibold text-info tabular-nums">{{ tab.comments }}<span class="sr-only"> comentarios</span></span>
@@ -154,22 +170,50 @@
             }
           </nav>
         } @else {
-          <span class="text-sm text-muted">Los flujos, revisiones y terminales que abras aparecerán aquí como pestañas.</span>
+          <span class="text-sm text-muted">Los flujos, revisiones, tickets y terminales que abras aparecerán aquí como pestañas.</span>
         }
       </div>
       <div class="ml-auto flex shrink-0 items-center gap-1 md:gap-2">
         <nx-quota-meter class="hidden md:block" />
         <span class="mx-1 hidden h-5 w-px bg-border md:block" aria-hidden="true"></span>
-        <button
-          type="button"
-          class="nx-icon-btn"
-          [attr.aria-pressed]="store.notificationsEnabled()"
-          [attr.title]="store.notificationsEnabled() ? 'Notificaciones del sistema activadas' : 'Activar notificaciones del sistema'"
-          aria-label="Notificaciones del sistema"
-          (click)="store.toggleNotifications()"
-        >
-          <nx-icon [name]="store.notificationsEnabled() ? 'bell' : 'bellOff'" />
-        </button>
+        <div class="relative">
+          <button type="button" class="nx-icon-btn relative" aria-label="Notificaciones" [attr.aria-expanded]="noticeCenterOpen()" aria-controls="notice-center" (click)="toggleNoticeCenter()">
+            <nx-icon name="bell" />
+            @if (store.unreadNotices()) {
+              <span class="absolute -top-1 -right-1 inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-err px-1 text-[10px] font-bold text-white tabular-nums ring-2 ring-bg" aria-hidden="true">{{ store.unreadNotices() > 99 ? "99+" : store.unreadNotices() }}</span>
+            }
+          </button>
+          @if (noticeCenterOpen()) {
+            <button type="button" class="fixed inset-0 z-40 cursor-default" aria-label="Cerrar notificaciones" (click)="closeNoticeCenter()"></button>
+            <section id="notice-center" class="absolute top-full right-0 z-50 mt-2 flex max-h-[min(32rem,calc(100vh-5rem))] w-[min(24rem,calc(100vw-1rem))] flex-col overflow-hidden rounded-xl border border-border bg-surface shadow-[0_18px_40px_-16px_rgb(var(--nx-shadow)/0.55)]" aria-label="Notificaciones">
+              <div class="flex items-center justify-between border-b border-border px-4 py-3">
+                <h2 class="font-semibold">Notificaciones</h2>
+                <button type="button" class="nx-icon-btn size-7 min-h-0 min-w-0" aria-label="Cerrar notificaciones" (click)="closeNoticeCenter()"><nx-icon name="x" [size]="16" /></button>
+              </div>
+              <div class="min-h-0 overflow-y-auto">
+                @for (notice of store.notices(); track notice.id) {
+                  <div class="flex items-start gap-3 border-b border-border px-4 py-3 last:border-b-0">
+                    <span class="mt-1.5 size-2 shrink-0 rounded-full" [class]="toastDot[notice.tone]" aria-hidden="true"></span>
+                    <button type="button" class="min-w-0 flex-1 rounded-md text-left" [disabled]="!notice.runId && !notice.link" (click)="openNotice(notice)">
+                      <span class="block text-sm font-semibold wrap-break-word">{{ notice.title }}</span>
+                      <span class="mt-0.5 block text-xs text-fg-soft wrap-break-word">{{ notice.body }}</span>
+                      <span class="mt-1 block text-2xs text-muted">{{ notice.createdAt | date: "dd/MM HH:mm" }}</span>
+                    </button>
+                    <button type="button" class="nx-icon-btn -mt-1 -mr-2 size-7 min-h-0 min-w-0" aria-label="Quitar aviso" (click)="store.dismissNotice(notice.id)"><nx-icon name="x" [size]="14" /></button>
+                  </div>
+                } @empty {
+                  <p class="px-4 py-8 text-center text-sm text-muted">No hay notificaciones pendientes.</p>
+                }
+              </div>
+              <div class="border-t border-border px-4 py-2">
+                <button type="button" class="flex w-full items-center gap-2 rounded-lg px-1 py-1.5 text-left text-xs text-fg-soft hover:bg-surface-2" [attr.aria-pressed]="store.notificationsEnabled()" (click)="store.toggleNotifications()">
+                  <nx-icon [name]="store.notificationsEnabled() ? 'bell' : 'bellOff'" [size]="15" />
+                  <span>Notificaciones del sistema: {{ store.notificationsEnabled() ? "activadas" : "desactivadas" }}</span>
+                </button>
+              </div>
+            </section>
+          }
+        </div>
         <button
           type="button"
           class="nx-icon-btn"

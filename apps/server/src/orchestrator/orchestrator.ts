@@ -35,13 +35,13 @@ import {
 } from "@nexura/shared";
 import { isValidModel, type LoadedStep, type NexuraConfig } from "../config/config-loader.ts";
 import { Ledger } from "../ledger/ledger.ts";
-import { asJsonBlock, renderTemplate } from "../prompt/render.ts";
+import { asJsonBlock, continuationTemplate, renderTemplate } from "../prompt/render.ts";
 import { AgentProcess } from "../runner/agent-process.ts";
+import { maxUsage, parseLine, StreamUsage, usageBeyond } from "../runner/stream-parser.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { commitAll, createPrWorktree, createWorktree, git, gitRaw, removeWorktree, slugify } from "../workspace/git.ts";
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
 import { isMemoryWrite, MEMORY_SERVER, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
-import { resolveMcpServers } from "../workspace/claude-inventory.ts";
 import { projectOf, type NewObservation } from "../memory/memory-store.ts";
 import {
   buildPrDraft,
@@ -57,6 +57,19 @@ import {
 import { normalizePrReview, normalizeReviewPath, parseDiffHunks, reviewPosts, type PrReviewOutput } from "./pr-review.ts";
 import { mergeJudgments, type CodeReviewOutput, type ReviewIssue } from "./blind-review.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
+import {
+  cacheContinuity,
+  contextTooLarge,
+  continuesMainSession,
+  correctionSession,
+  fingerprint,
+  mainSessionEnvelope,
+  phaseOutput,
+  sessionSchema,
+  observeContext,
+  resolveStepMcp,
+  type SessionEnvelope,
+} from "./context-policy.ts";
 
 /** Deciding the profile must be cheap. */
 const CLASSIFY_CONFIG: StepConfig = { agent: "claude", model: "haiku", effort: "low", enabled: true };
@@ -107,6 +120,8 @@ type RunContext = {
   release?: (options?: RetryOptions) => void;
   /** Wakes a rate-limit wait early (cancel). */
   wake?: () => void;
+  /** Takes the run out of the concurrency queue (a cancel before it got a slot). */
+  dequeue?: () => void;
 };
 
 type StepContext = {
@@ -123,6 +138,8 @@ const DEFAULT_ADDRESS_REVIEW: StepConfig = { agent: "claude", model: "sonnet", e
 /** Reviewing someone else's PR reads a lot of code: a strong model by default, overridable per review. */
 export const DEFAULT_PR_REVIEW: StepConfig = { agent: "claude", model: "sonnet", effort: "high", enabled: true };
 const EFFORTS: readonly string[] = ["low", "medium", "high", "xhigh"];
+/** Template variables a continued session already has from its first phase: they are not sent again. */
+const SESSION_CONTEXT_VARS: readonly string[] = ["ticket", "tasks", "repos", "repoMap", "repoNotes", "memory", "userPrompt", "profiles"];
 
 /** What Revisiones sends to review one PR. */
 export type PrReviewRequest = { repo: string; prId: number; agent?: AgentKind; model?: string; effort?: StepConfig["effort"] };
@@ -213,6 +230,15 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   public start(request: RunRequest): Run {
     if (request.profile !== "auto" && !this.config.profiles.has(request.profile)) {
       throw new Error(`Perfil desconocido: ${request.profile}`);
+    }
+    if (request.modelConfig) {
+      if (request.profile === "auto") {
+        throw new Error("Elige un plan concreto para usar un único modelo");
+      }
+      checkOverrides(request.modelConfig, "claude");
+      if (!EFFORTS.includes(request.modelConfig.effort)) {
+        throw new Error(`Esfuerzo desconocido: ${String(request.modelConfig.effort)}`);
+      }
     }
     if (request.repos.length === 0) {
       throw new Error("Selecciona al menos un repositorio");
@@ -505,6 +531,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       throw new Error(`El run ${runId} no está activo`);
     }
     context.cancelled = true;
+    context.dequeue?.();
     context.process?.kill();
     context.release?.();
     context.wake?.();
@@ -558,7 +585,33 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   private async schedule(runId: string, job: () => Promise<void>): Promise<void> {
     const context = this.contexts.get(runId);
     if (this.running >= this.options.concurrency) {
-      await new Promise<void>((resolve) => this.waiting.push(resolve));
+      const slot = await new Promise<boolean>((resolve) => {
+        const take = (): void => resolve(true);
+        this.waiting.push(take);
+        if (context) {
+          context.dequeue = () => {
+            const index = this.waiting.indexOf(take);
+            if (index >= 0) {
+              this.waiting.splice(index, 1);
+              resolve(false);
+            }
+          };
+        }
+      });
+      if (context) {
+        context.dequeue = undefined;
+      }
+      // Cancelled while queued: it ends right away, without taking (or handing on) a slot.
+      if (!slot) {
+        const run = this.store.getRun(runId);
+        this.releaseContext(runId, context);
+        if (run) {
+          run.status = "cancelled";
+          run.resumesAt = undefined;
+          this.persist(run);
+        }
+        return;
+      }
     }
     this.running++;
     try {
@@ -600,6 +653,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           stepContext.outputs.set(stepRun.step, stepRun.structuredOutput);
         }
       }
+      const lastCorrection = run.steps.findLast((step) => step.status === "succeeded" && Boolean(this.reworkNeeded(step.step, step.structuredOutput)));
+      if (lastCorrection && !run.steps.some((step) => step.step === "implement" && step.status === "succeeded" && step.seq > lastCorrection.seq)) {
+        stepContext.feedback = this.reworkNeeded(lastCorrection.step, lastCorrection.structuredOutput);
+      }
       let pending = startAt?.options;
 
       if (!run.resolvedProfile) {
@@ -609,8 +666,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           return;
         }
         const output = classified.structuredOutput as { profile: string; reason: string };
-        if (!this.config.profiles.has(output.profile)) {
-          this.fail(run, `classify eligió un perfil inexistente: ${output.profile}`);
+        if (!this.config.profiles.has(output.profile) || this.config.profiles.get(output.profile)?.autoSelect === false) {
+          this.fail(run, `classify eligió un perfil inexistente o de selección manual: ${output.profile}`);
           return;
         }
         run.resolvedProfile = output.profile;
@@ -631,17 +688,37 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         pending = undefined;
         index++;
       }
+      /** Where a one-off qaCode was inserted after a late custom writer; it leaves the sequence once it ran or was skipped. */
+      let lateQa: number | undefined;
+      const dropLateQa = (): boolean => {
+        if (index !== lateQa) {
+          return false;
+        }
+        sequence.splice(index, 1);
+        lateQa = undefined;
+        return true;
+      };
 
       while (index < sequence.length) {
         const stepName = sequence[index]!;
-        const stepConfig = profile.steps[stepName]!;
+        const stepConfig = run.request.modelConfig && this.config.steps.get(stepName)?.kind !== "builtin"
+          ? { ...profile.steps[stepName]!, ...run.request.modelConfig }
+          : profile.steps[stepName]!;
+
+        const memoryMode = this.config.steps.get(stepName)?.memory;
+        stepContext.extraVars = {
+          ...stepContext.extraVars,
+          memory: memoryMode && memoryMode !== "off" ? await this.memoryVar(run, stepName, stepContext) : "",
+        };
 
         if (run.request.stepByStep) {
           pending = (await this.breakpoint(run, context, stepName, stepContext, pending)) ?? pending;
           if (pending?.skip) {
             this.recordSkipped(run, stepName, profile);
             pending = undefined;
-            index++;
+            if (!dropLateQa()) {
+              index++;
+            }
             continue;
           }
         }
@@ -660,13 +737,20 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           await this.afterImplement(run, stepRun, ledger);
           stepContext.feedback = undefined;
         }
-        if (stepName === "enrich") {
-          await this.learnFromEnrich(run, stepRun);
+        if (stepName === "enrich" || stepName === "plan") {
+          await this.learnConventions(run, stepRun);
         }
         if (this.config.steps.get(stepName)?.custom) {
-          await this.afterCustomStep(run, stepRun, ledger);
+          const changed = await this.afterCustomStep(run, stepRun, ledger);
+          const qaIndex = sequence.indexOf("qaCode");
+          if (changed && qaIndex >= 0 && index > qaIndex && sequence[index + 1] !== "qaCode") {
+            // A late custom writer invalidates earlier QA; verify it before going on.
+            sequence.splice(index + 1, 0, "qaCode");
+            lateQa = index + 1;
+          }
         }
 
+        const ranLateQa = dropLateQa();
         const rework = this.reworkNeeded(stepName, stepRun.structuredOutput);
         if (rework) {
           const implementIndex = sequence.indexOf("implement");
@@ -685,7 +769,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           index = implementIndex;
           continue;
         }
-        index++;
+        if (!ranLateQa) {
+          index++;
+        }
       }
 
       await this.rememberRun(run, stepContext);
@@ -720,6 +806,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   ): Promise<StepRun | undefined> {
     const agent = this.config.steps.get(stepName)?.kind === "builtin" ? undefined : (options?.agent ?? agentOf(stepConfig));
     for (;;) {
+      // A cancel while the run got ready (checkout, diff, PR threads) had no process to kill.
+      if (context.cancelled) {
+        throw new CancelledError();
+      }
       // Don't start an LLM step while its agent's quota is above the user's threshold.
       const guardedUntil = agent ? await this.quotaGuardUntil(agent) : undefined;
       if (guardedUntil !== undefined) {
@@ -786,6 +876,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         .join("\n"),
     );
     return { ...judgeB, structuredOutput: merged };
+  }
+
+  /** The same quota pause, for agent work outside the flows (the Tickets assistant). */
+  public quotaPauseFor(agent: AgentKind): Promise<number | undefined> {
+    return this.quotaGuardUntil(agent);
   }
 
   /** Epoch seconds of the agent's quota reset when its usage is at/above the configured %, else undefined. */
@@ -888,15 +983,50 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     let prompt: string;
     let resume: string | undefined;
     // A session is only resumed by the agent that created it.
-    const previous = options?.resumeSession
+    let previous = options?.resumeSession
       ? run.steps.findLast((s) => s.step === stepRun.step && s.id !== stepRun.id && s.sessionId && agentOf(s) === agent)
       : undefined;
+    let sessionDecision = previous ? "reanudación solicitada" : "sesión nueva";
+    let automaticResume = false;
+    let continuedStep = false;
+    if (!options?.resumeSession && options?.resumeSession !== false && !options?.prompt && stepRun.step === "implement" && stepContext.feedback) {
+      const decision = correctionSession(run.steps.findLast((s) => s.step === "implement" && s.id !== stepRun.id), stepRun);
+      previous = decision.previous;
+      sessionDecision = decision.reason;
+      automaticResume = Boolean(previous);
+    }
+    // The main work keeps its context across phases and model changes within one provider.
+    // A reviewer starts fresh; after review, the main work continues from its own session.
+    if (!previous && options?.resumeSession === undefined && !options?.prompt && !stepContext.feedback
+      && run.request.kind !== "prReview" && continuesMainSession(stepRun.step)) {
+      const main = run.steps.findLast((s) => s.id !== stepRun.id && s.kind === "claude" && s.status === "succeeded"
+        && s.sessionId && continuesMainSession(s.step));
+      const tooLarge = main ? contextTooLarge(main) : undefined;
+      if (main && agentOf(main) === agent && !tooLarge) {
+        previous = main;
+        continuedStep = true;
+        sessionDecision = main.model === stepRun.model ? "continuación del trabajo" : "continuación con otro modelo";
+      } else if (tooLarge) {
+        sessionDecision = tooLarge;
+      }
+    }
     if (previous?.sessionId) {
       resume = previous.sessionId;
-      prompt = options?.instruction?.trim() || RESUME_DEFAULT_INSTRUCTION;
+      prompt = continuedStep ? this.renderPrompt(run, stepRun.step, stepContext, this.knownInSession(run, previous.sessionId)) : automaticResume
+        ? [
+            "Eres el paso **implement**. Continúa tu implementación en los mismos worktrees; Nexura ya ha hecho commit de tus cambios anteriores.",
+            "Corrige únicamente los problemas indicados y sus efectos necesarios. No hagas commit, no delegues ni crees worktrees. Ejecuta los checks pertinentes.",
+            "Devuelve el mismo JSON de implement: summary, commitMessage, tasksDone (ids), filesChanged, notes y prDescriptions por repo en el idioma de sus convenciones.",
+            "## Correcciones actuales",
+            stepContext.feedback,
+          ].join("\n\n")
+        : options?.instruction?.trim() || RESUME_DEFAULT_INSTRUCTION;
     } else {
       prompt = options?.prompt ?? this.renderPrompt(run, stepRun.step, stepContext);
     }
+
+    // A resumed Claude session reports its whole cost so far, earlier invocations included.
+    const priorSessionCost = resume && agent === "claude" ? previous!.sessionCostUsd ?? previous!.costUsd : 0;
 
     // Profile budget: what is left for the whole run caps this step (--max-budget-usd).
     // Only Claude reports a cost; Codex and Copilot run on their plans without one.
@@ -909,13 +1039,23 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           `Presupuesto del perfil agotado: $${run.totalCostUsd.toFixed(3)} de $${budget.toFixed(2)}. Súbelo en el perfil o reintenta con otro.`,
         );
       }
-      maxBudgetUsd = Math.round(remaining * 10_000) / 10_000;
+      // The CLI checks the limit against the session total, not this invocation.
+      maxBudgetUsd = Math.round((remaining + priorSessionCost) * 10_000) / 10_000;
     }
 
     const [primary, ...others] = run.worktrees;
+    // Every Claude phase of the main session exposes the same tools, servers and memory, so the
+    // next phase reads the conversation from the cache instead of rewriting it (see mainSessionEnvelope).
+    const envelope = agent === "claude" && run.request.kind !== "prReview" && continuesMainSession(stepRun.step)
+      ? this.mainSessionEnvelope(run, stepRun.step)
+      : undefined;
     // MCP servers of the repo's own Claude config (project, local, user, plugins), pre-approved
     // as whole servers (`dontAsk` refuses anything else). The memory server is Nexura's.
-    const mcp = resolveMcpServers(primary!.repoPath, definition.mcpServers ?? [], [MEMORY_SERVER]);
+    // Only what every phase knows from the start: a step's own output would change `@auto` midway.
+    const taskContext = [run.request.ticketText, run.request.prompt, stepContext.extraVars?.repoMap].join("\n");
+    const mcp = envelope
+      ? resolveStepMcp(primary!.repoPath, envelope.shared.mcpServers, envelope.steps, taskContext, [MEMORY_SERVER])
+      : resolveStepMcp(primary!.repoPath, definition.mcpServers ?? [], stepRun.step, taskContext, [MEMORY_SERVER]);
     if (mcp.missing.length) {
       // Expected with the defaults (e.g. angular-cli in a repo that is not Angular): a note, not a warning.
       this.recordEvent(run, stepRun, { kind: "text", text: `MCP del paso que ${primary!.repo} no tiene (se omiten): ${mcp.missing.join(", ")}` });
@@ -923,15 +1063,25 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     const allowedTools = [...definition.allowedTools, ...Object.keys(mcp.servers).map((name) => `mcp__${name}`)];
     // Judge B only reads: both judges would save the same observations.
     const memoryMode = stepRun.judge === "B" && definition.memory === "readwrite" ? "read" : definition.memory;
+    // The session's memory server and protocol, but only this phase's memory rights.
+    const serverMemoryMode = envelope ? envelope.shared.memory : memoryMode;
     const memory =
-      this.settings.memoryEnabled && memoryMode && memoryMode !== "off"
-        ? memoryRunOptions(memoryMode, {
+      this.settings.memoryEnabled && serverMemoryMode && serverMemoryMode !== "off"
+        ? memoryRunOptions(serverMemoryMode, {
             project: await projectOf(primary!.repoPath),
             step: stepRun.step,
             runId: run.id,
             allowedTools,
+            excludeTopic: run.request.ticketId ? `tickets/${run.request.ticketId}` : undefined,
+            permitMode: memoryMode ?? "off",
           })
         : undefined;
+    const jsonSchema = envelope
+      ? sessionSchema(envelope.steps.map((name) => ({ name, schema: this.config.steps.get(name)?.schema })))
+      : stepRun.step === "classify" ? this.classifySchema(definition.schema) : definition.schema;
+    if (envelope) {
+      prompt += `\n\nEntrega tu salida estructurada en la clave \`${stepRun.step}\` de StructuredOutput; deja vacías las de los otros pasos.`;
+    }
     const process = new AgentProcess({
       agent,
       maxBudgetUsd,
@@ -939,26 +1089,53 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       prompt,
       model: stepRun.model,
       effort: stepRun.effort,
-      tools: definition.tools,
-      allowedTools,
-      disallowedTools: definition.disallowedTools,
+      tools: envelope?.shared.tools ?? definition.tools,
+      allowedTools: memory?.allowedTools ?? allowedTools,
+      disallowedTools: envelope?.shared.disallowedTools ?? definition.disallowedTools,
       mcpServers: mcp.servers,
       addDirs: others.map((worktree) => worktree.path),
-      jsonSchema: stepRun.step === "classify" ? this.classifySchema(definition.schema) : definition.schema,
+      jsonSchema,
       timeoutMs: definition.timeoutMs,
       resume,
-      forkSession: Boolean(resume),
-      ...memory,
+      forkSession: Boolean(resume) && !continuedStep && !automaticResume,
+      ...(memory ? { mcpConfig: memory.mcpConfig, appendSystemPrompt: memory.appendSystemPrompt } : {}),
     });
     stepRun.prompt = prompt;
     stepRun.args = process.args;
+    const memoryText = stepContext.extraVars?.memory ?? "";
+    const ledgerText = stepContext.ledger.readForPrompt();
+    stepRun.contextMetrics = {
+      promptChars: prompt.length,
+      memoryChars: memoryText && prompt.includes(memoryText) ? memoryText.length : 0,
+      ledgerChars: ledgerText && prompt.includes(ledgerText) ? ledgerText.length : 0,
+      mcpServers: [...Object.keys(mcp.servers), ...(memory ? [MEMORY_SERVER] : [])],
+      ...(previous ? { resumedFrom: previous.id } : {}),
+      resumeDepth: previous ? (previous.contextMetrics?.resumeDepth ?? 0) + 1 : 0,
+      sessionTurnsBefore: previous ? (previous.contextMetrics?.sessionTurnsBefore ?? 0) + previous.numTurns : 0,
+      correctionDepth: continuedStep ? 0 : previous ? (previous.contextMetrics?.correctionDepth ?? previous.contextMetrics?.resumeDepth ?? 0) + 1 : 0,
+      correctionTurnsBefore: continuedStep ? 0 : previous ? (previous.contextMetrics?.correctionTurnsBefore ?? previous.contextMetrics?.sessionTurnsBefore ?? 0) + previous.numTurns : 0,
+      sessionDecision,
+      toolCalls: 0,
+      readCalls: 0,
+      repeatedReadCalls: 0,
+      toolResultChars: 0,
+      schemaFingerprint: fingerprint(jsonSchema),
+      systemFingerprint: fingerprint(memory?.appendSystemPrompt ?? ""),
+    };
+    const reads = new Set<string>();
+    this.recordEvent(run, stepRun, { kind: "text", text: `Contexto: ${prompt.length} caracteres de prompt; ${stepRun.contextMetrics.mcpServers.length} MCP; ${sessionDecision}.` });
     this.store.saveStepRun(stepRun);
     this.persist(run);
 
     let rejectedUntil: number | undefined;
     let memoriesSaved = 0;
-    process.on("raw", (line) => this.store.appendRaw(run.id, stepRun, line));
+    const streamUsage = new StreamUsage();
+    process.on("raw", (line) => {
+      this.store.appendRaw(run.id, stepRun, line);
+      streamUsage.push(parseLine(line));
+    });
     process.on("event", (event) => {
+      observeContext(stepRun.contextMetrics!, reads, event);
       this.recordEvent(run, stepRun, event);
       if (event.kind === "toolUse" && isMemoryWrite(event.name)) {
         memoriesSaved++;
@@ -975,6 +1152,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       }
     });
 
+    // Cancelled while the prompt was being built: the agent never starts.
+    if (context.cancelled) {
+      throw new CancelledError("Cancelado");
+    }
     context.process = process;
     context.send = (text) => {
       if (!process.send(text)) {
@@ -986,6 +1167,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     const outcome = await process.run();
     context.process = undefined;
     context.send = undefined;
+    this.recordEvent(run, stepRun, { kind: "text", text: `Herramientas: ${stepRun.contextMetrics.toolCalls} llamadas; ${stepRun.contextMetrics.readCalls} lecturas explícitas (${stepRun.contextMetrics.repeatedReadCalls} repetidas); ${stepRun.contextMetrics.toolResultChars} caracteres de resultados.` });
     if (memoriesSaved > 0) {
       this.recordEvent(run, stepRun, { kind: "text", text: `Guardada(s) ${memoriesSaved} observación(es) en la memoria compartida.` });
     }
@@ -993,11 +1175,28 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     const result = outcome.result;
     stepRun.sessionId = outcome.sessionId ?? stepRun.sessionId;
     if (result) {
-      stepRun.costUsd = result.costUsd;
+      // A lower total means the CLI started the count afresh (e.g. a forked session).
+      stepRun.costUsd = result.costUsd >= priorSessionCost ? result.costUsd - priorSessionCost : result.costUsd;
+      if (agent === "claude") {
+        stepRun.sessionCostUsd = result.costUsd;
+      }
       stepRun.numTurns = result.numTurns;
       stepRun.usage = result.usage;
       // Steps without a schema (custom ones) hand their final text to the next steps.
-      stepRun.structuredOutput = definition.schema ? result.structuredOutput : result.text;
+      stepRun.structuredOutput = envelope
+        ? phaseOutput(result.structuredOutput, stepRun.step) ?? (definition.schema ? undefined : result.text)
+        : definition.schema ? result.structuredOutput : result.text;
+    }
+    this.observeCache(run, stepRun, streamUsage, previous);
+    const observed = streamUsage.total();
+    const unreported = usageBeyond(observed, result?.usage);
+    if (unreported) {
+      stepRun.unreportedUsage = unreported;
+      stepRun.usage = result ? maxUsage(result.usage, observed) : observed;
+      this.recordEvent(run, stepRun, {
+        kind: "text",
+        text: `Tokens vistos en el stream que el agente no incluyó en su informe (sin coste en USD): ${unreported.cacheReadTokens} de lectura de caché, ${unreported.cacheCreationTokens} de escritura, ${unreported.outputTokens} de salida y ${unreported.inputTokens} de entrada.`,
+      });
     }
 
     let error: string | undefined;
@@ -1010,7 +1209,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     } else if (!result.success) {
       const status = result.apiErrorStatus ? ` (HTTP ${result.apiErrorStatus})` : "";
       error = `${result.subtype}${status}: ${result.text.slice(0, ERROR_TEXT_MAX)}`;
-    } else if (definition.schema && result.structuredOutput === undefined) {
+    } else if (definition.schema && stepRun.structuredOutput === undefined) {
       error = "El paso no devolvió la salida estructurada que exige su schema";
     }
 
@@ -1029,13 +1228,17 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     return undefined;
   }
 
-  /** classify may pick any saved profile, including the ones created in the UI. */
+  /** Manual-only experimental profiles must not be selected by classify. */
   private classifySchema(schema: object | undefined): object | undefined {
     const properties = (schema as { properties?: Record<string, object> } | undefined)?.properties;
     if (!schema || !properties?.["profile"]) {
       return schema;
     }
-    const profile = { ...properties["profile"], enum: [...this.config.profiles.keys()] };
+    const names = [...this.config.profiles.values()].filter((profile) => profile.autoSelect !== false).map((profile) => profile.name);
+    if (!names.length) {
+      throw new Error("No hay perfiles disponibles para clasificación automática. Selecciona un perfil explícitamente.");
+    }
+    const profile = { ...properties["profile"], enum: names };
     return { ...schema, properties: { ...properties, profile } };
   }
 
@@ -1055,11 +1258,25 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           definition.timeoutMs,
           emit,
         );
+        if (output.passed && output.autoFixes?.length) {
+          for (const worktree of run.worktrees.filter((item) => output.autoFixes!.some((fix) => fix.repo === item.repo))) {
+            const sha = await commitAll(worktree, "style: apply automatic QA fixes");
+            if (sha) {
+              emit({ kind: "text", text: `Autofix guardado en ${worktree.repo}: ${sha.slice(0, 8)}` });
+            }
+          }
+        }
+        const skipped = output.configErrors.length
+          ? `\nOmitidos por configuración del plan (no cuentan como fallo del código): ${output.configErrors.map((e) => `\`${e.command}\` (${e.repo})`).join(", ")}`
+          : "";
+        const fixed = output.autoFixes?.length
+          ? `\nAutofix: ${output.autoFixes.map((item) => `${item.repo}: ${item.tools.join(" + ")} (${item.files.length} fichero(s))`).join(", ")}`
+          : "";
         stepContext.ledger.append(
           "qaCode",
-          output.passed
+          (output.passed
             ? `${output.commands} comando(s) OK`
-            : `Fallan: ${output.failures.map((f) => `\`${f.command}\` (${f.repo})`).join(", ")}`,
+            : `Fallan: ${output.failures.map((f) => `\`${f.command}\` (${f.repo})`).join(", ")}`) + fixed + skipped,
         );
         return output;
       }
@@ -1094,22 +1311,29 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         return text ? `**${worktree.repo}**\n${text}` : "";
       })
       .filter(Boolean);
-    return { repoMap: maps.filter(Boolean).join("\n\n"), repoNotes: notes.join("\n\n"), memory: await this.memoryVar(run) };
+    return { repoMap: maps.filter(Boolean).join("\n\n"), repoNotes: notes.join("\n\n"), memory: "" };
   }
 
   /** `{{memory}}`: what the shared memory has about the ticket and each repo. */
-  private async memoryVar(run: Run): Promise<string> {
+  private async memoryVar(run: Run, stepName?: StepName, stepContext?: StepContext): Promise<string> {
     if (!this.settings.memoryEnabled) {
       return "";
     }
     const title = run.request.ticketText.split(/\r?\n/)[0] ?? "";
+    // Separate searches preserve the ticket signal even when feedback contains many words.
+    const focus = stepName === "implement" ? stepContext?.feedback : stepName === "codeReview"
+      ? (stepContext?.outputs.get("implement") as { filesChanged?: string[] } | undefined)?.filesChanged?.join(" ")
+      : run.request.tasks.filter((task) => task.selected).map((task) => task.title).join(" ");
+    const budget = Math.max(2, Math.floor(4000 / Math.max(1, run.worktrees.length)) - 100);
     const parts = await Promise.all(
       run.worktrees.map(async (worktree) => {
-        const text = readMemory(memoryStore(), await projectOf(worktree.repoPath), title);
+        const project = await projectOf(worktree.repoPath);
+        const text = readMemory(memoryStore(), project, [focus ?? "", title], budget,
+          run.request.ticketId ? `tickets/${run.request.ticketId}` : undefined);
         return text && run.worktrees.length > 1 ? `**${worktree.repo}**\n${text}` : text;
       }),
     );
-    return parts.filter(Boolean).join("\n\n");
+    return parts.filter(Boolean).join("\n\n").slice(0, 4000);
   }
 
   /** Saves to the shared memory; a failure there never fails the run. */
@@ -1130,7 +1354,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
    * in the repo notes and in the shared memory as `pattern` observations (one topic per
    * convention, so learning it again updates it instead of duplicating it).
    */
-  private async learnFromEnrich(run: Run, stepRun: StepRun): Promise<void> {
+  /** The new conventions the investigating phase (enrich or plan) found: for the next tickets, in the repo notes and the memory. */
+  private async learnConventions(run: Run, stepRun: StepRun): Promise<void> {
     const conventions = (stepRun.structuredOutput as { conventions?: string[] } | undefined)?.conventions ?? [];
     const primary = run.worktrees[0];
     if (!primary || conventions.length === 0) {
@@ -1147,9 +1372,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       await this.remember(primary, {
         type: "pattern",
         title: convention.length > 80 ? convention.slice(0, 77) + "…" : convention,
-        content: `**Qué**: ${convention}\n**Dónde**: ${primary.repo}\n**Aprendido**: convención detectada por enrich al resolver un ticket.`,
+        content: `**Qué**: ${convention}\n**Dónde**: ${primary.repo}\n**Aprendido**: convención detectada por ${stepRun.step} al resolver un ticket.`,
         topicKey: `conventions/${slugify(convention, 60)}`,
-        source: "enrich",
+        source: stepRun.step,
         runId: run.id,
       });
     }
@@ -1212,7 +1437,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       }
 
       const profile = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile) : undefined;
-      const stepConfig = profile?.steps.addressReview ?? DEFAULT_ADDRESS_REVIEW;
+      const stepConfig = { ...(profile?.steps.addressReview ?? DEFAULT_ADDRESS_REVIEW), ...run.request.modelConfig };
       const stepContext: StepContext = { outputs: new Map(), ledger, extraVars: { threads: threadsToText(threads), memory: await this.memoryVar(run) } };
       const stepRun = await this.runWithRateLimit(run, context, "addressReview", stepConfig, stepContext, options);
       if (!stepRun) {
@@ -1377,6 +1602,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         ledger,
         extraVars: {
           ...(await this.repoContextVars(run)),
+          memory: await this.memoryVar(run, "prReview"),
           pr: prReviewText(target, headSha, neutralized),
           changedFiles: nameStatus,
           threads: threads || "Ninguno.",
@@ -1454,7 +1680,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   ): Promise<CreatedPr[]> {
     const implementOutputs = run.steps
       .filter((step) => step.step === "implement" && step.status === "succeeded")
-      .map((step) => step.structuredOutput as { summary: string; filesChanged: string[] });
+      .map((step) => step.structuredOutput as { summary: string; filesChanged: string[]; prDescriptions?: { repo: string; description: string }[] });
     const drafts = await Promise.all(
       worktrees.map((worktree) => {
         const target = this.config.repos.find((repo) => repo.name === worktree.repo)?.baseBranch ?? worktree.baseRef;
@@ -1573,7 +1799,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   }
 
   /** A custom step's answer goes to the ledger; whatever it changed in the worktrees is committed. */
-  private async afterCustomStep(run: Run, stepRun: StepRun, ledger: Ledger): Promise<void> {
+  private async afterCustomStep(run: Run, stepRun: StepRun, ledger: Ledger): Promise<boolean> {
     const label = this.config.steps.get(stepRun.step)?.label ?? stepRun.step;
     const shas: string[] = [];
     for (const worktree of run.worktrees) {
@@ -1586,6 +1812,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     const output = stepRun.structuredOutput;
     const text = typeof output === "string" ? output : JSON.stringify(output ?? "");
     ledger.append(`${label} (intento ${stepRun.attempt})`, [text.slice(0, 2000), shas.length ? `Commits: ${shas.join(", ")}` : ""].filter(Boolean).join("\n"));
+    return shas.length > 0;
   }
 
   private reworkNeeded(stepName: StepName, output: unknown): string | undefined {
@@ -1604,16 +1831,83 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       if (qa.passed) {
         return undefined;
       }
-      return qa.failures
+      const failures = qa.failures
         .map((f) => `- \`${f.command}\` en ${f.repo} (exit ${f.exitCode}):\n\`\`\`\n${f.outputTail.slice(-1500)}\n\`\`\``)
         .join("\n");
+      return qa.autoFixes?.length ? `Nexura ya intentó autofix en los ficheros cambiados; revisa los cambios que dejó en los worktrees.\n${failures}` : failures;
     }
     return undefined;
   }
 
-  private renderPrompt(run: Run, stepName: StepName, stepContext: StepContext): string {
+  /**
+   * The Claude phases that may share the run's main session (the profile's work steps plus
+   * addressReview) and what they expose together. Every phase gets the same tools, servers and
+   * memory, so moving to the next one does not rewrite the conversation into the prompt cache.
+   */
+  private mainSessionEnvelope(run: Run, current: StepName): { steps: StepName[]; shared: SessionEnvelope } {
+    const profile = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile) : undefined;
+    const configOf = (name: StepName): StepConfig | undefined => {
+      const own = profile?.steps[name] ?? (name === "addressReview" ? DEFAULT_ADDRESS_REVIEW : undefined);
+      return own && run.request.modelConfig ? { ...own, ...run.request.modelConfig } : own;
+    };
+    const sequence = orderSteps(this.config.steps.values())
+      .map((step) => step.name)
+      .filter((name) => !ON_DEMAND_STEPS.has(name) && profile?.steps[name]?.enabled);
+    const phases = [...sequence, "addressReview"].filter((name) => {
+      const definition = this.config.steps.get(name);
+      const config = configOf(name);
+      return definition && definition.kind !== "builtin" && continuesMainSession(name) && config && agentOf(config) === "claude";
+    });
+    const steps = [...new Set([...phases, current])];
+    const shared = mainSessionEnvelope(steps.flatMap((name) => this.config.steps.get(name) ?? []));
+    return { steps, shared };
+  }
+
+  /** Template variables a session already holds: the run's context and the outputs of the phases it ran. */
+  private knownInSession(run: Run, sessionId: string): Set<string> {
+    const known = new Set(SESSION_CONTEXT_VARS);
+    for (const step of run.steps) {
+      if (step.sessionId === sessionId && step.status === "succeeded") {
+        known.add(`output.${step.step}`);
+      }
+    }
+    return known;
+  }
+
+  /**
+   * Real context size and cache use of a step, from its stream. When it continued a session and
+   * still wrote the conversation into the cache instead of reading it, says what changed.
+   */
+  private observeCache(run: Run, stepRun: StepRun, usage: StreamUsage, previous: StepRun | undefined): void {
+    const metrics = stepRun.contextMetrics;
+    if (!metrics) {
+      return;
+    }
+    metrics.contextTokens = usage.contextTokens();
+    const first = usage.firstCall();
+    if (first) {
+      metrics.firstCallCacheRead = first.cacheReadTokens;
+      metrics.firstCallCacheWrite = first.cacheCreationTokens;
+    }
+    const continuity = previous ? cacheContinuity(previous, stepRun) : undefined;
+    if (!continuity) {
+      return;
+    }
+    metrics.cacheReused = continuity.reused;
+    if (!continuity.reused) {
+      const why = continuity.changed.length
+        ? `Cambió: ${continuity.changed.join(", ")}.`
+        : "No cambió nada de lo que controla Nexura: puede que la caché hubiera caducado.";
+      this.recordEvent(run, stepRun, {
+        kind: "text",
+        text: `La sesión continuó sin aprovechar la caché: escribió ${metrics.firstCallCacheWrite ?? 0} tokens en vez de leer los ${previous!.contextMetrics!.contextTokens} de la conversación. ${why}`,
+      });
+    }
+  }
+
+  private renderPrompt(run: Run, stepName: StepName, stepContext: StepContext, known?: ReadonlySet<string>): string {
     const definition = this.config.steps.get(stepName);
-    const template = definition?.promptTemplate ?? "";
+    const template = known ? continuationTemplate(definition?.promptTemplate ?? "", known) : (definition?.promptTemplate ?? "");
     const request = run.request;
     const vars: Record<string, string | undefined> = {
       ticket: (request.ticketId ? `#${request.ticketId}\n\n` : "") + request.ticketText,
@@ -1625,8 +1919,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         .map((w) => `- **${w.repo}**: \`${w.path}\` (rama \`${w.branch}\`, baseRef \`${w.baseRef}\`)`)
         .join("\n"),
       userPrompt: request.prompt,
-      profiles: [...this.config.profiles.values()].map((profile) => `- **${profile.name}**: ${profile.description}`).join("\n"),
-      ledger: stepContext.ledger.read(),
+      profiles: [...this.config.profiles.values()].filter((profile) => profile.autoSelect !== false).map((profile) => `- **${profile.name}**: ${profile.description}`).join("\n"),
+      ledger: stepContext.ledger.readForPrompt(),
       feedback: stepContext.feedback,
       ...stepContext.extraVars,
     };
@@ -1666,7 +1960,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
   }
 
   private recordSkipped(run: Run, stepName: StepName, profile: FlowProfile): void {
-    const config = profile.steps[stepName];
+    const builtin = this.config.steps.get(stepName)?.kind === "builtin";
+    const config = run.request.modelConfig && !builtin
+      ? { ...profile.steps[stepName], ...run.request.modelConfig }
+      : profile.steps[stepName];
     const stepRun: StepRun = {
       id: randomUUID(),
       runId: run.id,
@@ -1675,7 +1972,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       seq: run.steps.length,
       status: "skipped",
       kind: this.config.steps.get(stepName)?.kind ?? "claude",
-      ...(this.config.steps.get(stepName)?.kind === "builtin" ? {} : { agent: agentOf(config) }),
+      ...(builtin ? {} : { agent: agentOf(config) }),
       model: config?.model ?? "haiku",
       effort: config?.effort ?? "low",
       costUsd: 0,

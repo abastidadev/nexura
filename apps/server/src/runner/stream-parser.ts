@@ -48,6 +48,76 @@ function toUsage(usage: Json | undefined): TokenUsage {
   };
 }
 
+const TOKEN_FIELDS = ["inputTokens", "outputTokens", "cacheReadTokens", "cacheCreationTokens", "thinkingTokens"] as const;
+
+/**
+ * Token usage seen in the stream's `assistant` messages, main agent and subagents alike.
+ * Claude repeats a message's usage on each of its content blocks (output grows as it
+ * streams), so each message id keeps its largest value per field. A lower bound of what
+ * was consumed: it survives a process that dies before its `result` event, and background
+ * work that goes on after it.
+ */
+export class StreamUsage {
+  private readonly messages = new Map<string, TokenUsage>();
+  /** Message ids of the main agent (not its subagents), in order. */
+  private readonly main: string[] = [];
+
+  public push(raw: Json | undefined): void {
+    const id = raw?.message?.id;
+    if (raw?.type !== "assistant" || typeof id !== "string" || !raw.message.usage) {
+      return;
+    }
+    const seen = this.messages.get(id);
+    const usage = toUsage(raw.message.usage);
+    this.messages.set(id, seen ? maxUsage(seen, usage) : usage);
+    if (!seen && !raw.parent_tool_use_id) {
+      this.main.push(id);
+    }
+  }
+
+  /** The main agent's first call: whether it read the conversation from the cache or wrote it. */
+  public firstCall(): TokenUsage | undefined {
+    return this.main.length ? this.messages.get(this.main[0]!) : undefined;
+  }
+
+  /** Size of the conversation at the main agent's last call, in tokens. */
+  public contextTokens(): number | undefined {
+    const last = this.main.length ? this.messages.get(this.main.at(-1)!) : undefined;
+    return last ? last.inputTokens + last.cacheReadTokens + last.cacheCreationTokens : undefined;
+  }
+
+  public total(): TokenUsage {
+    const total = emptyUsage();
+    for (const usage of this.messages.values()) {
+      for (const field of TOKEN_FIELDS) {
+        total[field] += usage[field];
+      }
+    }
+    return total;
+  }
+}
+
+export function emptyUsage(): TokenUsage {
+  return { inputTokens: 0, outputTokens: 0, cacheReadTokens: 0, cacheCreationTokens: 0, thinkingTokens: 0 };
+}
+
+export function maxUsage(a: TokenUsage, b: TokenUsage): TokenUsage {
+  const max = emptyUsage();
+  for (const field of TOKEN_FIELDS) {
+    max[field] = Math.max(a[field], b[field]);
+  }
+  return max;
+}
+
+/** What `observed` has beyond `reported`, field by field; undefined when nothing. */
+export function usageBeyond(observed: TokenUsage, reported: TokenUsage | undefined): TokenUsage | undefined {
+  const extra = emptyUsage();
+  for (const field of TOKEN_FIELDS) {
+    extra[field] = Math.max(0, observed[field] - (reported?.[field] ?? 0));
+  }
+  return TOKEN_FIELDS.some((field) => extra[field] > 0) ? extra : undefined;
+}
+
 /** Maps one raw stream-json event to zero or more normalised events. */
 export function normalize(raw: Json): NexuraEvent[] {
   switch (raw.type) {

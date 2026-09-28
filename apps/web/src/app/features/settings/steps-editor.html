@@ -135,8 +135,8 @@
       @if (current.kind === "claude") {
         <label class="flex items-center gap-2">
           Servidores MCP
-          <input type="text" class="nx-input w-52 font-mono" [value]="draft().mcpServers" (input)="patch({ mcpServers: value($event) })" placeholder="*, github, context7" />
-          <span class="text-xs text-muted">* = todos los activos del repo; vacío = ninguno</span>
+          <input type="text" class="nx-input w-52 font-mono" [value]="draft().mcpServers" (input)="patch({ mcpServers: value($event) })" placeholder="&#64;auto, github, context7" />
+          <span class="text-xs text-muted">&#64;auto = documentación y navegador según tarea; nombres explícitos = siempre; * = todos los activos; vacío = ninguno</span>
         </label>
         @if (knownMcp().length) {
           <span class="flex flex-wrap items-center gap-1">
@@ -153,6 +153,12 @@
               </button>
             }
           </span>
+        }
+        @if (skippedByAuto().length) {
+          <p class="text-xs text-muted">
+            &#64;auto solo elige entre {{ autoServers }}. No cargará
+            <span class="font-mono">{{ skippedByAuto().join(", ") }}</span>: si este paso los necesita (p. ej. la documentación de una librería del repo), márcalos arriba.
+          </p>
         }
         <label class="flex items-center gap-2" title="Memoria compartida entre tickets (y con tu Claude Code interactivo si le añades el servidor MCP)">
           Memoria

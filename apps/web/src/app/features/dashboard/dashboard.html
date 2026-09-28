@@ -76,7 +76,7 @@
           <p class="text-sm text-muted" role="status">Cargando…</p>
         } @else {
           @for (pr of toReview(); track pr.repo + pr.id) {
-            <a [routerLink]="['/reviews']" [queryParams]="{ repo: pr.repo }" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
+            <a [routerLink]="['/reviews']" [queryParams]="{ repo: pr.repo, pr: pr.id, run: pr.reviewRunId }" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm font-medium"><span class="font-mono text-muted">#{{ pr.id }}</span> {{ pr.title }}</div>
                 <div class="truncate text-xs text-muted">{{ pr.repo }} · {{ pr.author }}{{ pr.isDraft ? " · borrador" : "" }}</div>
@@ -95,7 +95,7 @@
           <p class="text-sm text-muted" role="status">Cargando…</p>
         } @else {
           @for (pr of reviewed(); track pr.repo + pr.id) {
-            <a [routerLink]="['/reviews']" [queryParams]="{ repo: pr.repo, run: pr.reviewRunId }" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
+            <a [routerLink]="['/reviews']" [queryParams]="{ repo: pr.repo, pr: pr.id, run: pr.reviewRunId }" class="flex items-center gap-3 rounded-md bg-surface-2 px-3 py-2 hover:bg-surface-3">
               <div class="min-w-0 flex-1">
                 <div class="truncate text-sm font-medium"><span class="font-mono text-muted">#{{ pr.id }}</span> {{ pr.title }}</div>
                 <div class="truncate text-xs text-muted">{{ pr.repo }} · {{ pr.author }}</div>

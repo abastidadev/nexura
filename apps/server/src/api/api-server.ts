@@ -14,10 +14,13 @@ import {
   type NexuraSettings,
   type PrReviewPublish,
   type RepoConfig,
+  type RepoDetection,
   type RetryOptions,
   type RunRequest,
   type ServerMessage,
   type StepName,
+  type NewTicketDraft,
+  type TicketDraftUpdate,
   type TicketSource,
   type WorkItemScope,
 } from "@nexura/shared";
@@ -38,16 +41,21 @@ import { rejectReason } from "./request-guard.ts";
 import { AzureError } from "../azure/azure-client.ts";
 import { ConversationManager } from "../conversations/conversation-manager.ts";
 import { ConversationStore } from "../conversations/conversation-store.ts";
-import { listPullRequests } from "../forge/forge.ts";
+import { getPullRequestDetail, listPullRequests } from "../forge/forge.ts";
 import { loadInbox } from "../forge/inbox.ts";
 import { repoRemoteOf } from "../forge/remote.ts";
-import { listTickets, loadTicket, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
+import { listTickets, loadTicket, ticketOptions, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
+import { TicketAssistant, TicketDraftError } from "../tickets/ticket-assistant.ts";
+import { TicketDraftStore } from "../tickets/ticket-draft-store.ts";
 import { GithubError } from "../github/github-client.ts";
 import { pickFolder } from "../system/folder-picker.ts";
 import { Ledger } from "../ledger/ledger.ts";
 import { mcpAddCommand, memoryStore } from "../memory/memory.ts";
 import { detectAgents } from "../runner/agents.ts";
 import { accountUsage } from "../runner/account-usage.ts";
+import { detectChecks } from "../workspace/check-detection.ts";
+import { CheckTrials } from "../workspace/check-trial.ts";
+import { defaultBranch } from "../workspace/git.ts";
 import { claudeInventory } from "../workspace/claude-inventory.ts";
 import { projectOf } from "../memory/memory-store.ts";
 import type { Orchestrator, PrReviewRequest } from "../orchestrator/orchestrator.ts";
@@ -113,9 +121,14 @@ export function createApiServer(
   orchestrator: Orchestrator,
   store: RunStore,
   conversations = new ConversationManager(new ConversationStore()),
+  tickets = new TicketAssistant(new TicketDraftStore(), {
+    settings: () => orchestrator.getSettings(),
+    quotaUntil: (agent) => orchestrator.quotaPauseFor(agent),
+  }),
 ): Server {
   const routes: Route[] = [];
   const terminals = new TerminalServer(store);
+  const checkTrials = new CheckTrials(loadConfig().steps.get("qaCode")?.timeoutMs ?? 20 * 60 * 1000);
   const route = (method: string, path: string, handler: Handler): void => {
     const pattern = new RegExp("^" + path.replace(/:\w+/g, "([^/]+)") + "$");
     routes.push({ method, pattern, handler });
@@ -242,6 +255,25 @@ export function createApiServer(
     saveRepos((body as { repos: RepoConfig[] }).repos ?? []);
     orchestrator.setConfig(loadConfig());
   });
+  /** Base branch and QA checks of a repo folder (saved or not yet), read from git and its files. */
+  route("POST", "/api/repos/detect", async (_params, body): Promise<RepoDetection> => {
+    const path = String((body as { path?: string }).path ?? "");
+    const checks = detectChecks(path);
+    const baseBranch = await defaultBranch(path);
+    return { ...(baseBranch ? { baseBranch } : {}), checks };
+  });
+  /** Runs checks on a clean worktree of the base branch; poll the returned trial. */
+  route("POST", "/api/repos/check-trials", (_params, body) => {
+    const { checks, ...repo } = body as Pick<RepoConfig, "path" | "baseBranch" | "nodeModules"> & { checks?: string[] };
+    return checkTrials.start(repo, checks ?? []);
+  });
+  route("GET", "/api/repos/check-trials/:id", ([id]) => {
+    const trial = checkTrials.get(id!);
+    if (!trial) {
+      throw new HttpError(404, `No existe la prueba de checks ${id}`);
+    }
+    return trial;
+  });
 
   /** Azure DevOps work items or GitHub issues (`source`); the org/repo comes from the chosen repo's origin remote. */
   const requestedTarget = (url: URL): Promise<TicketTarget> => {
@@ -274,6 +306,22 @@ export function createApiServer(
     }
     try {
       return await listPullRequests({ repo: repo.name, repoPath: repo.path });
+    } catch (error) {
+      throw upstreamError(error);
+    }
+  });
+  /** Files, reviewers, labels and linked tickets of one PR (Revisiones' detail panel). Zero tokens. */
+  route("GET", "/api/repos/:name/pull-requests/:id", async ([name, id]) => {
+    const repo = loadConfig().repos.find((candidate) => candidate.name === name);
+    if (!repo) {
+      throw new HttpError(404, `Repo desconocido: ${name}`);
+    }
+    const prId = Number(id);
+    if (!Number.isInteger(prId) || prId <= 0) {
+      throw new HttpError(400, `Número de PR no válido: ${id}`);
+    }
+    try {
+      return await getPullRequestDetail({ repo: repo.name, repoPath: repo.path }, prId);
     } catch (error) {
       throw upstreamError(error);
     }
@@ -336,6 +384,49 @@ export function createApiServer(
       throw upstreamError(error);
     }
   });
+
+  // ---- Tickets: write a work item or issue with the assistant, create it on the board.
+  /** Draft errors keep their status; the provider's, as upstream errors. */
+  const ticketCall = async <T>(call: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await call();
+    } catch (error) {
+      if (error instanceof TicketDraftError) {
+        throw new HttpError(error.status, error.message);
+      }
+      throw error instanceof AzureError || error instanceof GithubError ? upstreamError(error) : error;
+    }
+  };
+  /** Sprints, people, types and labels of a repo's board (zero tokens). */
+  route("GET", "/api/ticket-options", async (_params, _body, url) => {
+    const repo = loadConfig().repos.find((candidate) => candidate.name === url.searchParams.get("repo"));
+    if (!repo) {
+      throw new HttpError(404, `Repo desconocido: ${url.searchParams.get("repo")}`);
+    }
+    const requested = url.searchParams.get("source");
+    if (requested && !TICKET_SOURCES.includes(requested as TicketSource)) {
+      throw new HttpError(400, `Origen de tickets desconocido: ${requested}`);
+    }
+    const source = (await repoRemoteOf(repo.path))?.provider ?? (requested as TicketSource | null) ?? "azure";
+    return ticketCall(async () => ticketOptions(await ticketTarget(source, loadConfig().repos, repo.name), url.searchParams.get("team") || undefined));
+  });
+  route("GET", "/api/ticket-drafts", () => tickets.list());
+  route("GET", "/api/ticket-drafts/:id", ([id]) => ticketCall(() => tickets.get(id!)));
+  route("POST", "/api/ticket-drafts", (_params, body) => ticketCall(() => tickets.start(body as NewTicketDraft)));
+  route("PUT", "/api/ticket-drafts/:id", ([id], body) => ticketCall(() => tickets.update(id!, body as TicketDraftUpdate)));
+  // `items` (optional) = the person's latest edits, applied before the turn or the creation.
+  const edits = (body: unknown): TicketDraftUpdate | undefined => {
+    const items = (body as { items?: unknown } | undefined)?.items;
+    return Array.isArray(items) ? { items } : undefined;
+  };
+  route("POST", "/api/ticket-drafts/:id/message", ([id], body) =>
+    ticketCall(() => tickets.reply(id!, String((body as { text?: string }).text ?? ""), edits(body))),
+  );
+  route("POST", "/api/ticket-drafts/:id/split", ([id], body) => ticketCall(() => tickets.split(id!, edits(body))));
+  route("POST", "/api/ticket-drafts/:id/cancel", ([id]) => ticketCall(() => tickets.cancel(id!)));
+  /** The only call that writes to Azure DevOps or GitHub: the person pressed «Crear». */
+  route("POST", "/api/ticket-drafts/:id/create", ([id], body) => ticketCall(() => tickets.create(id!, edits(body))));
+  route("DELETE", "/api/ticket-drafts/:id", ([id]) => ticketCall(() => tickets.delete(id!)));
 
   /** Native folder dialog on the machine running Nexura (it is a local app). */
   route("POST", "/api/system/pick-folder", async (_params, body) => ({
@@ -448,7 +539,11 @@ export function createApiServer(
   };
   orchestrator.on("message", broadcast);
   conversations.on("message", broadcast);
-  server.on("close", () => conversations.dispose());
+  tickets.on("message", broadcast);
+  server.on("close", () => {
+    conversations.dispose();
+    tickets.dispose();
+  });
 
   return server;
 }

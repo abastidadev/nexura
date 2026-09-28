@@ -10,14 +10,14 @@ import { EFFORTS } from "../run-view/step-inspector";
 const DEFAULT_STEP: StepConfig = { model: "sonnet", effort: "medium", enabled: false };
 const PROFILE_NAME = /^[a-z0-9-]+$/;
 
-/** Starting point of a blank profile: the cheap core (enrich → implement → QA → release). */
+/** Starting point of a blank profile: the cheap core (implement → QA → release) in one session. */
 const BLANK_PROFILE: FlowProfile = {
   name: "",
   description: "",
   maxLoops: 1,
   reviewMode: "single",
   steps: {
-    enrich: { model: "haiku", effort: "medium", enabled: true },
+    enrich: { model: "haiku", effort: "medium", enabled: false },
     plan: { model: "sonnet", effort: "medium", enabled: false },
     implement: { model: "sonnet", effort: "medium", enabled: true },
     codeReview: { model: "sonnet", effort: "medium", enabled: false },

@@ -3,7 +3,7 @@
   "tools": ["Read", "Glob", "Grep", "Bash", "Skill", "Agent"],
   "allowedTools": ["Bash(git diff*)", "Bash(git log*)", "Bash(git show*)"],
   "disallowedTools": [],
-  "mcpServers": ["*"],
-  "memory": "readwrite",
+  "mcpServers": ["@auto"],
+  "memory": "read",
   "timeoutMs": 900000
 }

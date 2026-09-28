@@ -25,7 +25,7 @@ description: Starts Nexura (UI + API) with FAKE agents (claude, codex, copilot) 
    ```
    The first output line shows the URL and the temp directory.
 3. Open `http://localhost:<port>` (with the Playwright MCP if available) and create a flow on the **sandbox** repo. The fake claude creates `done.txt` in `implement`, so the `npm run check` QA check passes.
-4. To try **Revisiones**, open `/reviews`, pick `sandbox`, tick both PRs and click *Revisar*. The fake `prReview` answers with three comments plus one on a file that does not exist, which the orchestrator must drop. Publish some and check `github-posts.jsonl`.
+4. To try **Revisiones**, open `/reviews`, pick `sandbox`, click a PR (its panel shows files, the linked issue #6 of PR 1, reviewers and labels) and click *Revisar* there, choosing agent, model and effort. The fake `prReview` answers with three comments plus one on a file that does not exist, which the orchestrator must drop. Publish some and check `github-posts.jsonl`.
 5. Optional fake variables (see the header of `fixtures/fake-steps.mjs`, shared by the three fakes): `FAKE_REVIEW_REJECTS=1` (codeReview rejects once), `FAKE_FAIL_MARKER=<text>` (enrich fails if the prompt contains it).
 6. To see a flow that mixes agents, create a profile in Configuración → Perfiles with some steps on Codex or Copilot (and, with the blind review, judge B on another agent). Do not add it to `config/profiles/` by hand: that folder is tracked.
 7. When done, stop the background process.

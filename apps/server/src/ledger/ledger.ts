@@ -23,4 +23,24 @@ export class Ledger {
   public read(): string {
     return existsSync(this.file) ? readFileSync(this.file, "utf8") : "";
   }
+
+  /** Keep the latest entry per step, newest first; the full audit trail stays on disk. */
+  public readForPrompt(maxChars = 4000): string {
+    const entries = this.read().split(/(?=^### )/m).filter(Boolean);
+    const seen = new Set<string>();
+    const selected: string[] = [];
+    for (const entry of entries.reverse()) {
+      const key = entry.split(" — ")[0]!.replace(/\s+\(intento \d+\)$/, "");
+      if (!seen.has(key)) {
+        seen.add(key);
+        selected.push(entry.trim());
+      }
+    }
+    const text = selected.join("\n\n");
+    if (text.length <= maxChars) {
+      return text;
+    }
+    const marker = "\n… (historial completo guardado por Nexura)";
+    return (text.slice(0, Math.max(0, maxChars - marker.length)) + marker).slice(0, Math.max(0, maxChars));
+  }
 }

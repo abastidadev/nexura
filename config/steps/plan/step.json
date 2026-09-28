@@ -1,1 +1,1 @@
-{ "kind": "claude", "tools": ["Read", "Glob", "Grep", "Skill"], "allowedTools": [], "disallowedTools": [], "mcpServers": ["*"], "memory": "read", "timeoutMs": 600000 }
+{ "kind": "claude", "tools": ["Read", "Glob", "Grep", "Skill"], "allowedTools": [], "disallowedTools": [], "mcpServers": ["@auto"], "memory": "read", "timeoutMs": 600000 }

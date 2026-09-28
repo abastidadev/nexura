@@ -5,8 +5,10 @@ import type {
   AgentAccountUsage,
   AgentInfo,
   AgentKind,
+  CheckTrial,
   Effort,
   PrReviewPublish,
+  PullRequestDetail,
   PullRequestSummary,
   ClaudeInventory,
   Conversation,
@@ -22,13 +24,18 @@ import type {
   NexuraSettings,
   QuotaInfo,
   RepoConfig,
+  RepoDetection,
   RetryOptions,
   ReviewThread,
   Run,
   SavedConversationImage,
   RunRequest,
   StepDefinition,
+  NewTicketDraft,
   TicketDetails,
+  TicketDraft,
+  TicketItem,
+  TicketOptions,
   TicketSource,
   TranscriptMessage,
   WorkItemScope,
@@ -162,6 +169,20 @@ export class Api {
     return firstValueFrom(this.http.put<void>("/api/repos", { repos }));
   }
 
+  /** Base branch and QA checks read from a repo folder's git, CI, manifests and agent instructions. */
+  public detectRepo(path: string): Promise<RepoDetection> {
+    return firstValueFrom(this.http.post<RepoDetection>("/api/repos/detect", { path }));
+  }
+
+  /** Runs checks on a clean worktree of the base branch; poll it with checkTrial. */
+  public startCheckTrial(repo: Pick<RepoConfig, "path" | "baseBranch" | "nodeModules">, checks: string[]): Promise<CheckTrial> {
+    return firstValueFrom(this.http.post<CheckTrial>("/api/repos/check-trials", { ...repo, checks }));
+  }
+
+  public checkTrial(id: string): Promise<CheckTrial> {
+    return firstValueFrom(this.http.get<CheckTrial>(`/api/repos/check-trials/${id}`));
+  }
+
   /** An Azure DevOps work item or a GitHub issue, from the repo's organisation/project or GitHub repo. */
   public loadTicket(source: TicketSource, id: string, repo?: string): Promise<{ ticket: TicketDetails; text: string }> {
     const params: Record<string, string> = repo ? { source, repo } : { source };
@@ -186,6 +207,11 @@ export class Api {
     return firstValueFrom(this.http.get<PullRequestSummary[]>(`/api/repos/${encodeURIComponent(repo)}/pull-requests`));
   }
 
+  /** Files, reviewers, labels and linked tickets of one PR (Revisiones detail panel). */
+  public getPullRequestDetail(repo: string, prId: number): Promise<PullRequestDetail> {
+    return firstValueFrom(this.http.get<PullRequestDetail>(`/api/repos/${encodeURIComponent(repo)}/pull-requests/${prId}`));
+  }
+
   public startPrReview(request: PrReviewRequest): Promise<Run> {
     return firstValueFrom(this.http.post<Run>("/api/pr-reviews", request));
   }
@@ -197,6 +223,46 @@ export class Api {
   /** Adds the conventions a review found to the repo notes. */
   public learnConventions(runId: string): Promise<Run> {
     return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/learn-conventions`, {}));
+  }
+
+  /** Sprints, people, types and labels of the repo's board (Tickets). */
+  public ticketOptions(repo: string, team?: string): Promise<TicketOptions> {
+    return firstValueFrom(this.http.get<TicketOptions>("/api/ticket-options", { params: team ? { repo, team } : { repo } }));
+  }
+
+  public listTicketDrafts(): Promise<TicketDraft[]> {
+    return firstValueFrom(this.http.get<TicketDraft[]>("/api/ticket-drafts"));
+  }
+
+  /** Creates the draft; the assistant's first turn arrives over the WebSocket. */
+  public startTicketDraft(request: NewTicketDraft): Promise<TicketDraft> {
+    return firstValueFrom(this.http.post<TicketDraft>("/api/ticket-drafts", request));
+  }
+
+  public updateTicketDraft(id: string, items: TicketItem[]): Promise<TicketDraft> {
+    return firstValueFrom(this.http.put<TicketDraft>(`/api/ticket-drafts/${id}`, { items }));
+  }
+
+  /** The person's answer, with the items as they are on screen. */
+  public replyTicketDraft(id: string, text: string, items: TicketItem[]): Promise<TicketDraft> {
+    return firstValueFrom(this.http.post<TicketDraft>(`/api/ticket-drafts/${id}/message`, { text, items }));
+  }
+
+  public splitTicketDraft(id: string, items: TicketItem[]): Promise<TicketDraft> {
+    return firstValueFrom(this.http.post<TicketDraft>(`/api/ticket-drafts/${id}/split`, { items }));
+  }
+
+  public cancelTicketDraft(id: string): Promise<TicketDraft> {
+    return firstValueFrom(this.http.post<TicketDraft>(`/api/ticket-drafts/${id}/cancel`, {}));
+  }
+
+  /** Creates the items on Azure DevOps or GitHub. */
+  public createTicketDraft(id: string, items: TicketItem[]): Promise<TicketDraft> {
+    return firstValueFrom(this.http.post<TicketDraft>(`/api/ticket-drafts/${id}/create`, { items }));
+  }
+
+  public deleteTicketDraft(id: string): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/ticket-drafts/${id}`));
   }
 
   /** Native folder dialog on the Nexura machine; "" when cancelled. */

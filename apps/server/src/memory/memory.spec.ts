@@ -53,14 +53,21 @@ describe("MemoryStore", () => {
     expect(projectFromRemote("https://github.com/abastidadev/nexura.git")).toBe("nexura");
   });
 
-  it("builds {{memory}}: related to the ticket first, then the latest, without repeating", () => {
+  it("injects matching memories only, deduplicated across task and step queries and bounded", () => {
     const store = new MemoryStore(":memory:");
     expect(readMemory(store, "shop", "Filtro de fechas")).toBe("");
     store.save({ project: "shop", type: "ticket", title: "Ticket #7: Filtro de fechas", content: "hecho" });
     store.save({ project: "shop", type: "pattern", title: "Usa signals", content: "convención" });
     const text = readMemory(store, "shop", "Filtro de fechas en facturas");
-    expect(text).toMatch(/^### Relacionado con este ticket\n#1 \[ticket\] Ticket #7: Filtro de fechas[\s\S]*### Reciente en el repo\n#2 \[pattern\] Usa signals/);
+    expect(text).toMatch(/^### Relacionado con este ticket\n#1 \[ticket\] Ticket #7: Filtro de fechas/);
+    expect(text).not.toContain("Usa signals");
     expect(text.match(/Ticket #7/g)).toHaveLength(1);
+    expect(readMemory(store, "shop", ["fechas", "filtro"]).match(/Ticket #7/g)).toHaveLength(1);
+    expect(readMemory(store, "shop", "inventario")).toBe("");
+    expect(readMemory(store, "shop", "fechas", 40).length).toBeLessThanOrEqual(40);
+    store.save({ project: "shop", type: "ticket", title: "Ticket #7: Filtro de fechas", content: "intento anterior", topicKey: "tickets/7" });
+    expect(readMemory(store, "shop", "Filtro de fechas", 6000, "tickets/7")).not.toContain("intento anterior");
+    store.close();
   });
 });
 
@@ -106,5 +113,23 @@ describe("MCP server", () => {
     const store = new MemoryStore(db);
     expect(store.get(1)).toMatchObject({ project: "shop", source: "implement", runId: "r1" });
     store.close();
+  });
+
+  it("hides an earlier attempt of the same ticket from every memory read tool", async () => {
+    const db = join(root, "exclude.sqlite");
+    const store = new MemoryStore(db);
+    const old = store.save({ project: "shop", type: "ticket", title: "Ticket #7: filtro", content: "intento anterior", topicKey: "tickets/7" });
+    store.save({ project: "shop", type: "pattern", title: "Filtro reusable", content: "convención útil", topicKey: "patterns/filtro" });
+    store.close();
+    const replies = await call(["--db", db, "--project", "shop", "--mode", "read", "--exclude-topic", "tickets/7"], [
+      init,
+      { id: 1, method: "tools/call", params: { name: "mem_search", arguments: { query: "filtro" } } },
+      { id: 2, method: "tools/call", params: { name: "mem_get", arguments: { id: old.id } } },
+      { id: 3, method: "tools/call", params: { name: "mem_context", arguments: {} } },
+    ]);
+    for (const id of [1, 2, 3]) {
+      expect(replies.get(id)!.result.content[0].text).not.toContain("intento anterior");
+    }
+    expect(replies.get(1)!.result.content[0].text).toContain("Filtro reusable");
   });
 });

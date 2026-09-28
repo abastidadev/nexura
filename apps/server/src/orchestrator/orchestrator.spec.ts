@@ -84,6 +84,7 @@ const { Orchestrator } = await import("./orchestrator.ts");
 const { PrWatcher } = await import("../forge/pr-watcher.ts");
 const { readRepoNotes, saveRepoNotes } = await import("../workspace/repo-context.ts");
 const { closeMemoryStore, memoryStore } = await import("../memory/memory.ts");
+const { projectOf } = await import("../memory/memory-store.ts");
 const { createPrWorktree, removeWorktree } = await import("../workspace/git.ts");
 
 function git(cwd: string, ...args: string[]): string {
@@ -114,6 +115,20 @@ function request(overrides: Partial<RunRequest> = {}): RunRequest {
   };
 }
 
+/** A whole flow on Codex, with every phase separate (config/ no longer ships a codex profile). */
+function withCodexProfile(): ReturnType<typeof loadConfig> {
+  const config = loadConfig();
+  const codex = { agent: "codex" as const, model: "gpt-5.5", effort: "medium" as const, enabled: true };
+  config.profiles.set("codex-test", {
+    name: "codex-test",
+    description: "Flujo completo con Codex",
+    maxLoops: 1,
+    autoSelect: false,
+    steps: { enrich: codex, plan: codex, implement: codex, codeReview: codex, qaCode: codex, release: codex, addressReview: codex },
+  });
+  return config;
+}
+
 beforeAll(() => {
   mkdirSync(repoPath, { recursive: true });
   git(repoPath, "init", "-q", "-b", "main");
@@ -141,6 +156,7 @@ beforeEach(() => {
   delete process.env.FAKE_REVIEW_SPLIT;
   delete process.env.FAKE_FAIL_MARKER;
   delete process.env.FAKE_WAIT_MESSAGE;
+  delete process.env.FAKE_QA_FAIL_ONCE;
 });
 
 afterAll(() => {
@@ -149,16 +165,137 @@ afterAll(() => {
 });
 
 describe("Orchestrator (fake claude)", () => {
+  it("uses one selected model across the standard flow and keeps review independent", async () => {
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const run = await waitFor(orchestrator, orchestrator.start(request({
+      modelConfig: { agent: "claude", model: "opus", effort: "high" },
+    })).id);
+
+    expect(run.status).toBe("done");
+    const [plan, implement, review] = ["plan", "implement", "codeReview"]
+      .map((name) => run.steps.find((step) => step.step === name)!);
+    for (const step of [plan, implement, review]) {
+      expect(step).toMatchObject({ agent: "claude", model: "opus", effort: "high" });
+    }
+    expect(plan!.args).not.toContain("--resume");
+    expect(implement!.args).toEqual(expect.arrayContaining(["--resume", plan!.sessionId!]));
+    expect(implement!.args).not.toContain("--fork-session");
+    expect(implement!.sessionId).toBe(plan!.sessionId);
+    expect(review!.args).not.toContain("--resume");
+    expect(review!.sessionId).not.toBe(implement!.sessionId);
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("keeps the main session's tools, servers and memory across phases and only sends what is new", async () => {
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const run = await waitFor(orchestrator, orchestrator.start(request({ ticketText: "Cambiar el color del badge", modelConfig: { agent: "claude", model: "opus", effort: "medium" } })).id);
+
+    expect(run.status).toBe("done");
+    const [plan, implement, review] = ["plan", "implement", "codeReview"].map((name) => run.steps.find((step) => step.step === name)!);
+    const flag = (step: typeof plan, name: string): string | undefined => step!.args![step!.args!.indexOf(name) + 1];
+    const memoryServer = (step: typeof plan): string[] => JSON.parse(flag(step, "--mcp-config")!).mcpServers["nexura-memory"].args;
+    // Same tool schemas and memory protocol: the conversation stays in the prompt cache.
+    expect(flag(implement, "--tools")).toBe(flag(plan, "--tools"));
+    expect(flag(plan, "--tools")!.split(",")).toEqual(expect.arrayContaining(["Edit", "Write", "Bash"]));
+    expect(flag(implement, "--disallowedTools")).toBe(flag(plan, "--disallowedTools"));
+    expect(flag(implement, "--append-system-prompt")).toBe(flag(plan, "--append-system-prompt"));
+    // Claude turns --json-schema into its StructuredOutput tool: one schema for every phase, each answers under its key.
+    expect(flag(implement, "--json-schema")).toBe(flag(plan, "--json-schema"));
+    expect(Object.keys(JSON.parse(flag(plan, "--json-schema")!).properties)).toEqual(expect.arrayContaining(["plan", "implement"]));
+    expect(implement!.structuredOutput).toMatchObject({ commitMessage: expect.any(String) });
+    expect(memoryServer(plan)[memoryServer(plan).indexOf("--mode") + 1]).toBe("readwrite");
+    // ...but plan may only read: nothing it could edit or save is pre-approved.
+    expect(flag(plan, "--allowedTools")?.split(",") ?? []).not.toEqual(expect.arrayContaining(["Edit"]));
+    expect(flag(plan, "--allowedTools")?.split(",") ?? []).not.toContain("mcp__nexura-memory__mem_save");
+    expect(flag(implement, "--allowedTools")!.split(",")).toEqual(expect.arrayContaining(["Edit", "mcp__nexura-memory__mem_save"]));
+    // The continuation carries the phase's instructions and new data, not the ticket again.
+    expect(implement!.prompt).toMatch(/^Sigues en la misma conversación/);
+    expect(implement!.prompt).toContain("Eres el paso **implement**");
+    expect(implement!.prompt).not.toContain("Cambiar el color del badge");
+    expect(implement!.prompt).not.toContain("## Plan");
+    expect(plan!.prompt).toContain("Cambiar el color del badge");
+    expect(implement!.contextMetrics).toMatchObject({ cacheReused: true, firstCallCacheRead: 1000, contextTokens: 1060 });
+    expect(plan!.contextMetrics).toMatchObject({ contextTokens: 1010, firstCallCacheWrite: 1000 });
+    // The reviewer has its own, independent session and its own tools.
+    expect(flag(review, "--tools")).not.toBe(flag(implement, "--tools"));
+    expect(review!.prompt).toContain("Cambiar el color del badge");
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("warns when a continued phase rewrote its conversation into the cache, and starts fresh past the context limit", async () => {
+    process.env.FAKE_CACHE_MISS = "1";
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    try {
+      const missed = await waitFor(orchestrator, orchestrator.start(request()).id);
+      const implement = missed.steps.find((step) => step.step === "implement")!;
+      expect(implement.contextMetrics).toMatchObject({ cacheReused: false });
+      const warnings = store.getEvents(implement.id, -1).map((stored) => stored.event).filter((event) => event.kind === "text");
+      // plan and implement share tools, servers, memory, model and output schema: nothing Nexura controls changed.
+      expect(warnings).toContainEqual(expect.objectContaining({ text: expect.stringMatching(/sin aprovechar la caché.*No cambió nada de lo que controla Nexura/) }));
+      await orchestrator.cleanup(missed.id, true);
+
+      delete process.env.FAKE_CACHE_MISS;
+      process.env.FAKE_CONTEXT_TOKENS = "450000";
+      const large = await waitFor(orchestrator, orchestrator.start(request()).id);
+      const next = large.steps.find((step) => step.step === "implement")!;
+      expect(next.args).not.toContain("--resume");
+      expect(next.contextMetrics!.sessionDecision).toMatch(/contexto de 450010 tokens/);
+      expect(next.prompt).toContain("## Ticket");
+      await orchestrator.cleanup(large.id, true);
+    } finally {
+      delete process.env.FAKE_CACHE_MISS;
+      delete process.env.FAKE_CONTEXT_TOKENS;
+    }
+  });
+
+  it("continues a Claude session when a plan changes models, and starts fresh across providers", async () => {
+    const config = loadConfig();
+    const standard = config.profiles.get("standard")!;
+    config.profiles.set("switch-models", {
+      ...standard, name: "switch-models", steps: {
+        ...standard.steps,
+        enrich: { model: "sonnet", effort: "low", enabled: true },
+        plan: { model: "opus", effort: "high", enabled: true },
+        implement: { model: "sonnet", effort: "medium", enabled: true },
+      },
+    });
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(config, store, { concurrency: 1 });
+    const same = await waitFor(orchestrator, orchestrator.start(request({ profile: "switch-models" })).id);
+    expect(same.status).toBe("done");
+    const [enrich, plan, implement] = ["enrich", "plan", "implement"].map((name) => same.steps.find((step) => step.step === name)!);
+    expect(plan!.args).toEqual(expect.arrayContaining(["--resume", enrich!.sessionId!, "--model", "opus"]));
+    expect(implement!.args).toEqual(expect.arrayContaining(["--resume", plan!.sessionId!, "--model", "sonnet"]));
+    expect(enrich!.sessionId).toBe(implement!.sessionId);
+    await orchestrator.cleanup(same.id, true);
+
+    config.profiles.set("switch-providers", { ...config.profiles.get("switch-models")!, name: "switch-providers", steps: {
+      ...config.profiles.get("switch-models")!.steps,
+      plan: { agent: "codex", model: "gpt-5.5", effort: "medium", enabled: true },
+    } });
+    const mixed = await waitFor(orchestrator, orchestrator.start(request({ profile: "switch-providers" })).id);
+    expect(mixed.status).toBe("done");
+    expect(mixed.steps.find((step) => step.step === "plan")!.args).not.toContain("resume");
+    expect(mixed.steps.find((step) => step.step === "implement")!.args).not.toContain("--resume");
+    await orchestrator.cleanup(mixed.id, true);
+  });
+
   it("gives the steps with mcpServers '*' every MCP server of the repo's Claude config, pre-approved", async () => {
     const home = process.env.CLAUDE_CONFIG_DIR!;
     mkdirSync(home, { recursive: true });
     writeFileSync(join(home, ".claude.json"), JSON.stringify({ mcpServers: { context7: { command: "docs-mcp" }, playwright: { command: "pw-mcp" }, "nexura-memory": { command: "impostor" } } }));
     try {
       const store = new RunStore(":memory:");
-      const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
-      const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal" })).id);
+      const config = loadConfig();
+      config.steps.get("plan")!.mcpServers = ["*"];
+      config.steps.get("implement")!.mcpServers = ["*"];
+      const orchestrator = new Orchestrator(config, store, { concurrency: 1 });
+      const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "standard" })).id);
       expect(run.status).toBe("done");
-      for (const name of ["enrich", "implement"]) {
+      for (const name of ["plan", "implement"]) {
         const args = run.steps.find((step) => step.step === name)!.args!;
         // The memory server inline (always Nexura's own), the repo's servers in a file removed after the step.
         const configs = args.slice(args.indexOf("--mcp-config") + 1, args.indexOf("--mcp-config") + 3);
@@ -194,7 +331,7 @@ describe("Orchestrator (fake claude)", () => {
     const run = await waitFor(orchestrator, started.id);
 
     expect(run.error).toBeUndefined();
-    expect(run.steps.map((step) => step.step)).toEqual(["enrich", "implement", "docs", "qaCode", "release"]);
+    expect(run.steps.map((step) => step.step)).toEqual(["implement", "docs", "qaCode", "release"]);
     expect(run.steps.find((step) => step.step === "docs")!.structuredOutput).toBe("hecho docs");
     const worktree = run.worktrees[0]!;
     expect(git(worktree.path, "log", "-1", "--format=%s")).toBe("chore: Docs (nexura)");
@@ -223,9 +360,9 @@ describe("Orchestrator (fake claude)", () => {
     const run = await waitFor(orchestrator, started.id);
 
     expect(run.status).toBe("done");
-    const enrich = run.steps.find((step) => step.step === "enrich")!;
-    expect(enrich.structuredOutput).toMatchObject({ summary: "fake + usa signals" });
-    expect(store.getEvents(enrich.id, -1).map((stored) => stored.event)).toContainEqual({ kind: "userMessage", text: "usa signals" });
+    const implement = run.steps.find((step) => step.step === "implement")!;
+    expect(implement.structuredOutput).toMatchObject({ summary: "fake + usa signals" });
+    expect(store.getEvents(implement.id, -1).map((stored) => stored.event)).toContainEqual({ kind: "userMessage", text: "usa signals" });
     expect(() => orchestrator.sendMessage(run.id, "tarde")).toThrow(/no hay ningún paso/);
     await orchestrator.cleanup(run.id, true);
   });
@@ -240,17 +377,17 @@ describe("Orchestrator (fake claude)", () => {
     expect(run.error).toBeUndefined();
     expect(run.status).toBe("done");
     expect(run.steps.map((s) => `${s.step}:${s.status}`)).toEqual([
-      "enrich:succeeded",
       "plan:succeeded",
       "implement:succeeded",
+      "qaCode:succeeded",
       "codeReview:succeeded",
       "implement:succeeded",
-      "codeReview:succeeded",
       "qaCode:succeeded",
+      "codeReview:succeeded",
       "release:succeeded",
     ]);
     expect(run.request.tasks[0]!.done).toBe(true);
-    expect(run.totalCostUsd).toBeCloseTo(0.06);
+    expect(run.totalCostUsd).toBeCloseTo(0.05);
 
     const worktree = run.worktrees[0]!;
     expect(worktree.branch).toMatch(/^feat\/[\w]+-cambiar-el-color-del-badge$/);
@@ -263,6 +400,11 @@ describe("Orchestrator (fake claude)", () => {
     // The second implement got the review feedback in its prompt.
     const implementRuns = run.steps.filter((s) => s.step === "implement");
     expect(implementRuns[1]!.prompt).toContain("[major] x: p → f");
+    expect(implementRuns[1]!.args).toEqual(expect.arrayContaining(["--resume", implementRuns[0]!.sessionId!]));
+    expect(implementRuns[1]!.args).not.toContain("--fork-session");
+    expect(implementRuns[1]!.sessionId).toBe(implementRuns[0]!.sessionId);
+    expect(implementRuns[1]!.contextMetrics).toMatchObject({ resumedFrom: implementRuns[0]!.id, correctionDepth: 1, memoryChars: 0, ledgerChars: 0 });
+    expect(implementRuns[1]!.prompt!.length).toBeLessThan(implementRuns[0]!.prompt!.length);
     expect(readFileSync(join(process.env.NEXURA_DATA_DIR!, "runs", run.id, "ledger.md"), "utf8")).toContain("Commits: sandbox@");
 
     // Events were persisted per step.
@@ -285,8 +427,100 @@ describe("Orchestrator (fake claude)", () => {
     expect(run.status).toBe("done");
     expect(run.resolvedProfile).toBe("minimal");
     expect(run.classifyReason).toContain("fake");
-    expect(run.steps.map((s) => s.step)).toEqual(["classify", "enrich", "implement", "qaCode", "release"]);
+    expect(run.steps.map((s) => s.step)).toEqual(["classify", "implement", "qaCode", "release"]);
     expect(run.steps[0]!.model).toBe("haiku");
+    const args = run.steps[0]!.args!;
+    const schema = JSON.parse(args[args.indexOf("--json-schema") + 1]!);
+    expect(schema.properties.profile.enum).not.toContain("focused");
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("rechecks a custom writer after review and prevents release if it breaks QA", async () => {
+    const config = loadConfig();
+    config.steps.set("late", { ...config.steps.get("implement")!, name: "late", custom: true, after: "codeReview", schema: undefined, promptTemplate: "Eres el paso **late**." });
+    const standard = config.profiles.get("standard")!;
+    config.profiles.set("late-test", { ...standard, name: "late-test", maxLoops: 0, steps: { ...standard.steps, late: { model: "haiku", effort: "low", enabled: true } } });
+    config.repos = config.repos.map((repo) => ({ ...repo, checks: [...repo.checks, "node -e \"process.exit(require('fs').existsSync('late.txt')?1:0)\""] }));
+    const orchestrator = new Orchestrator(config, new RunStore(":memory:"), { concurrency: 1 });
+    const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "late-test" })).id);
+    expect(run.status).toBe("failed");
+    expect(run.steps.map((step) => step.step)).toEqual(["plan", "implement", "qaCode", "codeReview", "late", "qaCode"]);
+    expect(run.error).toContain("qaCode sigue pidiendo cambios");
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("drops the extra QA once it ran, so an unchanged custom writer is not rechecked", async () => {
+    const config = loadConfig();
+    config.steps.set("late", { ...config.steps.get("implement")!, name: "late", custom: true, after: "codeReview", schema: undefined, promptTemplate: "Eres el paso **late**." });
+    const standard = config.profiles.get("standard")!;
+    config.profiles.set("late-test", { ...standard, name: "late-test", maxLoops: 1, steps: { ...standard.steps, late: { model: "haiku", effort: "low", enabled: true } } });
+    // Fails only between the custom writer's first change and the second implementation.
+    const check = "node -e \"const fs=require('fs');process.exit(fs.existsSync('late.txt')&&!fs.existsSync('impl-2.txt')?1:0)\"";
+    config.repos = config.repos.map((repo) => ({ ...repo, checks: [...repo.checks, check] }));
+    const orchestrator = new Orchestrator(config, new RunStore(":memory:"), { concurrency: 1 });
+    const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "late-test" })).id);
+    expect(run.status).toBe("done");
+    expect(run.steps.map((step) => step.step)).toEqual([
+      "plan", "implement", "qaCode", "codeReview", "late", "qaCode",
+      "implement", "qaCode", "codeReview", "late", "release",
+    ]);
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("corrects failed QA before spending a review and persists context observations", async () => {
+    process.env.FAKE_QA_FAIL_ONCE = "1";
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const run = await waitFor(orchestrator, orchestrator.start(request()).id);
+    expect(run.status).toBe("done");
+    expect(run.steps.map((step) => step.step)).toEqual(["plan", "implement", "qaCode", "implement", "qaCode", "codeReview", "release"]);
+    expect(run.steps.filter((step) => step.step === "qaCode").map((step) => (step.structuredOutput as { passed: boolean }).passed)).toEqual([false, true]);
+    const implementations = run.steps.filter((step) => step.step === "implement");
+    expect(implementations[1]!.contextMetrics?.resumedFrom).toBe(implementations[0]!.id);
+    expect(implementations[1]!.prompt).toContain("npm run check");
+    expect(store.getRun(run.id)!.steps.find((step) => step.id === implementations[1]!.id)?.contextMetrics?.promptChars).toBe(implementations[1]!.prompt!.length);
+    expect(run.steps.find((step) => step.step === "codeReview")!.prompt).toContain('"passed": true');
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("automatically selects enabled MCPs while keeping explicitly configured servers", async () => {
+    const home = process.env.CLAUDE_CONFIG_DIR!;
+    mkdirSync(home, { recursive: true });
+    writeFileSync(join(home, ".claude.json"), JSON.stringify({ mcpServers: { context7: { command: "docs" }, playwright: { command: "browser" }, github: { command: "forge" }, billing: { command: "billing" } } }));
+    try {
+      const config = loadConfig();
+      config.steps.get("implement")!.mcpServers = ["@auto", "github"];
+      const orchestrator = new Orchestrator(config, new RunStore(":memory:"), { concurrency: 1 });
+      const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "focused", ticketText: "Corregir pantalla UI" })).id);
+      expect(run.status).toBe("done");
+      const servers = run.steps[0]!.contextMetrics!.mcpServers;
+      expect(servers).toEqual(expect.arrayContaining(["context7", "playwright", "github", "nexura-memory"]));
+      expect(servers).not.toContain("billing");
+      await orchestrator.cleanup(run.id, true);
+    } finally {
+      rmSync(join(home, ".claude.json"), { force: true });
+    }
+  });
+
+  it("runs the focused profile with one agent followed by deterministic QA", async () => {
+    const orchestrator = new Orchestrator(loadConfig(), new RunStore(":memory:"), { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "focused" }));
+    const run = await waitFor(orchestrator, started.id);
+    expect(run.status).toBe("done");
+    expect(run.steps.map((step) => step.step)).toEqual(["implement", "qaCode", "release"]);
+    expect(run.steps[0]!.model).toBe("opus");
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("stops unverified QA without looping implementation or releasing", async () => {
+    const config = loadConfig();
+    config.repos = config.repos.map((repo) => ({ ...repo, checks: [] }));
+    const orchestrator = new Orchestrator(config, new RunStore(":memory:"), { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "focused" }));
+    const run = await waitFor(orchestrator, started.id);
+    expect(run.status).toBe("failed");
+    expect(run.steps.map((step) => step.step)).toEqual(["implement", "qaCode"]);
+    expect(run.steps[1]!.error).toContain("QA sin verificar");
     await orchestrator.cleanup(run.id, true);
   });
 
@@ -307,19 +541,21 @@ describe("Orchestrator (fake claude)", () => {
       expect(run.error).toBeUndefined();
       expect(run.status).toBe("done");
       expect(run.steps.map((s) => (s.judge ? `${s.step}:${s.judge}` : s.step))).toEqual([
-        "enrich",
         "plan",
         "implement",
+        "qaCode",
         "codeReview:A",
         "codeReview:B",
         "implement",
+        "qaCode",
         "codeReview:A",
         "codeReview:B",
-        "qaCode",
         "release",
       ]);
       const reviews = run.steps.filter((s) => s.step === "codeReview");
       expect(reviews[0]!.prompt).toBe(reviews[1]!.prompt);
+      expect(reviews[0]!.contextMetrics!.ledgerChars).toBeGreaterThan(0);
+      expect(reviews[1]!.contextMetrics!.ledgerChars).toBe(reviews[0]!.contextMetrics!.ledgerChars);
       expect(reviews[2]!.prompt).toBe(reviews[3]!.prompt);
       expect(reviews.map((s) => s.attempt)).toEqual([1, 1, 2, 2]);
       expect(run.steps.filter((s) => s.step === "implement")[1]!.prompt).toContain("[major] x: p → f");
@@ -361,23 +597,24 @@ describe("Orchestrator (fake claude)", () => {
     process.env.FAKE_FAIL_MARKER = "ROMPER";
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
-    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Ticket ROMPER" }));
+    const started = orchestrator.start(request({ profile: "standard", ticketText: "Ticket ROMPER" }));
     const failed = await waitFor(orchestrator, started.id);
 
     expect(failed.status).toBe("failed");
-    expect(failed.error).toContain("Falló el paso enrich");
-    expect(failed.steps.at(-1)).toMatchObject({ step: "enrich", status: "failed" });
+    expect(failed.error).toContain("Falló el paso plan");
+    expect(failed.steps.at(-1)).toMatchObject({ step: "plan", status: "failed" });
 
     const retried = waitFor(orchestrator, started.id);
-    orchestrator.retry(started.id, { prompt: "Eres el paso **enrich**. Versión corregida." });
+    orchestrator.retry(started.id, { prompt: "Eres el paso **plan**. Versión corregida." });
     const run = await retried;
 
     expect(run.status).toBe("done");
     expect(run.steps.map((s) => `${s.step}#${s.attempt}:${s.status}`)).toEqual([
-      "enrich#1:failed",
-      "enrich#2:succeeded",
+      "plan#1:failed",
+      "plan#2:succeeded",
       "implement#1:succeeded",
       "qaCode#1:succeeded",
+      "codeReview#1:succeeded",
       "release#1:succeeded",
     ]);
     // The same worktree was reused on retry.
@@ -394,7 +631,7 @@ describe("Orchestrator (fake claude)", () => {
     orchestrator.on("message", (message) => {
       if (message.type === "run" && message.run.id === started.id && message.run.status === "paused") {
         const pending = message.run.pendingStep!;
-        const edited = pending.step === "enrich" ? { prompt: `${pending.prompt}\nEDITADO` } : undefined;
+        const edited = pending.step === "implement" ? { prompt: `${pending.prompt}\nEDITADO` } : undefined;
         setImmediate(() => orchestrator.continue(started.id, edited));
       }
     });
@@ -430,6 +667,7 @@ describe("Release with a PR (push and PR mocked)", () => {
 
     expect(run.status).toBe("done");
     expect(seenDraft).toMatchObject({ repo: "sandbox", target: "main", workItemId: 59128, title: "feat(fake): implement 1" });
+    expect(seenDraft!.description).toBe("Implement change 1. Verified with npm run check.");
     expect(seenDraft!.description).not.toContain("59128");
     // Title is editable; the branch is not.
     expect(createdPrs).toEqual([expect.objectContaining({ title: "feat(fake): título editado", branch: seenDraft!.branch })]);
@@ -493,7 +731,8 @@ describe("addressReview (provider mocked)", () => {
     pushed.length = 0;
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
-    const started = orchestrator.start(request({ profile: "minimal", ticketId: "7", ticketText: "Ticket revisado", release: "pr" }));
+    const started = orchestrator.start(request({ profile: "minimal", ticketId: "7", ticketText: "Ticket revisado", release: "pr",
+      modelConfig: { agent: "claude", model: "opus", effort: "high" } }));
     orchestrator.on("message", (message) => {
       if (message.type === "run" && message.run.id === started.id && message.run.pendingStep?.prDrafts) {
         setImmediate(() => orchestrator.continue(started.id));
@@ -524,7 +763,8 @@ describe("addressReview (provider mocked)", () => {
     // The invented thread 999 never reaches the approval; the prompt listed both real threads.
     expect(pending!.replies!.map((reply) => reply.threadId)).toEqual([11, 12]);
     expect(pending!.commits).toHaveLength(1);
-    expect(run.steps.at(-1)).toMatchObject({ step: "addressReview", status: "succeeded" });
+    expect(run.steps.at(-1)).toMatchObject({ step: "addressReview", status: "succeeded", model: "opus", effort: "high" });
+    expect(run.steps.at(-1)!.args).toEqual(expect.arrayContaining(["--resume", run.steps.find((step) => step.step === "implement")!.sessionId!]));
     expect(run.steps.at(-1)!.prompt).toContain("thread 11 · /math.js:3");
     // Only the approved (edited) reply was posted, after pushing the fix.
     expect(pushed).toEqual([run.worktrees[0]!.branch]);
@@ -561,19 +801,23 @@ describe("addressReview (provider mocked)", () => {
 describe("Budgets, classify feedback, qaNotes and metrics", () => {
   it("caps each step with the remaining profile budget and stops when it is spent", async () => {
     const config = loadConfig();
-    config.profiles.set("tight", { ...structuredClone(config.profiles.get("minimal")!), name: "tight", budgetUsd: 0.015 });
+    config.profiles.set("tight", { ...structuredClone(config.profiles.get("standard")!), name: "tight", budgetUsd: 0.025 });
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(config, store, { concurrency: 1 });
     const started = orchestrator.start(request({ profile: "tight", ticketText: "Con presupuesto" }));
     const run = await waitFor(orchestrator, started.id);
 
-    // enrich spends 0.01 of 0.015 -> implement gets --max-budget-usd 0.005, spends 0.01 -> nothing left.
-    expect(run.steps[0]!.args).toEqual(expect.arrayContaining(["--max-budget-usd", "0.015"]));
-    expect(run.steps[1]!.args).toEqual(expect.arrayContaining(["--max-budget-usd", "0.005"]));
+    // plan spends 0.01 of 0.025 -> implement gets 0.015, spends 0.01 -> codeReview gets the last 0.005.
+    // implement resumes plan's session, whose reported total already includes plan's 0.01.
+    expect(run.steps[0]!.args).toEqual(expect.arrayContaining(["--max-budget-usd", "0.025"]));
+    expect(run.steps[1]!.args).toEqual(expect.arrayContaining(["--resume", "--max-budget-usd", "0.025"]));
+    expect(run.steps.find((step) => step.step === "codeReview")!.args).toEqual(expect.arrayContaining(["--max-budget-usd", "0.005"]));
+    expect(run.steps[1]).toMatchObject({ costUsd: expect.closeTo(0.01), sessionCostUsd: expect.closeTo(0.02) });
+    expect(run.totalCostUsd).toBeCloseTo(0.03);
     expect(run.status).toBe("done");
 
     const config2 = loadConfig();
-    config2.profiles.set("broke", { ...structuredClone(config2.profiles.get("minimal")!), name: "broke", budgetUsd: 0.01 });
+    config2.profiles.set("broke", { ...structuredClone(config2.profiles.get("standard")!), name: "broke", budgetUsd: 0.01 });
     const orchestrator2 = new Orchestrator(config2, store, { concurrency: 1 });
     const started2 = orchestrator2.start(request({ profile: "broke", ticketText: "Sin presupuesto" }));
     const failed = await waitFor(orchestrator2, started2.id);
@@ -588,7 +832,9 @@ describe("Budgets, classify feedback, qaNotes and metrics", () => {
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
 
     const full = await waitFor(orchestrator, orchestrator.start(request({ profile: "full", ticketText: "Grande" })).id);
-    expect(full.steps.map((s) => s.step)).toEqual(["enrich", "plan", "implement", "codeReview", "codeReview", "qaCode", "release", "qaNotes"]);
+    expect(full.steps.map((s) => s.step)).toEqual(["plan", "implement", "qaCode", "codeReview", "codeReview", "release", "qaNotes"]);
+    // qaNotes summarises the diff on its own model: it never inherits the main session.
+    expect(full.steps.at(-1)!.args).not.toContain("--resume");
     expect(full.steps.filter((s) => s.step === "codeReview").map((s) => s.judge)).toEqual(["A", "B"]);
     expect(full.steps.at(-1)!.structuredOutput).toMatchObject({ cases: [expect.objectContaining({ title: "Caso feliz" })] });
 
@@ -599,8 +845,8 @@ describe("Budgets, classify feedback, qaNotes and metrics", () => {
 
     const metrics = store.metrics();
     expect(metrics.totals).toMatchObject({ runs: 2, done: 2, failed: 0 });
-    // full: enrich, plan, implement, 2 codeReview judges, qaNotes; auto: classify, enrich, implement.
-    expect(metrics.totals.costUsd).toBeCloseTo(0.01 * 6 + 0.01 * 3);
+    // full: plan, implement, 2 codeReview judges, qaNotes; auto: classify, implement.
+    expect(metrics.totals.costUsd).toBeCloseTo(0.01 * 5 + 0.01 * 2);
     expect(metrics.byStep.find((row) => row.step === "qaCode")).toMatchObject({ model: "sin LLM", runs: 2 });
     expect(metrics.byProfile.map((row) => row.profile).sort()).toEqual(["full", "minimal"]);
     expect(metrics.classify).toMatchObject({ rated: 1, correct: 0, mistakes: [{ runId: auto.id, chosen: "minimal", expected: "standard" }] });
@@ -643,7 +889,7 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
       reads++;
       return { codex: { windows: [{ label: "5 h", usedPercent: 95, resetsAt }], updatedAt: new Date().toISOString() } };
     };
-    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1, rateLimitMarginMs: 0, accountUsage });
+    const orchestrator = new Orchestrator(withCodexProfile(), store, { concurrency: 1, rateLimitMarginMs: 0, accountUsage });
     const statuses: string[] = [];
     orchestrator.on("message", (message) => {
       if (message.type === "run" && statuses.at(-1) !== message.run.status) {
@@ -687,19 +933,20 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
     expect(() => orchestrator.saveSettings({ prPollSeconds: 5 })).toThrow(/al menos 30/);
   });
 
-  it("learns enrich conventions per repo and hands them, with the repo map, to the next ticket", async () => {
+  it("learns the conventions plan finds per repo and hands them, with the repo map, to the next ticket", async () => {
     saveRepoNotes("sandbox", ""); // Earlier tests in this file already taught it.
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
-    const first = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Aprende" })).id);
+    const first = await waitFor(orchestrator, orchestrator.start(request({ profile: "standard", ticketText: "Aprende" })).id);
+    expect(first.steps[0]!.step).toBe("plan");
     expect(readRepoNotes("sandbox")).toContain("- Usa inject() en vez de constructores");
     expect(store.getEvents(first.steps[0]!.id).some((e) => e.event.kind === "text" && e.event.text.includes("Aprendidas"))).toBe(true);
 
-    const second = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Usa lo aprendido" })).id);
-    const enrichPrompt = second.steps[0]!.prompt!;
-    expect(enrichPrompt).toContain("## Notas aprendidas del repo\n**sandbox**\n- Usa inject() en vez de constructores");
-    expect(enrichPrompt).toMatch(/\*\*sandbox\*\* \(\d+ ficheros versionados\)/);
-    expect(enrichPrompt).toContain("Scripts npm: check");
+    const second = await waitFor(orchestrator, orchestrator.start(request({ profile: "standard", ticketText: "Usa lo aprendido" })).id);
+    const planPrompt = second.steps[0]!.prompt!;
+    expect(planPrompt).toContain("## Notas aprendidas del repo\n**sandbox**\n- Usa inject() en vez de constructores");
+    expect(planPrompt).toMatch(/\*\*sandbox\*\* \(\d+ ficheros versionados\)/);
+    expect(planPrompt).toContain("Scripts npm: check");
     // Already known: nothing new is learned the second time.
     expect(store.getEvents(second.steps[0]!.id).some((e) => e.event.kind === "text" && e.event.text.includes("Aprendidas"))).toBe(false);
     await orchestrator.cleanup(first.id, true);
@@ -714,38 +961,42 @@ describe("Quota guard, repo knowledge and PR watcher", () => {
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
 
-    const first = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketId: "77", ticketText: "Filtro de fechas en pedidos" })).id);
+    const first = await waitFor(orchestrator, orchestrator.start(request({ profile: "standard", ticketId: "77", ticketText: "Filtro de fechas en pedidos" })).id);
     expect(first.status).toBe("done");
-    const [enrich, implement] = first.steps;
-    // enrich only reads; implement may also save. Both are bound to the repo's project and step.
-    const enrichServer = serverArgs(enrich!.args);
-    expect(flagOf(enrichServer, "--mode")).toBe("read");
-    expect(flagOf(enrichServer, "--project")).toBe("sandbox");
-    expect(flagOf(enrichServer, "--source")).toBe("enrich");
-    expect(flagOf(enrichServer, "--run")).toBe(first.id);
+    const [plan, implement] = first.steps;
+    // Both phases of the session load the same memory server (the session's readwrite mode, so its
+    // tool schemas stay cached), bound to the repo's project and step; plan may only read with it.
+    const planServer = serverArgs(plan!.args);
+    expect(flagOf(planServer, "--mode")).toBe("readwrite");
+    expect(flagOf(planServer, "--project")).toBe("sandbox");
+    expect(flagOf(planServer, "--source")).toBe("plan");
+    expect(flagOf(planServer, "--run")).toBe(first.id);
     expect(flagOf(serverArgs(implement!.args), "--mode")).toBe("readwrite");
-    expect(enrich!.args).toContain("--append-system-prompt");
-    const allowed = enrich!.args![enrich!.args!.indexOf("--allowedTools") + 1]!;
+    expect(plan!.args).toContain("--append-system-prompt");
+    const allowed = plan!.args![plan!.args!.indexOf("--allowedTools") + 1]!;
     expect(allowed).toContain("mcp__nexura-memory__mem_search");
     expect(allowed).not.toContain("mem_save");
+    expect(implement!.args![implement!.args!.indexOf("--allowedTools") + 1]).toContain("mcp__nexura-memory__mem_save");
 
-    // Saved by Nexura without tokens: enrich's convention and the ticket summary.
-    expect(memory.search("sandbox", "inject constructores")[0]).toMatchObject({ type: "pattern", topicKey: "conventions/usa-inject-en-vez-de-constructores", source: "enrich" });
+    // Saved by Nexura without tokens: plan's convention and the ticket summary.
+    expect(memory.search("sandbox", "inject constructores")[0]).toMatchObject({ type: "pattern", topicKey: "conventions/usa-inject-en-vez-de-constructores", source: "plan" });
     const summary = memory.search("sandbox", "Filtro de fechas en pedidos").find((o) => o.topicKey === "tickets/77")!;
     expect(summary).toMatchObject({ type: "ticket", title: "Ticket #77: Filtro de fechas en pedidos", source: "nexura", runId: first.id });
     expect(summary.content).toContain("## Hecho");
 
     // The next ticket starts from what the first one left.
-    const second = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Filtro de fechas en facturas" })).id);
+    const second = await waitFor(orchestrator, orchestrator.start(request({ profile: "standard", ticketText: "Filtro de fechas en facturas" })).id);
     expect(second.steps[0]!.prompt).toMatch(/## Memoria compartida\n### Relacionado con este ticket\n[\s\S]*Ticket #77: Filtro de fechas en pedidos/);
     // Re-running a ticket updates its summary instead of adding another.
-    const rerun = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketId: "77", ticketText: "Filtro de fechas en pedidos" })).id);
+    const rerun = await waitFor(orchestrator, orchestrator.start(request({ profile: "standard", ticketId: "77", ticketText: "Filtro de fechas en pedidos" })).id);
+    expect(rerun.steps[0]!.prompt).not.toContain("Ticket #77: Filtro de fechas en pedidos");
+    expect(flagOf(serverArgs(rerun.steps[0]!.args), "--exclude-topic")).toBe("tickets/77");
     expect(memory.search("sandbox", "Filtro de fechas en pedidos").filter((o) => o.topicKey === "tickets/77")).toHaveLength(1);
 
     // Memory off: no MCP server, nothing in the prompt, nothing saved.
     orchestrator.saveSettings({ memoryEnabled: false });
     const before = memory.recent("sandbox", 1000).length;
-    const third = await waitFor(orchestrator, orchestrator.start(request({ profile: "minimal", ticketText: "Sin memoria" })).id);
+    const third = await waitFor(orchestrator, orchestrator.start(request({ profile: "standard", ticketText: "Sin memoria" })).id);
     expect(third.steps[0]!.args).not.toContain("--mcp-config");
     expect(third.steps[0]!.prompt).toContain("## Memoria compartida\n(nada)");
     expect(memory.recent("sandbox", 1000)).toHaveLength(before);
@@ -804,13 +1055,13 @@ describe("Mixed agents (fake codex and copilot)", () => {
   it("runs the codex-test profile through a rejected review, correction and local release", async () => {
     process.env.FAKE_REVIEW_REJECTS = "1";
     const store = new RunStore(":memory:");
-    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const orchestrator = new Orchestrator(withCodexProfile(), store, { concurrency: 1 });
     const run = await waitFor(orchestrator, orchestrator.start(request({ profile: "codex-test", release: "local" })).id);
 
     expect(run.error).toBeUndefined();
     expect(run.status).toBe("done");
     expect(run.steps.map((step) => step.step)).toEqual([
-      "enrich", "plan", "implement", "codeReview", "implement", "codeReview", "qaCode", "release",
+      "enrich", "plan", "implement", "qaCode", "codeReview", "implement", "qaCode", "codeReview", "release",
     ]);
     const agentSteps = run.steps.filter((step) => step.kind === "claude");
     expect(agentSteps).toHaveLength(6);
@@ -856,12 +1107,13 @@ describe("Mixed agents (fake codex and copilot)", () => {
       "enrich@copilot/claude-haiku-4.5",
       "plan@claude/opus",
       "implement@codex/gpt-5-codex",
+      "qaCode@-/haiku",
       "codeReview:A@claude/sonnet",
       "codeReview:B@copilot/gpt-5",
       "implement@codex/gpt-5-codex",
+      "qaCode@-/haiku",
       "codeReview:A@claude/sonnet",
       "codeReview:B@copilot/gpt-5",
-      "qaCode@-/haiku",
       "release@-/haiku",
     ]);
     // Both judges agreed on the same file, so the work went back to implement.
@@ -931,19 +1183,19 @@ describe("Mixed agents (fake codex and copilot)", () => {
     process.env.FAKE_FAIL_MARKER = "ROMPER";
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
-    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Ticket ROMPER" }));
+    const started = orchestrator.start(request({ profile: "standard", ticketText: "Ticket ROMPER" }));
     const failed = await waitFor(orchestrator, started.id);
-    expect(failed.steps.at(-1)).toMatchObject({ step: "enrich", status: "failed", agent: "claude" });
+    expect(failed.steps.at(-1)).toMatchObject({ step: "plan", status: "failed", agent: "claude" });
 
     const retried = waitFor(orchestrator, started.id);
-    orchestrator.retry(started.id, { agent: "codex", resumeSession: true, prompt: "Eres el paso **enrich**. Versión corregida." });
+    orchestrator.retry(started.id, { agent: "codex", resumeSession: true, prompt: "Eres el paso **plan**. Versión corregida." });
     const run = await retried;
 
     expect(run.status).toBe("done");
-    expect(run.steps[1]).toMatchObject({ step: "enrich", status: "succeeded", agent: "codex", model: AGENT_MODELS.codex[0] });
-    // Call counters are shared by the fakes: the failed claude enrich was call 1.
-    expect(callOf("codex", "enrich", 2).args).not.toContain("resume");
-    expect(callOf("codex", "enrich", 2).args).toEqual(expect.arrayContaining(["--sandbox", "read-only"]));
+    expect(run.steps[1]).toMatchObject({ step: "plan", status: "succeeded", agent: "codex", model: AGENT_MODELS.codex[0] });
+    // Call counters are shared by the fakes: the failed claude plan was call 1.
+    expect(callOf("codex", "plan", 2).args).not.toContain("resume");
+    expect(callOf("codex", "plan", 2).args).toEqual(expect.arrayContaining(["--sandbox", "read-only"]));
     await orchestrator.cleanup(run.id, true);
   });
 });
@@ -1015,6 +1267,7 @@ describe("prReview (provider mocked, real git origin)", () => {
 
   it("reviews the PR's head in a detached worktree, checks the answer against the diff and cleans up", async () => {
     saveRepoNotes("reviewed", "");
+    memoryStore().save({ project: await projectOf(reviewedPath), type: "decision", title: "Trim name conventions", content: "Keep the original casing when trimming names." });
     activeThreads.push({ repo: "reviewed", prId: 7, threadId: 5, filePath: "src/greet.js", line: 1, comments: [{ author: "Ana", content: "¿Y el nombre?" }] });
     const store = new RunStore(":memory:");
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 2 });
@@ -1033,6 +1286,8 @@ describe("prReview (provider mocked, real git origin)", () => {
     expect(run.steps[0]).toMatchObject({ step: "prReview", status: "succeeded" });
     const prompt = run.steps[0]!.prompt!;
     expect(prompt).toContain("**PR #7**: Trim the name");
+    expect(prompt).toContain("Keep the original casing when trimming names.");
+    expect(run.steps[0]!.contextMetrics!.memoryChars).toBeGreaterThan(0);
     expect(prompt).toContain("M\tsrc/greet.js");
     expect(prompt).toContain("thread 5 · src/greet.js:1");
     expect(prompt).toContain(".nexura-review/pr.diff");
@@ -1147,7 +1402,10 @@ describe("prReview (provider mocked, real git origin)", () => {
     expect(started.request.reviewConfig).toMatchObject({ agent: "codex", model: AGENT_MODELS.codex[0] });
     const cancelled = waitFor(orchestrator, started.id);
     orchestrator.cancel(started.id);
-    expect((await cancelled).status).toBe("cancelled");
+    const stopped = await cancelled;
+    expect(stopped.status).toBe("cancelled");
+    // Cancelled during the checkout: the agent never started.
+    expect(stopped.steps).toEqual([]);
     await expect(orchestrator.publishPrReview(started.id, { comments: [{ id: 1, post: "x" }] })).rejects.toThrow(/no es una revisión de PR terminada/);
 
     const retried = waitFor(orchestrator, started.id);
@@ -1157,5 +1415,22 @@ describe("prReview (provider mocked, real git origin)", () => {
     expect(run.steps.at(-1)).toMatchObject({ step: "prReview", status: "succeeded", agent: "codex" });
     expect(run.prReview!.comments).toHaveLength(3);
     expect(run.worktrees).toEqual([]);
+  });
+
+  it("cancels a queued review at once, without taking the running one's slot", async () => {
+    openPrs.push({ ...openPrs[0]!, id: 9, title: "Evil", sourceBranch: "evil" });
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const first = await orchestrator.startPrReview({ repo: "reviewed", prId: 7 });
+    const queued = await orchestrator.startPrReview({ repo: "reviewed", prId: 9 });
+    const firstDone = waitFor(orchestrator, first.id);
+    const cancelled = waitFor(orchestrator, queued.id);
+    orchestrator.cancel(queued.id);
+    const stopped = await cancelled;
+    expect(stopped.status).toBe("cancelled");
+    expect(stopped.steps).toEqual([]);
+    expect(orchestrator.isActive(queued.id)).toBe(false);
+    expect(store.getRun(first.id)!.status).not.toBe("done");
+    expect((await firstDone).status).toBe("done");
   });
 });

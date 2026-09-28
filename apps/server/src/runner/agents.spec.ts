@@ -25,14 +25,14 @@ describe("strict schemas (codex --output-schema)", () => {
   it("makes every property required, optional ones nullable, and drops those nulls from the answer", () => {
     const strict = toStrictSchema(PLAN_SCHEMA);
     const criteria = strict.properties.acceptanceCriteria.items;
-    expect(criteria.required).toEqual(["description", "command"]);
+    expect(criteria.required).toEqual(["description", "command", "repo", "workdir"]);
     expect(criteria.properties.command.type).toEqual(["string", "null"]);
     expect(criteria.additionalProperties).toBe(false);
     // The original is untouched.
     expect(PLAN_SCHEMA.properties.acceptanceCriteria.items.required).toEqual(["description"]);
 
-    const answer = { approach: "a", changes: [], acceptanceCriteria: [{ description: "d", command: null }] };
-    expect(fromStrictOutput(answer, PLAN_SCHEMA)).toEqual({ approach: "a", changes: [], acceptanceCriteria: [{ description: "d" }] });
+    const answer = { approach: "a", changes: [], acceptanceCriteria: [{ description: "d", command: null, repo: null, workdir: null }], conventions: [] };
+    expect(fromStrictOutput(answer, PLAN_SCHEMA)).toEqual({ approach: "a", changes: [], acceptanceCriteria: [{ description: "d" }], conventions: [] });
     expect(checkJson(fromStrictOutput(answer, PLAN_SCHEMA), PLAN_SCHEMA)).toEqual([]);
   });
 });

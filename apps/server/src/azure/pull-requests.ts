@@ -1,4 +1,4 @@
-import type { CreatedPr, PrDraft, PrVote, PullRequestSummary, Worktree } from "@nexura/shared";
+import type { CreatedPr, PrDraft, PrFileStatus, PrReviewerState, PrVote, PullRequestDetail, PullRequestSummary, Worktree } from "@nexura/shared";
 import { git, stripAttribution } from "../workspace/git.ts";
 import { azureRequest } from "./azure-client.ts";
 import type { AzureRepo } from "./repo-remote.ts";
@@ -91,4 +91,65 @@ export async function pushAndCreatePr(remote: AzureRepo, worktree: Worktree, dra
     },
   });
   return { repo: worktree.repo, id: created.pullRequestId, title: created.title, url: pullRequestUrl(remote, created.pullRequestId) };
+}
+
+type ApiPullRequestDetail = {
+  reviewers?: { displayName?: string; vote?: number }[];
+  labels?: { name: string; active?: boolean }[];
+};
+
+type ApiChange = { changeType?: string; item?: { path?: string; isFolder?: boolean; gitObjectType?: string } };
+
+const REVIEWER_STATE: Record<number, PrReviewerState> = { 10: "approved", 5: "suggestions", 0: "pending", [-5]: "waiting", [-10]: "rejected" };
+
+function fileStatus(changeType = ""): PrFileStatus {
+  if (changeType.includes("add")) {
+    return "added";
+  }
+  if (changeType.includes("delete")) {
+    return "deleted";
+  }
+  return changeType.includes("rename") ? "renamed" : "modified";
+}
+
+/**
+ * What the PR changes and who looks at it: files of its latest iteration (Azure DevOps gives
+ * no line counts), commits (up to 100), labels, reviewers' votes and linked work items. No tokens.
+ */
+export async function getPrDetail(remote: AzureRepo, prId: number): Promise<PullRequestDetail> {
+  const base = `${pullRequestsPath(remote)}/${prId}`;
+  const [pr, iterations, commits, links] = await Promise.all([
+    azureRequest<ApiPullRequestDetail>(remote.organization, base),
+    azureRequest<{ value: { id: number }[] }>(remote.organization, `${base}/iterations`),
+    azureRequest<{ value: unknown[]; count?: number }>(remote.organization, `${base}/commits?$top=100`),
+    azureRequest<{ value: { id: string }[] }>(remote.organization, `${base}/workitems`),
+  ]);
+  const last = iterations.value.at(-1)?.id;
+  const [changes, workItems] = await Promise.all([
+    last === undefined
+      ? Promise.resolve({ changeEntries: [] as ApiChange[] })
+      : azureRequest<{ changeEntries: ApiChange[] }>(remote.organization, `${base}/iterations/${last}/changes?$top=2000&$compareTo=0`),
+    links.value.length
+      ? azureRequest<{ value: { id: number; fields: Record<string, unknown> }[] }>(
+          remote.organization,
+          `_apis/wit/workitems?ids=${links.value.map((link) => encodeURIComponent(link.id)).join(",")}&fields=System.Title`,
+        ).catch(() => ({ value: [] }))
+      : Promise.resolve({ value: [] }),
+  ]);
+  const titles = new Map(workItems.value.map((item) => [String(item.id), String(item.fields["System.Title"] ?? "")]));
+  const files = changes.changeEntries
+    .filter((change) => change.item?.path && !change.item.isFolder && change.item.gitObjectType !== "tree")
+    .map((change) => ({ path: change.item!.path!.replace(/^\//, ""), status: fileStatus(change.changeType) }));
+  return {
+    files,
+    changedFiles: files.length,
+    commits: commits.count ?? commits.value.length,
+    labels: (pr.labels ?? []).filter((label) => label.active !== false).map((label) => label.name),
+    reviewers: (pr.reviewers ?? []).map((reviewer) => ({ name: reviewer.displayName ?? "", state: REVIEWER_STATE[reviewer.vote ?? 0] ?? "pending" })),
+    tickets: links.value.map((link) => ({
+      id: link.id,
+      title: titles.get(link.id) ?? "",
+      url: `https://dev.azure.com/${remote.organization}/${encodeURIComponent(remote.project)}/_workitems/edit/${link.id}`,
+    })),
+  };
 }

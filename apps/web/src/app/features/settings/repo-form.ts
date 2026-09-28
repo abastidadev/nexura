@@ -1,8 +1,8 @@
-import { Component, computed, inject, input, linkedSignal, signal } from "@angular/core";
+import { Component, computed, DestroyRef, inject, input, linkedSignal, signal } from "@angular/core";
 import { Router, RouterLink } from "@angular/router";
-import type { ClaudeInventory, RepoConfig } from "@nexura/shared";
+import type { CheckKind, CheckSuggestion, CheckTrial, CheckTrialResult, ClaudeInventory, RepoConfig } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
-import { sourceLabel } from "../../core/format";
+import { formatDuration, sourceLabel } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 
 type RepoDraft = Omit<RepoConfig, "checks" | "nodeModules" | "branchPrefix"> & {
@@ -17,7 +17,34 @@ const NODE_MODULES_OPTIONS: { value: RepoDraft["nodeModules"]; label: string }[]
   { value: "none", label: "Ninguno" },
 ];
 
-const NEW_REPO: RepoDraft = { name: "", path: "", baseBranch: "dev", branchPrefix: "feat", checks: "npm run lint", nodeModules: "link" };
+const NEW_REPO: RepoDraft = { name: "", path: "", baseBranch: "", branchPrefix: "feat", checks: "", nodeModules: "link" };
+
+const KIND_LABELS: Record<CheckKind, string> = {
+  format: "formato",
+  lint: "lint",
+  typecheck: "tipos",
+  build: "build",
+  test: "tests",
+  other: "otro",
+};
+
+const TRIAL_STATUS: Record<CheckTrialResult["status"], { label: string; tone: string }> = {
+  pending: { label: "en cola", tone: "text-muted" },
+  running: { label: "ejecutando…", tone: "text-info" },
+  passed: { label: "pasa", tone: "text-ok" },
+  failed: { label: "falla en la rama base", tone: "text-err" },
+  timedOut: { label: "tiempo agotado", tone: "text-warn" },
+  skipped: { label: "no se ejecutó", tone: "text-muted" },
+};
+
+const TRIAL_POLL_MS = 1500;
+
+function checkLines(checks: string): string[] {
+  return checks
+    .split("\n")
+    .map((check) => check.trim())
+    .filter(Boolean);
+}
 
 function toDraft(repo: RepoConfig | undefined): RepoDraft {
   return repo
@@ -41,6 +68,11 @@ export class RepoForm {
   private readonly api = inject(Api);
   private readonly store = inject(NexuraStore);
   private readonly router = inject(Router);
+  private destroyed = false;
+
+  public constructor() {
+    inject(DestroyRef).onDestroy(() => (this.destroyed = true));
+  }
 
   /** Name of the repo being edited; undefined when creating one. */
   public readonly name = input<string | undefined>();
@@ -55,6 +87,23 @@ export class RepoForm {
   protected readonly busy = signal(false);
   protected readonly picking = signal(false);
   protected readonly message = signal<{ ok: boolean; text: string } | null>(null);
+
+  protected readonly kindLabels = KIND_LABELS;
+  protected readonly trialStatus = TRIAL_STATUS;
+  protected readonly formatDuration = formatDuration;
+  protected readonly suggestions = signal<CheckSuggestion[] | null>(null);
+  /** Base branch read from git; the form fills it in until the user types another one. */
+  protected readonly detectedBase = signal<string | undefined>(undefined);
+  protected readonly detecting = signal(false);
+  protected readonly detectError = signal("");
+  protected readonly lines = computed(() => checkLines(this.draft().checks));
+  protected readonly trial = signal<CheckTrial | null>(null);
+  protected readonly trialError = signal("");
+  protected readonly trialRunning = computed(() => this.trial()?.status === "running");
+  /** Checks of the last trial that failed or hung on the base branch and are still configured. */
+  protected readonly failingChecks = computed(() =>
+    (this.trial()?.results ?? []).filter((result) => (result.status === "failed" || result.status === "timedOut") && this.lines().includes(result.command)),
+  );
 
   protected readonly notes = signal<string | null>(null);
   protected readonly notesMessage = signal("");
@@ -79,11 +128,78 @@ export class RepoForm {
       const path = await this.api.pickFolder(this.draft().path);
       if (path) {
         this.patch({ path, ...(this.draft().name ? {} : { name: nameFromPath(path) }) });
+        await this.pathChanged();
       }
     } catch (error: unknown) {
       this.message.set({ ok: false, text: apiError(error, "No se pudo abrir el selector de carpetas") });
     } finally {
       this.picking.set(false);
+    }
+  }
+
+  /** A new repo gets its checks read from its files as soon as it has a folder. */
+  protected async pathChanged(): Promise<void> {
+    if (this.isNew() && this.draft().path.trim()) {
+      await this.detectChecks();
+    }
+  }
+
+  /**
+   * Reads the repo's base branch and checks. A new repo takes the branch (unless the user typed
+   * another) and, with no checks yet, the recommended ones.
+   */
+  protected async detectChecks(): Promise<void> {
+    const path = this.draft().path.trim();
+    if (!path) {
+      this.detectError.set("Indica antes la carpeta del repo");
+      return;
+    }
+    this.detecting.set(true);
+    this.detectError.set("");
+    try {
+      const { baseBranch, checks } = await this.api.detectRepo(path);
+      const previous = this.detectedBase();
+      this.detectedBase.set(baseBranch);
+      this.suggestions.set(checks);
+      const typed = this.draft().baseBranch.trim();
+      if (this.isNew() && baseBranch && (!typed || typed === previous)) {
+        this.patch({ baseBranch });
+      }
+      if (this.isNew() && !this.lines().length) {
+        this.patch({ checks: checks.filter((check) => check.recommended).map((check) => check.command).join("\n") });
+      }
+    } catch (error: unknown) {
+      this.suggestions.set(null);
+      this.detectError.set(apiError(error, "No se pudo leer el repo"));
+    } finally {
+      this.detecting.set(false);
+    }
+  }
+
+  protected toggleCheck(command: string): void {
+    const lines = this.lines();
+    this.patch({ checks: (lines.includes(command) ? lines.filter((line) => line !== command) : [...lines, command]).join("\n") });
+  }
+
+  protected removeFailing(): void {
+    const failing = new Set(this.failingChecks().map((result) => result.command));
+    this.patch({ checks: this.lines().filter((line) => !failing.has(line)).join("\n") });
+  }
+
+  /** Runs the configured checks on a clean worktree of the base branch and follows the result. */
+  protected async testChecks(): Promise<void> {
+    const { path, baseBranch, nodeModules } = this.draft();
+    this.trialError.set("");
+    try {
+      let trial = await this.api.startCheckTrial({ path: path.trim(), baseBranch: baseBranch.trim(), nodeModules }, this.lines());
+      this.trial.set(trial);
+      while (trial.status === "running" && !this.destroyed) {
+        await new Promise((done) => setTimeout(done, TRIAL_POLL_MS));
+        trial = await this.api.checkTrial(trial.id);
+        this.trial.set(trial);
+      }
+    } catch (error: unknown) {
+      this.trialError.set(apiError(error, "No se pudieron probar los checks"));
     }
   }
 
@@ -130,13 +246,15 @@ export class RepoForm {
       name: draft.name.trim(),
       path: draft.path.trim(),
       branchPrefix: draft.branchPrefix.trim() || undefined,
-      checks: draft.checks
-        .split("\n")
-        .map((check) => check.trim())
-        .filter(Boolean),
+      checks: checkLines(draft.checks),
     };
     if (!repo.name || !repo.path) {
       this.message.set({ ok: false, text: "Faltan el nombre o la ruta" });
+      return;
+    }
+    repo.baseBranch = repo.baseBranch.trim();
+    if (!repo.baseBranch) {
+      this.message.set({ ok: false, text: "Falta la rama base" });
       return;
     }
     const original = this.name();

@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Worktree } from "@nexura/shared";
-import { commitAll, copyLocalClaudeConfig, freeBranchName, linkNodeModules, removeWorktree, unlinkNodeModules } from "./git.ts";
+import { commitAll, copyLocalClaudeConfig, defaultBranch, freeBranchName, linkNodeModules, removeWorktree, unlinkNodeModules } from "./git.ts";
 
 const repo = mkdtempSync(join(tmpdir(), "nexura-git-"));
 const git = (...args: string[]): string => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
@@ -24,6 +24,36 @@ describe("freeBranchName", () => {
     expect(await freeBranchName(repo, "feat/2-ticket")).toBe("feat/2-ticket-2");
     git("branch", "feat/2-ticket-2");
     expect(await freeBranchName(repo, "feat/2-ticket")).toBe("feat/2-ticket-3");
+  });
+});
+
+describe("defaultBranch", () => {
+  const scratch = (): string => {
+    const dir = mkdtempSync(join(tmpdir(), "nexura-base-"));
+    dirs.push(dir);
+    return dir;
+  };
+  const dirs: string[] = [];
+  afterAll(() => dirs.forEach((dir) => rmSync(dir, { recursive: true, force: true })));
+
+  it("takes the remote's default branch of a clone, whatever its name", async () => {
+    const origin = scratch();
+    execFileSync("git", ["clone", "-q", "--bare", repo, join(origin, "origin.git")]);
+    execFileSync("git", ["--git-dir", join(origin, "origin.git"), "branch", "-m", "main", "master"]);
+    execFileSync("git", ["--git-dir", join(origin, "origin.git"), "symbolic-ref", "HEAD", "refs/heads/master"]);
+    const clone = join(origin, "clone");
+    execFileSync("git", ["clone", "-q", join(origin, "origin.git"), clone]);
+    execFileSync("git", ["checkout", "-qb", "feat/x"], { cwd: clone });
+    expect(await defaultBranch(clone)).toBe("master");
+  });
+
+  it("falls back to a usual base branch, then to the checked out one", async () => {
+    expect(await defaultBranch(repo)).toBe("main");
+    const other = scratch();
+    execFileSync("git", ["init", "-q", "-b", "trunk"], { cwd: other });
+    execFileSync("git", ["-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "x"], { cwd: other });
+    expect(await defaultBranch(other)).toBe("trunk");
+    expect(await defaultBranch(scratch())).toBeUndefined();
   });
 });
 

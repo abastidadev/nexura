@@ -1,0 +1,51 @@
+{
+  "type": "object",
+  "properties": {
+    "message": { "type": "string", "description": "Para la persona, en español llano: qué has entendido y qué falta (2-3 frases)" },
+    "questions": {
+      "type": "array",
+      "description": "Como mucho 3 preguntas concretas",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "string" }, "description": "2-4 respuestas sugeridas cortas" }
+        },
+        "required": ["text", "options"],
+        "additionalProperties": false
+      }
+    },
+    "items": {
+      "type": "array",
+      "description": "Un item, o dos (frontend y backend) si la persona pidió dividir",
+      "items": {
+        "type": "object",
+        "properties": {
+          "side": { "type": "string", "enum": ["frontend", "backend"] },
+          "kind": { "type": "string", "enum": ["story", "bug"] },
+          "title": { "type": "string" },
+          "description": { "type": "string", "description": "Historia: Functionality + User Functionality. Vacío en un bug" },
+          "acceptanceCriteria": { "type": "string", "description": "Historia: This task includes / does NOT include. Vacío en un bug" },
+          "reproSteps": { "type": "string", "description": "Bug: Error description, pasos numerados, Expected behavior. Vacío en una historia" },
+          "tags": { "type": "array", "items": { "type": "string" } }
+        },
+        "required": ["side", "kind", "title", "description", "acceptanceCriteria", "reproSteps", "tags"],
+        "additionalProperties": false
+      }
+    },
+    "board": {
+      "type": "object",
+      "properties": {
+        "areaPath": { "type": "string", "description": "Área que usan los tickets parecidos si no es la del equipo; si no, vacío" },
+        "sprint": { "type": "string", "enum": ["current", "backlog"] }
+      },
+      "required": ["areaPath", "sprint"],
+      "additionalProperties": false
+    },
+    "suggestSplit": { "type": "boolean", "description": "El trabajo toca frontend y backend" },
+    "missing": { "type": "array", "items": { "type": "string" }, "description": "Lo que falta, en frases cortas en español" },
+    "ready": { "type": "boolean" }
+  },
+  "required": ["message", "questions", "items", "board", "suggestSplit", "missing", "ready"],
+  "additionalProperties": false
+}

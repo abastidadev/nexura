@@ -10,10 +10,9 @@ const OTHER = "__other__";
 @Component({
   selector: "nx-model-picker",
   template: `
-    <span class="inline-flex items-center gap-1">
+    <span [class]="field() ? 'flex min-w-0 flex-col gap-1' : 'inline-flex items-center gap-1'">
       <select
-        class="max-w-48 rounded border border-border px-1.5 font-mono"
-        [class]="dense() ? 'bg-surface py-0.5' : 'bg-surface-2 py-1'"
+        [class]="field() ? 'nx-input w-full min-w-0 font-mono text-sm' : 'max-w-48 rounded border border-border px-1.5 font-mono ' + (dense() ? 'bg-surface py-0.5' : 'bg-surface-2 py-1')"
         [attr.aria-label]="label()"
         (change)="choose($any($event.target).value)"
       >
@@ -25,8 +24,7 @@ const OTHER = "__other__";
       @if (typing()) {
         <input
           #custom
-          class="rounded border border-border px-1.5 font-mono"
-          [class]="dense() ? 'w-36 bg-surface py-0.5' : 'w-40 bg-surface-2 py-1'"
+          [class]="field() ? 'nx-input w-full min-w-0 font-mono text-sm' : 'rounded border border-border px-1.5 font-mono ' + (dense() ? 'w-36 bg-surface py-0.5' : 'w-40 bg-surface-2 py-1')"
           spellcheck="false"
           placeholder="id del modelo"
           [attr.aria-label]="label() + ' (otro)'"
@@ -43,6 +41,8 @@ export class ModelPicker {
   public readonly label = input("Modelo");
   /** Smaller control (step inspector). */
   public readonly dense = input(false, { transform: booleanAttribute });
+  /** Full-width `nx-input` field (forms); a typed id goes below the select. */
+  public readonly field = input(false, { transform: booleanAttribute });
   public readonly valueChange = output<string>();
 
   protected readonly other = OTHER;

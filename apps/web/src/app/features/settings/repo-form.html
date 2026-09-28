@@ -22,6 +22,7 @@
             placeholder="C:\SCB-Development\MiRepo"
             [value]="draft().path"
             (input)="patch({ path: value($event) })"
+            (change)="pathChanged()"
           />
           <button
             type="button"
@@ -43,14 +44,26 @@
           (input)="patch({ name: value($event) })"
         />
       </label>
-      <label class="flex flex-col gap-1">
-        <span class="text-xs font-medium text-muted">Rama base</span>
+      <div class="flex flex-col gap-1">
+        <label for="repo-base" class="text-xs font-medium text-muted">Rama base</label>
         <input
+          id="repo-base"
           class="nx-input font-mono"
+          placeholder="main"
           [value]="draft().baseBranch"
           (input)="patch({ baseBranch: value($event) })"
         />
-      </label>
+        @if (detectedBase(); as base) {
+          @if (base !== draft().baseBranch.trim()) {
+            <span class="flex flex-wrap items-center gap-1 text-xs text-warn">
+              El repo trabaja sobre <code class="font-mono">{{ base }}</code>.
+              <button type="button" class="nx-btn nx-btn-sm" (click)="patch({ baseBranch: base })">Usar {{ base }}</button>
+            </span>
+          } @else {
+            <span class="text-xs text-muted">Leída de git.</span>
+          }
+        }
+      </div>
       <label class="flex flex-col gap-1">
         <span class="text-xs font-medium text-muted">Prefijo de rama</span>
         <input
@@ -68,17 +81,107 @@
           }
         </select>
       </label>
-      <label class="flex flex-col gap-1 md:col-span-2">
-        <span class="text-xs font-medium text-muted">Checks (uno por línea)</span>
-        <span class="text-xs text-muted">Comandos que ejecuta el paso QA en el worktree, sin gastar tokens.</span>
-        <textarea
-          rows="4"
-          spellcheck="false"
-          class="nx-input resize-y font-mono text-sm"
-          [value]="draft().checks"
-          (input)="patch({ checks: value($event) })"
-        ></textarea>
-      </label>
+      <div class="flex flex-col gap-2 md:col-span-2">
+        <label class="flex flex-col gap-1">
+          <span class="text-xs font-medium text-muted">Checks (uno por línea)</span>
+          <span class="text-xs text-muted">Comandos que ejecuta el paso QA en el worktree, sin gastar tokens. Si el repo tiene una subcarpeta con su propio proyecto, empieza con <code class="font-mono">cd carpeta &amp;&amp;</code>.</span>
+          <textarea
+            rows="4"
+            spellcheck="false"
+            class="nx-input resize-y font-mono text-sm"
+            [value]="draft().checks"
+            (input)="patch({ checks: value($event) })"
+          ></textarea>
+        </label>
+        <div class="flex flex-wrap items-center gap-2">
+          <button type="button" class="nx-btn nx-btn-sm" [disabled]="detecting() || !draft().path.trim()" (click)="detectChecks()">
+            {{ detecting() ? "Leyendo el repo…" : "Detectar checks" }}
+          </button>
+          <button
+            type="button"
+            class="nx-btn nx-btn-sm"
+            [disabled]="trialRunning() || !lines().length || !draft().path.trim() || !draft().baseBranch.trim()"
+            (click)="testChecks()"
+            title="Los ejecuta en un worktree limpio de la rama base y lo borra al acabar"
+          >
+            {{ trialRunning() ? "Probando…" : "Probar en " + (draft().baseBranch.trim() || "la rama base") }}
+          </button>
+          @if (detectError()) {
+            <span class="text-sm text-err" role="alert">{{ detectError() }}</span>
+          }
+          @if (trialError()) {
+            <span class="text-sm text-err" role="alert">{{ trialError() }}</span>
+          }
+        </div>
+
+        @if (suggestions(); as found) {
+          <div class="rounded-md border border-border bg-surface-2 p-3">
+            @if (found.length) {
+              <p class="mb-2 text-xs text-muted">
+                Encontrados en el CI, los <code class="font-mono">package.json</code> y las instrucciones del repo. Marca los que quieras usar; sin marcar van los lentos o los que conviene revisar.
+              </p>
+              <ul class="flex flex-col gap-1.5">
+                @for (check of found; track check.command) {
+                  <li>
+                    <label class="flex cursor-pointer items-start gap-2">
+                      <input type="checkbox" class="mt-1" [checked]="lines().includes(check.command)" (change)="toggleCheck(check.command)" />
+                      <span class="flex min-w-0 flex-col">
+                        <span class="flex flex-wrap items-center gap-2">
+                          <code class="font-mono text-sm break-all">{{ check.command }}</code>
+                          <span class="rounded-full bg-surface-3 px-2 py-0.5 text-xs text-fg-soft">{{ kindLabels[check.kind] }}</span>
+                        </span>
+                        <span class="text-xs text-muted">{{ check.sources.join(" · ") }}</span>
+                        @if (check.note) {
+                          <span class="text-xs text-warn">{{ check.note }}</span>
+                        }
+                      </span>
+                    </label>
+                  </li>
+                }
+              </ul>
+            } @else {
+              <p class="text-sm text-muted">No se ha encontrado ningún check en el CI, los manifiestos ni las instrucciones del repo. Escríbelos a mano.</p>
+            }
+          </div>
+        }
+
+        @if (trial(); as current) {
+          <div class="rounded-md border border-border bg-surface-2 p-3" aria-live="polite">
+            <p class="mb-2 text-xs text-muted">
+              @if (current.error) {
+                <span class="text-err">{{ current.error }}</span>
+              } @else {
+                Prueba en un worktree limpio de <code class="font-mono">{{ current.baseRef ?? draft().baseBranch }}</code>: un check que ya falla ahí haría fallar todos los flujos.
+              }
+            </p>
+            <ul class="flex flex-col gap-1.5">
+              @for (result of current.results; track $index) {
+                <li class="flex min-w-0 flex-col">
+                  <span class="flex flex-wrap items-center gap-2">
+                    <code class="font-mono text-sm break-all">{{ result.command }}</code>
+                    <span class="text-xs font-medium" [class]="trialStatus[result.status].tone">{{ trialStatus[result.status].label }}</span>
+                    @if (result.durationMs !== undefined) {
+                      <span class="text-xs text-muted">{{ formatDuration(result.durationMs) }}</span>
+                    }
+                  </span>
+                  @if ((result.status === "failed" || result.status === "timedOut") && result.outputTail) {
+                    <details class="mt-1">
+                      <summary class="cursor-pointer text-xs text-muted">Ver salida</summary>
+                      <pre class="mt-1 max-h-60 overflow-auto rounded bg-surface-3 p-2 font-mono text-xs whitespace-pre-wrap">{{ result.outputTail }}</pre>
+                    </details>
+                  }
+                </li>
+              }
+            </ul>
+            @if (!trialRunning() && failingChecks().length) {
+              <div class="mt-3 flex flex-wrap items-center gap-2">
+                <button type="button" class="nx-btn nx-btn-sm" (click)="removeFailing()">Quitar los que fallan</button>
+                <span class="text-xs text-muted">O arregla el repo para que pasen en {{ current.baseRef ?? draft().baseBranch }}.</span>
+              </div>
+            }
+          </div>
+        }
+      </div>
     </div>
 
     <div class="mt-4 flex flex-wrap items-center gap-2">

@@ -17,13 +17,16 @@
         "type": "object",
         "properties": {
           "description": { "type": "string" },
-          "command": { "type": "string", "description": "Comando `npm run ...` que lo verifica, si existe" }
+          "command": { "type": "string", "description": "Comando `npm run ...` que lo verifica, si existe" },
+          "repo": { "type": "string", "description": "Nombre exacto del repo; si falta se usa el primero" },
+          "workdir": { "type": "string", "description": "Directorio relativo al worktree que contiene package.json, por ejemplo frontend; por defecto ." }
         },
         "required": ["description"],
         "additionalProperties": false
       }
-    }
+    },
+    "conventions": { "type": "array", "items": { "type": "string" }, "description": "Convenciones nuevas del repo que afectan al cambio y no están en las notas ni en CLAUDE.md" }
   },
-  "required": ["approach", "changes", "acceptanceCriteria"],
+  "required": ["approach", "changes", "acceptanceCriteria", "conventions"],
   "additionalProperties": false
 }

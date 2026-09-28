@@ -37,6 +37,13 @@ const profile = (overrides: Partial<FlowProfile> = {}): FlowProfile => ({
 });
 
 describe("config editing", () => {
+  it("preserves manual-only profiles across edits", () => {
+    saveProfile(profile({ autoSelect: false }), configDir);
+    expect(loadProfiles(configDir).get("rapido")?.autoSelect).toBe(false);
+    expect(() => saveProfile(profile({ autoSelect: "false" as never }), configDir)).toThrow(/autoSelect/);
+    deleteProfile("rapido", configDir);
+  });
+
   it("saves, reloads and deletes a profile", () => {
     saveProfile(profile(), configDir);
     expect(loadProfiles(configDir).get("rapido")?.steps.implement?.effort).toBe("low");
@@ -153,7 +160,7 @@ describe("config editing", () => {
     expect(steps.get("docs")).toMatchObject({ kind: "claude", custom: true, label: "Docs", after: "implement", tools: ["Read", "Glob", "Grep"] });
     expect(steps.get("docs")!.promptTemplate).toContain("paso **docs**");
     expect(orderSteps(steps.values()).map((step) => step.name)).toEqual([
-      "classify", "enrich", "plan", "implement", "audit", "docs", "changelog", "codeReview", "qaCode", "release", "qaNotes", "addressReview", "prReview",
+      "classify", "enrich", "plan", "implement", "audit", "docs", "changelog", "qaCode", "codeReview", "release", "qaNotes", "addressReview", "prReview",
     ]);
 
     saveStepDefinition("docs", { tools: ["Read", "Edit"], allowedTools: [], disallowedTools: [], mcpServers: [], timeoutMs: 60_000, after: "codeReview" }, configDir);

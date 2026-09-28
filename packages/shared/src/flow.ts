@@ -1,5 +1,6 @@
 import type { Conversation } from "./conversation.ts";
 import type { NexuraEvent, TokenUsage } from "./events.ts";
+import type { TicketDraft } from "./tickets.ts";
 
 /** Steps shipped with Nexura, in pipeline order. Users can add their own (see StepDefinition.custom). */
 export const STEP_NAMES = [
@@ -7,8 +8,8 @@ export const STEP_NAMES = [
   "enrich",
   "plan",
   "implement",
-  "codeReview",
   "qaCode",
+  "codeReview",
   "release",
   "qaNotes",
   "addressReview",
@@ -68,6 +69,9 @@ export type MemoryMode = "off" | "read" | "readwrite";
 
 export const MEMORY_MODES: readonly MemoryMode[] = ["off", "read", "readwrite"];
 
+/** The only servers `"@auto"` may load (docs, Angular, browser); any other one must be named in the step. */
+export const AUTO_MCP_SERVERS: readonly string[] = ["context7", "angular-cli", "playwright"];
+
 export type StepConfig = {
   /** Missing = claude. */
   agent?: AgentKind;
@@ -86,6 +90,8 @@ export type ReviewMode = "single" | "blind";
 export type FlowProfile = {
   name: string;
   description: string;
+  /** False requires explicit selection; missing keeps automatic classification enabled. */
+  autoSelect?: boolean;
   steps: Partial<Record<StepName, StepConfig>>;
   /** How many times review/qa may send the flow back to implement. */
   maxLoops: number;
@@ -111,7 +117,8 @@ export type StepDefinition = {
   disallowedTools: string[];
   /**
    * MCP servers of the run's repo Claude config (project `.mcp.json`, local, user, plugins)
-   * this step loads, by name; `"*"` = every enabled one. Nothing else is loaded
+   * this step loads, by name; `"*"` = every enabled one, `"@auto"` = task-selected enabled servers.
+   * Explicit names are always preserved. Nothing else is loaded
    * (`--strict-mcp-config`), apart from Nexura's memory server. Empty = none (cheaper context).
    */
   mcpServers: string[];
@@ -169,6 +176,46 @@ export type RepoConfig = {
   nodeModules?: "link" | "install" | "none";
 };
 
+export type CheckKind = "format" | "lint" | "typecheck" | "build" | "test" | "other";
+
+/** A QA check found by reading a repo's CI, manifests and agent instructions (no agent involved). */
+export type CheckSuggestion = {
+  command: string;
+  kind: CheckKind;
+  /** Where it was found, e.g. "CI: .github/workflows/ci.yml", "frontend/package.json", "CLAUDE.md". */
+  sources: string[];
+  /** Pre-selected: expected to pass on every change without being slow or interactive. */
+  recommended: boolean;
+  /** Why it is not recommended (slow, watch mode...). */
+  note?: string;
+};
+
+/** What Nexura reads from a repo folder to fill in its settings. */
+export type RepoDetection = {
+  /** The remote's default branch or the usual one that exists; undefined if it cannot tell. */
+  baseBranch?: string;
+  checks: CheckSuggestion[];
+};
+
+export type CheckTrialResult = {
+  command: string;
+  status: "pending" | "running" | "passed" | "failed" | "timedOut" | "skipped";
+  exitCode?: number | null;
+  durationMs?: number;
+  outputTail?: string;
+};
+
+/** The checks run on a clean worktree of the base branch, to find those that already fail there. */
+export type CheckTrial = {
+  id: string;
+  repoPath: string;
+  baseRef?: string;
+  status: "running" | "done" | "failed";
+  /** Setup error (no base branch, worktree not created...): the checks did not run. */
+  error?: string;
+  results: CheckTrialResult[];
+};
+
 /** Where a piece of Claude config comes from, with Claude Code's precedence (local > project > user > plugin). */
 export type ClaudeConfigSource = "local" | "project" | "user" | `plugin:${string}`;
 
@@ -209,6 +256,8 @@ export type RunRequest = {
   prompt: string;
   /** Profile name, or "auto" to let the classify step decide. */
   profile: string;
+  /** Run every LLM step of the selected profile with this agent, model and effort. Builtins stay deterministic. */
+  modelConfig?: Pick<StepConfig, "agent" | "model" | "effort">;
   stepByStep: boolean;
   /** `pr`: after release, pause for approval, then push and open the PR where the repo's origin lives (Azure DevOps or GitHub). */
   release?: "local" | "pr";
@@ -237,6 +286,26 @@ export type PullRequestSummary = {
   createdAt: string;
   /** Last commit of the source branch: a review of an older one is outdated. */
   headSha: string;
+};
+
+export type PrFileStatus = "added" | "modified" | "deleted" | "renamed";
+
+/** Where a reviewer stands on a PR (GitHub reviews and requested reviewers, Azure DevOps votes). */
+export type PrReviewerState = "approved" | "suggestions" | "waiting" | "rejected" | "commented" | "pending";
+
+/** What Revisiones shows of an open PR before reviewing it. Read over REST/GraphQL: zero tokens. */
+export type PullRequestDetail = {
+  /** Changed files, possibly capped (see `changedFiles`); line counts only where the provider gives them (GitHub). */
+  files: { path: string; status: PrFileStatus; additions?: number; deletions?: number }[];
+  /** Files the PR changes in total. */
+  changedFiles: number;
+  additions?: number;
+  deletions?: number;
+  commits?: number;
+  labels: string[];
+  reviewers: { name: string; state: PrReviewerState }[];
+  /** Tickets the PR is linked to (GitHub issues it closes, Azure DevOps work items). */
+  tickets: { id: string; title: string; url: string }[];
 };
 
 /** Where Nexura stands on an open PR of the configured repos. */
@@ -408,11 +477,51 @@ export type StepRun = {
   prompt?: string;
   args?: string[];
   sessionId?: string;
+  /** Observed orchestration overhead, not a tokenizer estimate or the CLI's full context size. */
+  contextMetrics?: {
+    promptChars: number;
+    memoryChars: number;
+    ledgerChars: number;
+    mcpServers: string[];
+    resumedFrom?: string;
+    resumeDepth: number;
+    sessionTurnsBefore: number;
+    /** Only correction retries; phase changes also resume a session but do not exhaust the retry limit. */
+    correctionDepth?: number;
+    correctionTurnsBefore?: number;
+    sessionDecision: string;
+    toolCalls: number;
+    readCalls: number;
+    repeatedReadCalls: number;
+    toolResultChars: number;
+    /** Real size of the conversation at the step's last call: its input plus cache read and written, in tokens. */
+    contextTokens?: number;
+    /** Cache read and written by the step's first call: a continuation that reuses its session reads, one that lost it writes. */
+    firstCallCacheRead?: number;
+    firstCallCacheWrite?: number;
+    /** What decides whether the next phase can reuse this one's cache, digested (tools as the CLI reports them in `init`). */
+    toolsFingerprint?: string;
+    schemaFingerprint?: string;
+    systemFingerprint?: string;
+    /** Continued a session and read its conversation back from the cache (false = rewrote it). */
+    cacheReused?: boolean;
+  };
   startedAt?: string;
   finishedAt?: string;
   costUsd: number;
+  /**
+   * Claude reports the cost of the whole session, earlier invocations included, when it resumes one.
+   * `costUsd` is this step's share; this is the session total the next resume starts from.
+   */
+  sessionCostUsd?: number;
   numTurns: number;
   usage?: TokenUsage;
+  /**
+   * Tokens seen in the agent's stream that its final report does not include (killed before
+   * reporting, or background subagents that kept working). Already added to `usage`, but not
+   * priced: `costUsd` does not cover them.
+   */
+  unreportedUsage?: TokenUsage;
   structuredOutput?: unknown;
   error?: string;
 };
@@ -592,4 +701,6 @@ export type ServerMessage =
   /** Something the user should hear about even when not looking at that run (e.g. new PR comments). */
   | { type: "notice"; runId?: string; title: string; body: string; level: "info" | "warn" }
   | { type: "conversation"; conversation: Conversation }
-  | { type: "conversationDeleted"; id: string };
+  | { type: "conversationDeleted"; id: string }
+  | { type: "ticketDraft"; draft: TicketDraft }
+  | { type: "ticketDraftDeleted"; id: string };

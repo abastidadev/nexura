@@ -1,4 +1,4 @@
-import type { CreatedPr, PrDraft, PrVote, PullRequestSummary, ReviewReply, ReviewThread, RunRequest, Worktree } from "@nexura/shared";
+import type { CreatedPr, PrDraft, PrVote, PullRequestDetail, PullRequestSummary, ReviewReply, ReviewThread, RunRequest, Worktree } from "@nexura/shared";
 import * as azurePrs from "../azure/pull-requests.ts";
 import * as azureThreads from "../azure/pr-threads.ts";
 import * as githubPrs from "../github/pull-requests.ts";
@@ -14,7 +14,7 @@ import type { ReviewPost } from "./review-post.ts";
 /** Kept short on every provider: Azure DevOps rejects longer descriptions. */
 const PR_DESCRIPTION_MAX = azurePrs.PR_DESCRIPTION_MAX;
 
-type ImplementSummary = { summary: string; filesChanged: string[] };
+type ImplementSummary = { summary: string; filesChanged: string[]; prDescriptions?: { repo: string; description: string }[] };
 
 export async function requireRemote(worktree: Pick<Worktree, "repo" | "repoPath">): Promise<RepoRemote> {
   const remote = await repoRemoteOf(worktree.repoPath);
@@ -42,7 +42,7 @@ export async function buildPrDraft(
   const summaries = implementSummaries.map((item) => stripAttribution(item.summary).trim()).filter(Boolean);
   const files = [...new Set(implementSummaries.flatMap((item) => item.filesChanged))];
   const bullets = (summaries.length > 1 ? summaries.slice(1) : subjects.slice(0, -1).reverse()).map((line) => `- ${line}`);
-  const description = [
+  const fallback = [
     summaries[0] ?? lead,
     bullets.join("\n"),
     files.length ? `Ficheros: ${files.map((file) => `\`${file}\``).join(", ")}.` : "",
@@ -50,6 +50,11 @@ export async function buildPrDraft(
     .filter(Boolean)
     .join("\n\n")
     .slice(0, PR_DESCRIPTION_MAX);
+  // The implementation agent knows the change and the repo's language conventions. Older
+  // runs still have the deterministic draft above; every draft remains editable before push.
+  const authored = implementSummaries.findLast((item) => item.prDescriptions?.some((entry) => entry.repo === worktree.repo && entry.description.trim()))
+    ?.prDescriptions?.find((entry) => entry.repo === worktree.repo && entry.description.trim())?.description;
+  const description = (authored ? stripAttribution(authored).trim() : "") || fallback;
 
   const ticketId = Number(request.ticketId) || undefined;
   const linked = ticketId !== undefined && (request.ticketSource ?? "azure") === remote.provider;
@@ -63,7 +68,7 @@ export async function buildPrDraft(
     branch: worktree.branch,
     target,
     title: lead,
-    description,
+    description: description.slice(0, PR_DESCRIPTION_MAX),
     provider: remote.provider,
     workItemId: linked ? ticketId : undefined,
     workItemProject: otherProject,
@@ -90,6 +95,12 @@ export async function getPrStatus(worktree: Worktree, prId: number): Promise<str
 export async function listPullRequests(repo: Pick<Worktree, "repo" | "repoPath">): Promise<PullRequestSummary[]> {
   const remote = await requireRemote(repo);
   return remote.provider === "azure" ? azurePrs.listActivePrs(remote) : githubPrs.listOpenPrs(remote);
+}
+
+/** Files, reviewers, labels and linked tickets of one PR (Revisiones' detail panel). No tokens. */
+export async function getPullRequestDetail(repo: Pick<Worktree, "repo" | "repoPath">, prId: number): Promise<PullRequestDetail> {
+  const remote = await requireRemote(repo);
+  return remote.provider === "azure" ? azurePrs.getPrDetail(remote, prId) : githubPrs.getPrDetail(remote, prId);
 }
 
 /**

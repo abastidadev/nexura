@@ -12,8 +12,12 @@
     "node": ">=24"
   },
   "scripts": {
-    "setup": "npm install && npm run build:web",
+    "setup": "npm install && npm run setup:office && npm run build:web",
+    "setup:office": "node scripts/setup-office.mjs",
     "start": "npm run build:web && node apps/server/src/cli/cli.ts serve",
+    "start:all": "npm run build:web && concurrently -k --names nexura,office \"npm run serve\" \"npm run serve:office\"",
+    "serve:office": "node third_party/agent-office/bin/agent-office.js --host 127.0.0.1 --port 4600",
+    "build:office": "npm run build --prefix third_party/agent-office",
     "spike": "node --experimental-strip-types scripts/spike.ts",
     "test": "vitest run",
     "typecheck": "tsc -p tsconfig.json",
@@ -24,6 +28,7 @@
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
+    "concurrently": "^10.0.5",
     "typescript": "^5.9.0",
     "vitest": "^3.2.0"
   },

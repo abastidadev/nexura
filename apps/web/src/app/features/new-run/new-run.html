@@ -172,7 +172,7 @@
     </section>
   </div>
 
-  <!-- 3 · Repos, profile, options, launch -->
+  <!-- 3 · Repos, agent, options, launch -->
   <aside class="flex min-h-0 min-w-0 flex-col rounded-2xl border border-border bg-surface">
     <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-x-hidden overflow-y-auto p-4">
       <fieldset class="min-w-0">
@@ -197,41 +197,73 @@
       </fieldset>
 
       <fieldset class="min-w-0">
-        <legend class="mb-1.5 font-semibold">Perfil</legend>
+        <legend class="mb-1.5 font-semibold">Cómo resolverlo</legend>
         <div class="flex flex-col gap-1.5">
-          @for (card of profiles(); track card.name) {
-            @let selected = profile() === card.name;
-            <label
-              class="block min-w-0 cursor-pointer rounded-md border px-3 py-2 transition-colors"
-              [class]="selected ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-2'"
-            >
-              <span class="flex items-center gap-2">
-                <input
-                  type="radio"
-                  name="profile"
-                  class="size-4"
-                  [value]="card.name"
-                  [checked]="selected"
-                  (change)="profile.set(card.name)"
-                />
-                <span class="font-medium">{{ card.title }}</span>
-                <span class="ml-auto shrink-0 text-xs text-muted">
-                  {{ card.steps.length }} paso(s){{ card.maxLoops !== undefined ? " · " + card.maxLoops + " vuelta(s)" : "" }}
-                </span>
-              </span>
-              @if (selected) {
-                <span class="mt-1 block text-sm text-fg-soft">{{ card.description }}</span>
-                <span class="mt-1.5 flex flex-wrap gap-1">
-                  @for (step of card.steps; track step.label) {
-                    <span class="rounded bg-surface-3 px-1.5 py-0.5 text-xs">
-                      {{ step.label }} <span class="text-muted">{{ step.detail }}</span>
-                    </span>
-                  }
-                </span>
-              } @else {
-                <span class="mt-0.5 block truncate pl-6 text-xs text-muted" [attr.title]="card.description">{{ stepSummary(card) }}</span>
-              }
+          @let single = profile() === singleAgent;
+          <div class="rounded-md border px-3 py-2.5 transition-colors" [class]="single ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-2'">
+            <label class="flex cursor-pointer items-center gap-2 font-medium">
+              <input type="radio" name="profile" class="size-4" [checked]="single" (change)="profile.set(singleAgent)" />
+              Un agente para todo <span class="ml-auto text-xs font-normal text-muted">recomendado</span>
             </label>
+            @if (single) {
+              <p class="mt-1 pl-6 text-sm text-fg-soft">El mismo agente hace todo el flujo. La revisión de código abre una sesión independiente.</p>
+              <div class="mt-3 grid grid-cols-1 gap-2 pl-6 sm:grid-cols-3">
+                <label class="flex min-w-0 flex-col gap-1">
+                  <span class="nx-label">Agente</span>
+                  <select class="nx-input w-full min-w-0 text-sm" [value]="agent()" (change)="setAgent($event)">
+                    @for (kind of agentKinds; track kind) { <option [value]="kind">{{ agentLabels[kind] }}</option> }
+                  </select>
+                </label>
+                <div class="flex min-w-0 flex-col gap-1">
+                  <span class="nx-label">Modelo</span>
+                  <nx-model-picker field [models]="agentModels()" [value]="model()" (valueChange)="model.set($event)" />
+                </div>
+                <label class="flex min-w-0 flex-col gap-1">
+                  <span class="nx-label">Esfuerzo</span>
+                  <select class="nx-input w-full min-w-0 text-sm" [value]="effort()" (change)="effort.set($any($event.target).value)">
+                    @for (level of efforts; track level) { <option [value]="level">{{ level }}</option> }
+                  </select>
+                </label>
+              </div>
+            }
+          </div>
+
+          @if (profiles().length > 0) {
+            <details class="group" [open]="!single">
+              <summary class="flex cursor-pointer list-none items-center gap-1.5 rounded-md px-1 py-1.5 text-sm text-muted hover:text-fg">
+                <span class="inline-block transition-transform group-open:rotate-90">›</span>
+                Planes por pasos ({{ profiles().length }}) · modelos o agentes distintos en cada paso
+              </summary>
+              <div class="mt-1 flex flex-col gap-1.5">
+                @for (card of profiles(); track card.name) {
+                  @let selected = profile() === card.name;
+                  <label
+                    class="block min-w-0 cursor-pointer rounded-md border px-3 py-2 transition-colors"
+                    [class]="selected ? 'border-accent bg-accent-soft' : 'border-border hover:bg-surface-2'"
+                  >
+                    <span class="flex items-center gap-2">
+                      <input type="radio" name="profile" class="size-4" [checked]="selected" (change)="profile.set(card.name)" />
+                      <span class="font-medium">{{ card.title }}</span>
+                      <span class="ml-auto shrink-0 text-xs text-muted">
+                        {{ card.steps.length }} paso(s){{ card.maxLoops !== undefined ? " · " + card.maxLoops + " vuelta(s)" : "" }}
+                      </span>
+                    </span>
+                    @if (selected) {
+                      <span class="mt-1 block pl-6 text-sm text-fg-soft">{{ card.description }}</span>
+                      <span class="mt-1.5 flex flex-wrap gap-1 pl-6">
+                        @for (step of card.steps; track step.label) {
+                          <span class="rounded bg-surface-3 px-1.5 py-0.5 text-xs">
+                            {{ step.label }} <span class="text-muted">{{ step.detail }}</span>
+                          </span>
+                        }
+                      </span>
+                    } @else {
+                      <span class="mt-0.5 block truncate pl-6 text-xs text-muted" [attr.title]="card.description">{{ card.description }}</span>
+                    }
+                  </label>
+                }
+              </div>
+            </details>
           }
         </div>
       </fieldset>

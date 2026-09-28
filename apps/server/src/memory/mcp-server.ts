@@ -12,6 +12,7 @@
  *   --project <name>   memory project (default: detected from the cwd's git remote)
  *   --source <name>    stored with each save (default "claude-code"; steps pass their name)
  *   --run <id>         Nexura run that saves (stored with each save)
+ *   --exclude-topic <key>   topic hidden from this run's memory reads
  */
 import { createInterface } from "node:readline";
 import { MemoryStore, projectOf, type MemoryObservation } from "./memory-store.ts";
@@ -39,7 +40,8 @@ export function formatList(observations: MemoryObservation[], empty: string): st
     .join("\n\n");
 }
 
-export function memoryTools(store: MemoryStore, project: () => Promise<string>, mode: string, meta: { source: string; runId?: string }): Tool[] {
+export function memoryTools(store: MemoryStore, project: () => Promise<string>, mode: string, meta: { source: string; runId?: string; excludeTopic?: string }): Tool[] {
+  const visible = (items: MemoryObservation[], limit: number): MemoryObservation[] => items.filter((item) => !meta.excludeTopic || item.topicKey !== meta.excludeTopic).slice(0, limit);
   const tools: Tool[] = [
     {
       name: "mem_search",
@@ -50,7 +52,10 @@ export function memoryTools(store: MemoryStore, project: () => Promise<string>, 
         properties: { query: { type: "string", description: "Palabras clave" }, limit: { type: "number", description: "Máximo de resultados (10)" } },
         required: ["query"],
       },
-      run: async (args) => formatList(store.search(await project(), String(args["query"] ?? ""), Number(args["limit"]) || 10), "Sin resultados."),
+      run: async (args) => {
+        const limit = Math.min(10, Math.max(1, Number(args["limit"]) || 10));
+        return formatList(visible(store.search(await project(), String(args["query"] ?? ""), limit + (meta.excludeTopic ? 10 : 0)), limit), "Sin resultados.");
+      },
     },
     {
       name: "mem_get",
@@ -58,14 +63,17 @@ export function memoryTools(store: MemoryStore, project: () => Promise<string>, 
       inputSchema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] },
       run: (args) => {
         const found = store.get(Number(args["id"]));
-        return found ? `#${found.id} [${found.type}] ${found.title}\n${found.content}` : `No existe la observación ${String(args["id"])}.`;
+        return found && (!meta.excludeTopic || found.topicKey !== meta.excludeTopic) ? `#${found.id} [${found.type}] ${found.title}\n${found.content}` : `No existe la observación ${String(args["id"])}.`;
       },
     },
     {
       name: "mem_context",
       description: "Lo último que se ha guardado en la memoria del proyecto.",
       inputSchema: { type: "object", properties: { limit: { type: "number", description: "Máximo (10)" } } },
-      run: async (args) => formatList(store.recent(await project(), Number(args["limit"]) || 10), "La memoria del proyecto está vacía."),
+      run: async (args) => {
+        const limit = Math.min(10, Math.max(1, Number(args["limit"]) || 10));
+        return formatList(visible(store.recent(await project(), limit + (meta.excludeTopic ? 10 : 0)), limit), "La memoria del proyecto está vacía.");
+      },
     },
   ];
   if (mode === "readwrite") {
@@ -147,7 +155,7 @@ async function main(): Promise<void> {
   const fixed = flag("project");
   let detected: Promise<string> | undefined;
   const project = (): Promise<string> => (fixed ? Promise.resolve(fixed) : (detected ??= projectOf(process.cwd())));
-  const tools = memoryTools(store, project, flag("mode") ?? "readwrite", { source: flag("source") ?? "claude-code", runId: flag("run") });
+  const tools = memoryTools(store, project, flag("mode") ?? "readwrite", { source: flag("source") ?? "claude-code", runId: flag("run"), excludeTopic: flag("exclude-topic") });
 
   for await (const line of createInterface({ input: process.stdin })) {
     if (!line.trim()) {

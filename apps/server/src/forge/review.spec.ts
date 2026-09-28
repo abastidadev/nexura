@@ -16,8 +16,8 @@ vi.mock("../azure/azure-client.ts", async (importOriginal) => ({
 }));
 
 const { resetGithubTokenCache } = await import("../github/github-client.ts");
-const { listOpenPrs, postReview } = await import("../github/pull-requests.ts");
-const { listActivePrs, vote } = await import("../azure/pull-requests.ts");
+const { getPrDetail: getGithubPrDetail, listOpenPrs, postReview } = await import("../github/pull-requests.ts");
+const { getPrDetail: getAzurePrDetail, listActivePrs, vote } = await import("../azure/pull-requests.ts");
 const { createThread } = await import("../azure/pr-threads.ts");
 const { repoRemoteOf } = await import("./remote.ts");
 
@@ -106,6 +106,49 @@ describe("GitHub PR review (fetch stubbed)", () => {
     await postReview(remote, 12, "abc123", []);
     expect(calls).toHaveLength(0);
   });
+
+  it("reads a PR's detail: files, counts, the latest review per reviewer and the issues it closes", async () => {
+    vi.stubGlobal("fetch", async (url: string | URL, init: RequestInit) => {
+      const path = String(url);
+      calls.push({ url: path, method: init.method ?? "GET" });
+      if (path.endsWith("/graphql")) {
+        return Response.json({
+          data: { repository: { pullRequest: { closingIssuesReferences: { nodes: [{ number: 6, title: "Panel", url: "https://github.com/abastidadev/nexura/issues/6" }] } } } },
+        });
+      }
+      if (path.includes("/files")) {
+        return Response.json([
+          { filename: "src/a.ts", status: "modified", additions: 3, deletions: 1 },
+          { filename: "src/b.ts", status: "removed", additions: 0, deletions: 9 },
+        ]);
+      }
+      if (path.includes("/reviews")) {
+        return Response.json([
+          { user: { login: "luis" }, state: "APPROVED" },
+          { user: { login: "luis" }, state: "COMMENTED" },
+          { user: { login: "eva" }, state: "CHANGES_REQUESTED" },
+        ]);
+      }
+      return Response.json({ additions: 3, deletions: 10, commits: 2, changed_files: 2, labels: [{ name: "bug" }], requested_reviewers: [{ login: "ana" }] });
+    });
+    expect(await getGithubPrDetail(remote, 12)).toEqual({
+      files: [
+        { path: "src/a.ts", status: "modified", additions: 3, deletions: 1 },
+        { path: "src/b.ts", status: "deleted", additions: 0, deletions: 9 },
+      ],
+      changedFiles: 2,
+      additions: 3,
+      deletions: 10,
+      commits: 2,
+      labels: ["bug"],
+      reviewers: [
+        { name: "luis", state: "approved" },
+        { name: "eva", state: "waiting" },
+        { name: "ana", state: "pending" },
+      ],
+      tickets: [{ id: "6", title: "Panel", url: "https://github.com/abastidadev/nexura/issues/6" }],
+    });
+  });
 });
 
 describe("Azure DevOps PR review (requests recorded)", () => {
@@ -178,6 +221,32 @@ describe("Azure DevOps PR review (requests recorded)", () => {
       ["PUT", "My%20Project/_apis/git/repositories/repo/pullrequests/7635/reviewers/user-1"],
     ]);
     expect(azureCalls[1]!.init!.body).toEqual({ vote: 5 });
+  });
+
+  it("reads a PR's detail: files of the latest iteration, votes and linked work items with their titles", async () => {
+    azureRoutes.push(
+      [/iterations\/3\/changes/, { changeEntries: [{ changeType: "edit", item: { path: "/src/a.ts" } }, { changeType: "add", item: { path: "/src", isFolder: true } }, { changeType: "edit, rename", item: { path: "/src/b.ts" } }] }],
+      [/iterations$/, { value: [{ id: 1 }, { id: 3 }] }],
+      [/commits/, { value: [{}, {}], count: 2 }],
+      [/pullrequests\/7635\/workitems/, { value: [{ id: "41" }] }],
+      [/_apis\/wit\/workitems/, { value: [{ id: 41, fields: { "System.Title": "Sign in" } }] }],
+      [/pullrequests\/7635$/, { reviewers: [{ displayName: "Luis", vote: 10 }, { displayName: "Eva", vote: -5 }, { displayName: "Ana", vote: 0 }], labels: [{ name: "auth" }, { name: "old", active: false }] }],
+    );
+    expect(await getAzurePrDetail(remote, 7635)).toEqual({
+      files: [
+        { path: "src/a.ts", status: "modified" },
+        { path: "src/b.ts", status: "renamed" },
+      ],
+      changedFiles: 2,
+      commits: 2,
+      labels: ["auth"],
+      reviewers: [
+        { name: "Luis", state: "approved" },
+        { name: "Eva", state: "waiting" },
+        { name: "Ana", state: "pending" },
+      ],
+      tickets: [{ id: "41", title: "Sign in", url: "https://dev.azure.com/org/My%20Project/_workitems/edit/41" }],
+    });
   });
 });
 

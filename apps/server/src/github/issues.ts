@@ -32,7 +32,8 @@ const typeOf = (issue: Issue): string => issue.type?.name || "Issue";
 
 let cachedLogin: string | undefined;
 
-async function myLogin(): Promise<string> {
+/** Login of the signed-in user (cached). */
+export async function myLogin(): Promise<string> {
   cachedLogin ??= (await githubRequest<{ login: string }>("user")).login;
   return cachedLogin;
 }
