@@ -2,6 +2,7 @@ import { randomUUID } from "node:crypto";
 import { existsSync, lstatSync, readdirSync, unlinkSync } from "node:fs";
 import { join, resolve } from "node:path";
 import type { CheckTrial, RepoConfig } from "@nexura/shared";
+import { azureGitEnv } from "../azure/azure-client.ts";
 import { git, linkNodeModules, removeWorktree, runShell } from "./git.ts";
 
 const OUTPUT_TAIL = 4000;
@@ -81,7 +82,7 @@ export class CheckTrials {
     await git(repo.path, ["rev-parse", "--git-dir"]).catch(() => {
       throw new Error(`${repo.path} no es un repo git`);
     });
-    await git(repo.path, ["fetch", "--quiet", "origin", repo.baseBranch]).catch(() => undefined);
+    await git(repo.path, ["fetch", "--quiet", "origin", repo.baseBranch], azureGitEnv()).catch(() => undefined);
     const baseRef = await this.baseRef(repo);
     trial.baseRef = baseRef;
     const path = join(`${repo.path}.worktrees`, `nexura-checks-${trial.id}`);

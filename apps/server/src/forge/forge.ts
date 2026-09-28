@@ -1,4 +1,5 @@
 import type { CreatedPr, PrDraft, PrVote, PullRequestDetail, PullRequestSummary, ReviewReply, ReviewThread, RunRequest, Worktree } from "@nexura/shared";
+import { azureGitEnv } from "../azure/azure-client.ts";
 import * as azurePrs from "../azure/pull-requests.ts";
 import * as azureThreads from "../azure/pr-threads.ts";
 import * as githubPrs from "../github/pull-requests.ts";
@@ -149,7 +150,7 @@ export async function replyToThread(worktree: Worktree, prId: number, reply: Rev
 
 export async function pushBranch(worktree: Worktree): Promise<void> {
   assertOwnWorktree(worktree);
-  await git(worktree.path, ["push", "origin", worktree.branch]);
+  await git(worktree.path, ["push", "origin", worktree.branch], azureGitEnv());
 }
 
 /** Threads as the prompt reads them. */

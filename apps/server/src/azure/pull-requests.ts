@@ -1,6 +1,6 @@
 import type { CreatedPr, PrDraft, PrFileStatus, PrReviewerState, PrVote, PullRequestDetail, PullRequestSummary, Worktree } from "@nexura/shared";
 import { git, stripAttribution } from "../workspace/git.ts";
-import { azureRequest } from "./azure-client.ts";
+import { azureGitEnv, azureRequest } from "./azure-client.ts";
 import type { AzureRepo } from "./repo-remote.ts";
 
 /** Azure DevOps rejects longer descriptions; the create-pr skill keeps them under this. */
@@ -78,7 +78,7 @@ export async function getPrStatus(remote: AzureRepo, prId: number): Promise<stri
 
 /** Pushes the branch and opens the PR, linking the work item on creation. */
 export async function pushAndCreatePr(remote: AzureRepo, worktree: Worktree, draft: PrDraft): Promise<CreatedPr> {
-  await git(worktree.path, ["push", "-u", "origin", worktree.branch]);
+  await git(worktree.path, ["push", "-u", "origin", worktree.branch], azureGitEnv());
   const created = await azureRequest<CreatedResponse>(remote.organization, pullRequestsPath(remote), {
     method: "POST",
     body: {
@@ -118,11 +118,13 @@ function fileStatus(changeType = ""): PrFileStatus {
  */
 export async function getPrDetail(remote: AzureRepo, prId: number): Promise<PullRequestDetail> {
   const base = `${pullRequestsPath(remote)}/${prId}`;
-  const [pr, iterations, commits, links] = await Promise.all([
+  const [pr, iterations, commits, links, labels] = await Promise.all([
     azureRequest<ApiPullRequestDetail>(remote.organization, base),
     azureRequest<{ value: { id: number }[] }>(remote.organization, `${base}/iterations`),
     azureRequest<{ value: unknown[]; count?: number }>(remote.organization, `${base}/commits?$top=100`),
     azureRequest<{ value: { id: string }[] }>(remote.organization, `${base}/workitems`),
+    // A single PR comes without its labels: they have their own endpoint.
+    azureRequest<{ value: { name: string; active?: boolean }[] }>(remote.organization, `${base}/labels`).catch(() => ({ value: [] as { name: string; active?: boolean }[] })),
   ]);
   const last = iterations.value.at(-1)?.id;
   const [changes, workItems] = await Promise.all([
@@ -144,7 +146,7 @@ export async function getPrDetail(remote: AzureRepo, prId: number): Promise<Pull
     files,
     changedFiles: files.length,
     commits: commits.count ?? commits.value.length,
-    labels: (pr.labels ?? []).filter((label) => label.active !== false).map((label) => label.name),
+    labels: (labels.value?.length ? labels.value : (pr.labels ?? [])).filter((label) => label.active !== false).map((label) => label.name),
     reviewers: (pr.reviewers ?? []).map((reviewer) => ({ name: reviewer.displayName ?? "", state: REVIEWER_STATE[reviewer.vote ?? 0] ?? "pending" })),
     tickets: links.value.map((link) => ({
       id: link.id,

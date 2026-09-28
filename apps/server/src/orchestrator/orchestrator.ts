@@ -453,17 +453,25 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         );
       }
       const provider = (await requireRemote(location)).provider;
+      // Checked before posting anything: Azure DevOps rejects the vote only after the comments are up.
+      if (publish.vote && provider === "azure" && current.isDraft) {
+        throw new Error(`La PR #${target.id} es un borrador y Azure DevOps no admite votos en borradores. Publica los comentarios sin voto, o márcala como lista para revisión y vuelve a publicar.`);
+      }
       // GitHub pins the review to the reviewed commit; Azure DevOps would anchor on the new one.
       const posts = reviewPosts(review, selection, !(moved && provider === "azure"));
-      if (posts.length === 0 && !publish.vote) {
+      // A publish that failed after posting every comment (e.g. at the vote) only needs closing off.
+      const alreadyAll = Array.isArray(publish.comments) && publish.comments.length > 0 && publish.comments.every((item) => already.has(item.id));
+      if (posts.length === 0 && !publish.vote && !alreadyAll) {
         throw new Error("Elige al menos un comentario o un voto");
       }
-      await publishReview(location, { id: target.id, headSha: review.headSha }, posts, publish.vote, (post) => {
-        if (post.commentId !== undefined) {
-          review.postedIds = [...(review.postedIds ?? []), post.commentId];
-          this.persist(run);
-        }
-      });
+      if (posts.length > 0 || publish.vote) {
+        await publishReview(location, { id: target.id, headSha: review.headSha }, posts, publish.vote, (post) => {
+          if (post.commentId !== undefined) {
+            review.postedIds = [...(review.postedIds ?? []), post.commentId];
+            this.persist(run);
+          }
+        });
+      }
     } finally {
       this.publishing.delete(runId);
     }

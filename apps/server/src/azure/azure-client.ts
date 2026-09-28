@@ -1,4 +1,5 @@
 import { exec as execCallback } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { promisify } from "node:util";
 
 const exec = promisify(execCallback);
@@ -20,7 +21,45 @@ export class AzureError extends Error {
 type CachedToken = { value: string; expiresAt: number };
 let cachedToken: CachedToken | undefined;
 
-/** Token from the Azure CLI session (`az login`). No PAT stored anywhere. */
+/**
+ * A personal access token, only when set: NEXURA_AZURE_PAT, or the file NEXURA_AZURE_PAT_FILE points at
+ * (so the secret never goes on a command line). For organizations `az` can't sign in to, such as those
+ * of personal Microsoft or GitHub accounts. Nexura never writes it anywhere.
+ */
+export function azurePat(env: NodeJS.ProcessEnv = process.env): string | undefined {
+  const direct = env.NEXURA_AZURE_PAT?.trim();
+  if (direct) {
+    return direct;
+  }
+  const file = env.NEXURA_AZURE_PAT_FILE?.trim();
+  if (!file) {
+    return undefined;
+  }
+  try {
+    return readFileSync(file, "utf8").trim() || undefined;
+  } catch {
+    throw new AzureError(`No se pudo leer el PAT de Azure DevOps de ${file} (NEXURA_AZURE_PAT_FILE).`);
+  }
+}
+
+const basic = (pat: string): string => `Basic ${Buffer.from(`:${pat}`).toString("base64")}`;
+
+/** The Authorization header for dev.azure.com: the PAT when there is one, else the `az login` token. */
+export async function azureAuthorization(): Promise<string> {
+  const pat = azurePat();
+  return pat ? basic(pat) : `Bearer ${await azureToken()}`;
+}
+
+/**
+ * Environment for git commands against dev.azure.com when a PAT is set: the header goes in through
+ * GIT_CONFIG_* (git 2.31+), never on the command line. Empty without a PAT (git's own credentials).
+ */
+export function azureGitEnv(): Record<string, string> {
+  const pat = azurePat();
+  return pat ? { GIT_CONFIG_COUNT: "1", GIT_CONFIG_KEY_0: "http.https://dev.azure.com/.extraHeader", GIT_CONFIG_VALUE_0: `Authorization: ${basic(pat)}` } : {};
+}
+
+/** Token from the Azure CLI session (`az login`). */
 export async function azureToken(): Promise<string> {
   if (cachedToken && cachedToken.expiresAt - TOKEN_MARGIN_MS > Date.now()) {
     return cachedToken.value;
@@ -33,7 +72,7 @@ export async function azureToken(): Promise<string> {
     cachedToken = { value: token.accessToken, expiresAt };
     return token.accessToken;
   } catch {
-    throw new AzureError("No hay sesión de Azure CLI. Ejecuta `az login` en una terminal y vuelve a intentarlo.");
+    throw new AzureError("No hay sesión de Azure CLI. Ejecuta `az login` en una terminal y vuelve a intentarlo (o define NEXURA_AZURE_PAT_FILE con un PAT si tu organización no admite `az`).");
   }
 }
 
@@ -53,7 +92,7 @@ export async function azureRequest<T>(
   const response = await fetch(url, {
     method: init.method ?? "GET",
     headers: {
-      authorization: `Bearer ${await azureToken()}`,
+      authorization: await azureAuthorization(),
       "content-type": init.contentType ?? "application/json",
       accept: "application/json",
     },
@@ -69,7 +108,9 @@ export async function azureRequest<T>(
     }
     throw new AzureError(`Azure DevOps ${response.status}: ${message.slice(0, 500)}`, response.status);
   }
-  return (await response.json()) as T;
+  // Some calls (deleting a PR label) answer 204 with no body.
+  const text = await response.text();
+  return (text ? JSON.parse(text) : undefined) as T;
 }
 
 /** For tests. */

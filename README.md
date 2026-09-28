@@ -37,7 +37,7 @@ apps/server/src/
   conversations/            sección Terminal: CLIs interactivos en el servidor, transcripciones de cada CLI y traspaso entre agentes
   cli/                      comando nexura
 apps/web/                   UI Angular 22 + Tailwind v4 (tabs, nuevo flujo, vista del flujo)
-third_party/agent-office/   Agent Office 3D completo, licencia MIT; aplicación y servidor independientes
+third_party/agent-office/   Agent Office 3D completo, licencia MIT, con parches locales en src/*/nexura/ (ver agent-office.patches.md)
 config/profiles/*.json      minimal / standard / full / copilot-test
 config/steps/<paso>/        step.json (tools, allowlist, timeout) · prompt.md · schema.json
 config/repos.json           tus repos (local, gitignored; ver repos.example.json)
@@ -60,6 +60,7 @@ npm start                                # solo Nexura, UI + API en :4310
 npm run start:all                        # Nexura :4310 + Oficina 3D :4600
 npm run serve -- --port 4320 --concurrency 3 # solo Nexura, con opciones propias
 npm run serve:office                     # solo Oficina 3D, sin arrancar Nexura
+npm run update:office                    # trae lo último de Agent Office conservando los parches locales
 npm run setup                            # primera vez / tras un pull: dependencias de ambas apps + UI
 npm run dev:web                          # UI en desarrollo en :4300 (proxy a la API de :4310)
 
@@ -74,7 +75,7 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 - **Nuevo flujo**: ticket, tareas con checkbox (se extraen de las viñetas del ticket), repos con checkbox, prompt adicional, perfil (automático o uno concreto) y modo *paso a paso*.
 - **Vista del flujo**: pipeline de pasos (con reintentos y vueltas), timeline en vivo de cada paso (texto, herramientas con entrada/resultado, errores en rojo, resultado con coste/tokens/turnos), prompt renderizado, salida JSON, log crudo y el comando exacto. A la derecha: tareas que se van marcando, ramas/worktrees y el libro de tareas.
 - **Agentes** (pestaña de la cabecera): una única oficina pixel-art con los agentes de todos los flujos. Cada flujo activo tiene su isla de mesas con alfombra, sillas y placa de su color, y sus agentes llevan el cordón de la acreditación de ese color; la ropa delata el modelo (camiseta Haiku, sudadera o camisa Sonnet, traje Opus, camisa verde GPT, sudadera azul Gemini), cada rol lleva su accesorio (auriculares quien implementa, gafas quien revisa…) y los pasos sin LLM son robots. Quien trabaja se sienta en su mesa y su monitor muestra lo que hace (código, terminal, documento, spinner, aviso si espera aprobación), con la herramienta actual bajo la silla; los subagentes entran por la puerta, ocupan las mesas libres con portátil de su flujo y se van al terminar. Los que no tienen trabajo (pasos pendientes, terminados o fallidos) se buscan la vida: sofá (y se duermen), café, fuente, máquina de snacks, recreativas, ping-pong, charlas con bocadillos, siesta en su mesa o acariciar al gato de la oficina; a quien ha fallado le sigue una nubecita. La ventana y el reloj siguen la hora real. La oficina ocupa todo el alto de la página y elige el zoom más grande con el que cabe sin scroll; en pantallas anchas pone la sala y la cocina lado a lado sobre la sala de juegos. Al pasar el ratón por un flujo de la leyenda se resalta su equipo; con «Todos» se quedan también los agentes de los últimos flujos terminados. Dentro de cada flujo, el conmutador **Pasos | Oficina** del pipeline muestra la misma oficina solo con ese flujo; ese panel se ensancha arrastrando su borde derecho (doble clic lo restablece) y, a partir de unos 540 px, la oficina coloca las salas al lado de las mesas. Para verla moverse sin gastar tokens, la skill `/try-fake` (o `NEXURA_CLAUDE_BIN=fixtures/fake-claude.mjs FAKE_SUBAGENTS=1 FAKE_DELAY_MS=2000` más `FAKE_STATE_DIR`).
-- **Oficina 3D**: Agent Office completo, con su propio servidor, sesiones de agentes, mesas, juegos, voz y tableros. Se abre desde Nexura o en una ventana independiente. Su instalación, datos y contraseña se explican en [docs/office-3d.md](docs/office-3d.md).
+- **Oficina 3D**: Agent Office completo, con su propio servidor, sesiones de agentes, mesas, juegos, voz y tableros. Se abre desde Nexura o en una ventana independiente. Con `npm run start:all`, los flujos de Nexura (Claude, Codex o Copilot; Azure DevOps o GitHub) se sientan en sus mesas y abrirlos lleva al flujo; las plantas de repos de Azure DevOps llenan sus tableros de work items y PR a través de Nexura, y sus trabajadores abren los PR en Azure DevOps. Instalación, integración, datos, contraseña y actualización en [docs/office-3d.md](docs/office-3d.md).
 - **Revisiones** (pestaña de la cabecera): revisa PRs abiertas de tus repos, sean tuyas o de otros.
   - A la izquierda, los repos de Configuración con su proveedor. Al elegir uno se cargan sus PRs abiertas de GitHub o de Azure DevOps, según su remote `origin` (REST, gratis).
   - Marca una o varias y pulsa *Revisar*. Cada PR es una revisión aparte y corren en paralelo, hasta la concurrencia del servidor. Agente, modelo y esfuerzo se eligen en la barra y se recuerdan.
@@ -144,9 +145,10 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
 
 ## Azure DevOps y GitHub
 
-Los tickets pueden ser **work items de Azure DevOps** o **issues de GitHub**, y las PRs se abren donde esté el remote `origin` de cada repo (`dev.azure.com` o `github.com`). Todo va por REST (y GraphQL en GitHub), sin PAT y sin gastar tokens de Claude:
+Los tickets pueden ser **work items de Azure DevOps** o **issues de GitHub**, y las PRs se abren donde esté el remote `origin` de cada repo (`dev.azure.com` o `github.com`). Todo va por REST (y GraphQL en GitHub), sin gastar tokens de Claude:
 
-- **Azure DevOps**: sesión de **Azure CLI** (`az login`), la misma que el plugin `azure-devops`: Nexura pide un token con `az account get-access-token`. La organización y el proyecto salen del remote (`NEXURA_AZURE_ORG` / `NEXURA_AZURE_PROJECT` como alternativa).
+- **Azure DevOps**: sesión de **Azure CLI** (`az login`): Nexura pide un token con `az account get-access-token`. La organización y el proyecto salen del remote (`NEXURA_AZURE_ORG` / `NEXURA_AZURE_PROJECT` como alternativa).
+  - Los tokens de `az` solo valen en organizaciones **conectadas a Microsoft Entra** (las de empresa). Una organización creada con una cuenta Microsoft personal o con GitHub los rechaza (redirige a `_signout`). Para esas, crea un PAT (User settings → Personal access tokens, con Work Items, Code y Project) y define `NEXURA_AZURE_PAT_FILE` con la ruta de un archivo que lo contenga (o `NEXURA_AZURE_PAT` con el valor). Nexura lo usa en lugar de `az` para la API y para los `git push`/`fetch` a `dev.azure.com` (por el entorno de git, nunca en la línea de comandos) y no lo escribe en ningún sitio.
 - **GitHub**: sesión de **GitHub CLI** (`gh auth login`), la misma que el servidor MCP `github`: Nexura usa `gh auth token` (o `GH_TOKEN` / `GITHUB_TOKEN` si están definidas). El `owner/repo` sale del remote (`NEXURA_GITHUB_REPO=owner/repo` como alternativa, p. ej. código en Azure e issues en GitHub).
 
 Lo que se puede hacer:

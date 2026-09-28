@@ -20,6 +20,13 @@ export function htmlToText(html: string | undefined): string {
     .replace(/<(script|style)[\s\S]*?<\/\1>/gi, "")
     .replace(/<img[^>]*>/gi, "[imagen]")
     .replace(/<br\s*\/?>/gi, "\n")
+    // Numbered lists keep their numbers; the other items become "- ".
+    .replace(/<ol[^>]*>([\s\S]*?)<\/ol>/gi, (_list, items: string) => {
+      let n = 0;
+      return `${items.replace(/<li[^>]*>/gi, () => `\n${++n}. `)}\n\n`;
+    })
+    // A blank line after a list, or Markdown reads the next line as part of its last item.
+    .replace(/<\/ul>/gi, "\n\n")
     .replace(/<li[^>]*>/gi, "\n- ")
     .replace(/<\/li>/gi, "")
     .replace(/<\/(p|div|h[1-6]|ul|ol|tr|table)>/gi, "\n")

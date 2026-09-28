@@ -3,17 +3,18 @@ import { copyFileSync, existsSync, lstatSync, mkdirSync, readdirSync, realpathSy
 import { basename, dirname, isAbsolute, join, relative, resolve } from "node:path";
 import { promisify } from "node:util";
 import type { RepoConfig, Worktree } from "@nexura/shared";
+import { azureGitEnv } from "../azure/azure-client.ts";
 import { forgetWorktree, trustWorktree } from "./claude-trust.ts";
 
 const exec = promisify(execFile);
 
-export async function git(cwd: string, args: string[]): Promise<string> {
-  return (await gitRaw(cwd, args)).trim();
+export async function git(cwd: string, args: string[], env?: Record<string, string>): Promise<string> {
+  return (await gitRaw(cwd, args, env)).trim();
 }
 
 /** stdout as is: a file's content keeps its leading blank lines and indentation (line numbers depend on them). */
-export async function gitRaw(cwd: string, args: string[]): Promise<string> {
-  const { stdout } = await exec("git", args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true });
+export async function gitRaw(cwd: string, args: string[], env?: Record<string, string>): Promise<string> {
+  const { stdout } = await exec("git", args, { cwd, maxBuffer: 32 * 1024 * 1024, windowsHide: true, ...(env ? { env: { ...process.env, ...env } } : {}) });
   return stdout;
 }
 
@@ -65,7 +66,7 @@ export function slugify(text: string, max = 40): string {
  */
 export async function createWorktree(repo: RepoConfig, runId: string, branchName: string): Promise<Worktree> {
   try {
-    await git(repo.path, ["fetch", "--quiet", "origin", repo.baseBranch]);
+    await git(repo.path, ["fetch", "--quiet", "origin", repo.baseBranch], azureGitEnv());
   } catch {
     // Offline or no remote: fall back to the local branch.
   }
@@ -150,7 +151,7 @@ export async function createPrWorktree(
     "origin",
     `+${source}:${reviewRef(path)}`,
     `+refs/heads/${pr.targetBranch}:refs/remotes/${baseRef}`,
-  ]);
+  ], azureGitEnv());
   const worktree: Worktree = { repo: repo.name, repoPath: repo.path, path, branch: pr.sourceBranch, baseRef, detached: true };
   try {
     await git(repo.path, ["worktree", "add", "--detach", path, reviewRef(path)]);

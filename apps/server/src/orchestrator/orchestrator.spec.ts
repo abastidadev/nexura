@@ -1371,6 +1371,14 @@ describe("prReview (provider mocked, real git origin)", () => {
     await expect(orchestrator.publishPrReview(run.id, { comments: [{ id: 1, post: "x" }], vote: "approve" })).rejects.toThrow(/commits nuevos/);
     expect(publishedReviews).toHaveLength(0);
 
+    // Azure DevOps takes no vote on a draft PR: refused before any comment goes up.
+    const moved = openPrs[0]!.headSha;
+    openPrs[0] = { ...openPrs[0]!, headSha: run.prReview!.headSha, isDraft: true };
+    sandboxRemote.value = { provider: "azure", organization: "org", project: "p", repository: "reviewed" };
+    await expect(orchestrator.publishPrReview(run.id, { comments: [{ id: 1, post: "x" }], vote: "approve" })).rejects.toThrow(/borrador/);
+    expect(publishedReviews).toHaveLength(0);
+    openPrs[0] = { ...openPrs[0]!, headSha: moved, isDraft: false };
+
     // On Azure DevOps the lines may have moved: the comments go on the PR, naming their place.
     // The publish fails after the first comment; the retry does not post it again.
     sandboxRemote.value = { provider: "azure", organization: "org", project: "p", repository: "reviewed" };
@@ -1380,8 +1388,14 @@ describe("prReview (provider mocked, real git origin)", () => {
     expect(store.getRun(run.id)!.prReview).toMatchObject({ postedIds: [1] });
     expect(store.getRun(run.id)!.prReview!.published).toBeUndefined();
 
-    const done = await orchestrator.publishPrReview(run.id, { comments: [{ id: 1, post: "Validate it" }, { id: 3, post: "Rename it" }] });
+    // The retry fails again, at the end (the vote, say), after posting what was left.
+    publishFailsAfter.value = 1;
+    await expect(orchestrator.publishPrReview(run.id, { comments: [{ id: 1, post: "Validate it" }, { id: 3, post: "Rename it" }] })).rejects.toThrow(/fake/);
     expect(publishedReviews[1]!.posts).toEqual([{ body: "`src/greet.js:1` Rename it", commentId: 3 }]);
+    expect(store.getRun(run.id)!.prReview).toMatchObject({ postedIds: [1, 3] });
+    // Everything is up already: publishing again only closes the review off, posting nothing.
+    const done = await orchestrator.publishPrReview(run.id, { comments: [{ id: 1, post: "Validate it" }, { id: 3, post: "Rename it" }] });
+    expect(publishedReviews).toHaveLength(2);
     expect(done.prReview!.published).toMatchObject({ commentIds: [1, 3] });
 
     // A PR that is no longer open gets nothing.
