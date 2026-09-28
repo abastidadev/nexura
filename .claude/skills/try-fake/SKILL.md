@@ -28,6 +28,7 @@ description: Starts Nexura (UI + API) with FAKE agents (claude, codex, copilot) 
 4. To try **Revisiones**, open `/reviews`, pick `sandbox`, click a PR (its panel shows files, the linked issue #6 of PR 1, reviewers and labels) and click *Revisar* there, choosing agent, model and effort. The fake `prReview` answers with three comments plus one on a file that does not exist, which the orchestrator must drop. Publish some and check `github-posts.jsonl`.
 5. Optional fake variables (see the header of `fixtures/fake-steps.mjs`, shared by the three fakes): `FAKE_REVIEW_REJECTS=1` (codeReview rejects once), `FAKE_FAIL_MARKER=<text>` (enrich fails if the prompt contains it).
 6. To see a flow that mixes agents, create a profile in Configuración → Perfiles with some steps on Codex or Copilot (and, with the blind review, judge B on another agent). Do not add it to `config/profiles/` by hand: that folder is tracked.
-7. When done, stop the background process.
+7. To see the runs in the **3D office** (Agent Office), start it next to this server as described in [docs/office-3d.md](../../../docs/office-3d.md) ("Probar sin cuota"): same `NEXURA_OFFICE_TOKEN`, a temporary `AGENT_OFFICE_HOME`, and a `claude.cmd` shim to `fixtures/fake-claude.mjs` first on `PATH`, since the office runs `claude -p` to read plan limits.
+8. When done, stop the background processes.
 
 Do not use port 4310: the user's real Nexura usually runs there.

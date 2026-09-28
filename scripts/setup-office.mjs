@@ -43,6 +43,6 @@ if (current) {
   runNpm("run", "build");
 } else {
   console.log("Instalando dependencias de Agent Office.");
-  runNpm("install");
+  runNpm("ci");
   writeFileSync(stamp, `${lockHash()}\n`);
 }

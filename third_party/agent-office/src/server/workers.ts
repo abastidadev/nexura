@@ -16,6 +16,7 @@ import { QUEUE_AGENT_DISALLOWED_TOOLS, stationBrief } from './stations.js';
 import { officePrompt, type PromptSource } from './prompts.js';
 import { isBusy } from '../shared/status.js';
 import { gh } from './github.js';
+import { nexuraClaudeArgs, nexuraCreatePr, nexuraFindPr } from './nexura/pulls.js'; // nexura
 import type { ServiceOwner } from './services.js';
 import { TaskNamer, fallbackTask } from './tasks.js';
 import { addUsage, newTracker, restoreTracker, scanTracker, trackerUsage, zeroUsage, type Ledger, type UsageTracker } from './usage.js';
@@ -250,8 +251,11 @@ export class WorkerManager {
 
   deskOccupied(deskId: string): boolean {
     for (const w of this.workers.values()) if (w.info.deskId === deskId) return true;
-    return false;
+    return this.nexuraDesk?.(deskId) ?? false; // nexura: desks Nexura's runs sit at
   }
+
+  /** nexura: set by server/nexura/bridge.ts. */
+  nexuraDesk?: (deskId: string) => boolean;
 
   /**
    * Hires a worker at a desk. `meeting` seats one at the meeting room's table instead, for that meeting
@@ -527,6 +531,8 @@ export class WorkerManager {
       await run('git', ['push', '-u', 'origin', wt.branch], cwd, 90_000);
       const base = await this.pushedBranch([wt.from, this.trees.currentBranch()], wt.branch);
       const { title, body } = draftPr(info, commits, by);
+      const ado = await nexuraCreatePr(cwd, { branch: wt.branch, base, title, body }); // nexura: Azure DevOps through Nexura
+      if (ado) { info.pr = ado; this.persist(); return { ...ado, existed: false, dirty }; } // nexura
       const out = await gh(['pr', 'create', '--head', wt.branch, ...(base ? ['--base', base] : []), '--title', title, '--body', body], cwd, 60_000);
       const url = out.trim().split('\n').pop() ?? '';
       const number = Number(/\/pull\/(\d+)/.exec(url)?.[1]);
@@ -890,6 +896,7 @@ export class WorkerManager {
     let args = isShell ? (WIN && !process.env.SHELL ? [] : ['-l']) : configured ? [...this.agentArgs] : [];
     if (isClaude) {
       args.unshift('--settings', this.settingsPath);
+      args.push(...nexuraClaudeArgs(this.dir)); // nexura: on Azure DevOps floors, how gh translates to az
       // A model/effort chosen for this worker overrides whatever --agent-args set office-wide.
       if (info.model) args.push('--model', info.model);
       if (info.effort) args.push('--effort', info.effort);
@@ -1605,6 +1612,8 @@ function run(cmd: string, args: string[], cwd: string, timeout = 30_000): Promis
 }
 
 async function findOpenPr(branch: string, cwd: string): Promise<{ number: number; url: string } | undefined> {
+  const ado = await nexuraFindPr(cwd, branch); // nexura: Azure DevOps through Nexura
+  if (ado !== 'not-azure') return ado; // nexura
   const out = await gh(['pr', 'list', '--head', branch, '--state', 'open', '--limit', '1', '--json', 'number,url'], cwd);
   const found = (JSON.parse(out || '[]') as { number: number; url: string }[])[0];
   return found ? { number: found.number, url: found.url } : undefined;

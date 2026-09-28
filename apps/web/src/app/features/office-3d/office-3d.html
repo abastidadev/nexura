@@ -1,14 +1,21 @@
 <div class="flex shrink-0 flex-wrap items-center gap-3 border-b border-border px-4 py-2">
   <h1 class="font-semibold">Oficina 3D</h1>
-  <span class="text-xs text-muted">Agent Office · agentes y sesiones independientes · arranca con <code>npm run start:all</code></span>
-  <a class="ml-auto text-sm text-accent hover:underline" href="http://localhost:4600/" target="_blank" rel="noopener noreferrer">
+  <span class="text-xs text-muted">
+    @if (bridge()) {
+      Agent Office · tus flujos de Nexura se sientan en sus mesas; ábrelos para ir al flujo
+    } @else {
+      Agent Office · arranca con <code>npm run start:all</code> para ver aquí tus flujos de Nexura
+    }
+  </span>
+  <a class="ml-auto text-sm text-accent hover:underline" [href]="url()" target="_blank" rel="noopener noreferrer">
     Abrir en ventana completa ↗
   </a>
 </div>
 
 <iframe
+  #frame
   class="min-h-0 w-full flex-1 border-0 bg-black"
-  src="http://localhost:4600/"
+  [src]="frameUrl()"
   title="Oficina 3D de Agent Office"
   allow="microphone; camera; display-capture; fullscreen; clipboard-read; clipboard-write"
   allowfullscreen

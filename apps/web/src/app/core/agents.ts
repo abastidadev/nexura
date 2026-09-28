@@ -1,17 +1,23 @@
-import { agentOf, orderSteps, type AgentKind, type FlowProfile, type NexuraEvent, type Run, type StepDefinition, type StepName, type StepRun } from "@nexura/shared";
+import {
+  activityFor,
+  agentOf,
+  clipBubble as clip,
+  inputField as field,
+  orderSteps,
+  SUBAGENT_TOOLS,
+  toolBubble,
+  type AgentActivity,
+  type AgentKind,
+  type FlowProfile,
+  type NexuraEvent,
+  type Run,
+  type StepDefinition,
+  type StepName,
+  type StepRun,
+} from "@nexura/shared";
 import { modelDetail, stepLabel } from "./format";
 
-export type AgentActivity =
-  | "waiting"
-  | "idle"
-  | "thinking"
-  | "reading"
-  | "typing"
-  | "running"
-  | "delegating"
-  | "blocked"
-  | "done"
-  | "failed";
+export { activityFor, toolBubble, type AgentActivity };
 
 export type AgentNode = {
   /** stepRun.id, `planned-<step>` or the toolUseId of a subagent. */
@@ -62,13 +68,8 @@ export const ACTIVITY_LABELS: Record<AgentActivity, string> = {
 export const ACTIVE_RUN_STATUSES: readonly string[] = ["queued", "running", "paused", "waiting-rate-limit"];
 
 const CLASSIFY_DETAIL = "haiku/low";
-const SUBAGENT_TOOLS = new Set(["Agent", "Task"]);
-const READ_TOOLS = new Set(["Read", "Glob", "Grep", "WebFetch", "WebSearch", "LS"]);
-const WRITE_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit"]);
-const RUN_TOOLS = new Set(["Bash", "Shell", "PowerShell"]);
 /** A failed tool shows the agent blocked only for a moment, then it goes back to thinking. */
 const BLOCKED_FLASH_MS = 3000;
-const BUBBLE_MAX = 34;
 
 /** Steps of the run's resolved profile, in pipeline order (classify first when the profile is "auto"). */
 export function plannedSteps(run: Run, config: AgentConfig | null): PlannedStep[] {
@@ -88,60 +89,6 @@ export function plannedSteps(run: Run, config: AgentConfig | null): PlannedStep[
     }
   }
   return result;
-}
-
-function clip(text: string): string {
-  const line = text.trim().split("\n")[0] ?? "";
-  return line.length > BUBBLE_MAX ? line.slice(0, BUBBLE_MAX - 1) + "…" : line;
-}
-
-function field(input: unknown, key: string): string | undefined {
-  const value = (input as Record<string, unknown> | null | undefined)?.[key];
-  return typeof value === "string" ? value : undefined;
-}
-
-/** "Edit app.ts", "Bash npm test"… */
-export function toolBubble(name: string, input: unknown): string {
-  const target =
-    field(input, "file_path")?.split(/[\\/]/).at(-1) ??
-    field(input, "command") ??
-    field(input, "pattern") ??
-    field(input, "url") ??
-    field(input, "skill") ??
-    field(input, "description") ??
-    "";
-  return clip(target ? `${name} ${target}` : name);
-}
-
-/** What an agent is doing after this event; undefined = the event does not change it. */
-export function activityFor(event: NexuraEvent): AgentActivity | undefined {
-  switch (event.kind) {
-    case "thinking":
-    case "thinkingTokens":
-      return "thinking";
-    case "text":
-      return "idle";
-    case "toolUse":
-      if (SUBAGENT_TOOLS.has(event.name)) {
-        return "delegating";
-      }
-      if (READ_TOOLS.has(event.name)) {
-        return "reading";
-      }
-      if (WRITE_TOOLS.has(event.name)) {
-        return "typing";
-      }
-      if (RUN_TOOLS.has(event.name)) {
-        return "running";
-      }
-      return "thinking";
-    case "toolResult":
-      return event.isError ? "blocked" : "thinking";
-    case "result":
-      return event.success ? "done" : "failed";
-    default:
-      return undefined;
-  }
 }
 
 type LiveState = { activity: AgentActivity; tool?: string; bubble?: string; at?: string };

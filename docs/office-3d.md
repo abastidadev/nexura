@@ -1,6 +1,17 @@
 # Oficina 3D
 
-La sección **Oficina 3D** abre [Agent Office](https://github.com/AgentSystemLabs/agent-office), incluido completo en `third_party/agent-office/` a partir del commit [`71d14aba38bb3663d0ea2ced5db59bcb2c330c90`](https://github.com/AgentSystemLabs/agent-office/commit/71d14aba38bb3663d0ea2ced5db59bcb2c330c90). Su código y recursos se distribuyen bajo la [licencia MIT](../third_party/agent-office/LICENSE), que se conserva en la copia. La adaptación local de `src/server/server.ts` permite mostrar sus páginas solo dentro de la UI local de Nexura mediante `frame-ancestors`.
+La sección **Oficina 3D** abre [Agent Office](https://github.com/AgentSystemLabs/agent-office), incluido completo en `third_party/agent-office/` en el commit indicado en [`third_party/agent-office.upstream.json`](../third_party/agent-office.upstream.json). Su código y recursos se distribuyen bajo la [licencia MIT](../third_party/agent-office/LICENSE), que se conserva en la copia. Los cambios locales sobre esa copia están inventariados en [`third_party/agent-office.patches.md`](../third_party/agent-office.patches.md).
+
+## Actualizar a lo último de upstream
+
+Agent Office recibe decenas de commits al día. Para traerlos:
+
+```bash
+npm run update:office            # rama main de upstream
+npm run update:office -- <ref>   # otra rama, tag o commit
+```
+
+El script exige que `third_party/agent-office/` no tenga cambios sin confirmar, descarga el ref con `git fetch` (sin añadir remotos) y aplica el diff de upstream entre el commit fijado y el nuevo como merge a tres bandas sobre nuestra copia. El `package-lock.json` se toma tal cual de upstream. Si algún cambio de upstream choca con un parche local, deja marcadores de conflicto, lista los archivos y se detiene; si no, reinstala y recompila la oficina (`npm run setup:office`) y ejecuta su typecheck y sus tests. Nunca confirma: revisa el diff y haz commit tú. Conviene actualizar de forma periódica, no a diario, para trabajar sobre una versión probada.
 
 ## Arranque
 
@@ -12,10 +23,63 @@ La sección **Oficina 3D** abre [Agent Office](https://github.com/AgentSystemLab
 
 Agent Office reanuda los trabajadores guardados y procesa su cola al arrancar. Por eso `npm run start:all` y `npm run serve:office` son comandos explícitos: pueden activar agentes reales y consumir cuota si la oficina ya tenía trabajo pendiente. Abrir Nexura con `npm start` no arranca esos trabajadores.
 
-## Dos sistemas independientes
+`npm run start:all` (`scripts/start-all.mjs`) arranca los dos servidores con un token aleatorio compartido (`NEXURA_OFFICE_TOKEN`) y con `NEXURA_OFFICE_URL`/`NEXURA_URL`, que es lo que activa la integración descrita abajo. Por separado (`npm start` y `npm run serve:office`), cada uno funciona solo, como antes.
 
-**Agentes** sigue mostrando los flujos y subagentes de Nexura en la oficina 2D. **Oficina 3D** ejecuta Agent Office sin cambios en su protocolo: sus trabajadores, terminales, cola, cuentas, voz y proyectos se gestionan allí. Crear un trabajador en la oficina 3D puede consumir cuota de Claude o Codex; abrir la vista no inicia ninguno.
+## Integración con Nexura
+
+**Agentes** sigue mostrando los flujos y subagentes de Nexura en la oficina 2D. Los trabajadores propios de la oficina 3D (terminales interactivas, cola, voz, reuniones) se gestionan allí; crear uno puede consumir cuota de Claude o Codex. Abrir la vista no inicia ninguno. Con `npm run start:all`, además:
+
+### Los flujos de Nexura se sientan en la oficina
+
+`apps/server/src/office/office-bridge.ts` envía a la oficina cada flujo vivo, o terminado hace menos de 15 minutos, como un trabajador "virtual". Lo manda después de cada cambio y cada 20 s: `POST /nexura/workers` con el token. Vale para Claude, Codex y Copilot, y para Azure DevOps y GitHub, porque la oficina solo lo pinta y quien ejecuta es Nexura.
+
+- **Planta**: la del checkout que contiene el repo del flujo. Si no hay ninguna, la primera planta.
+- **Mesa**: se ocupan desde el fondo de la sala, y la oficina ya no contrata en ellas.
+- **Estado**:
+  - `working` mientras hay un paso en marcha; la animación sale de la herramienta que está usando (leer, editar, tests…).
+  - `needs_input` cuando está en pausa (aprobación, PR) o esperando cuota. Cuenta en "🙋 waiting" y la tecla N lleva hasta él.
+  - `done` al terminar y `exited` si falla o se cancela.
+- **Abrir el flujo**: con E (o desde la lista de trabajadores, las notificaciones…) se abre el flujo en Nexura. Dentro del iframe, la página **Oficina 3D** navega a `/runs/:id`. Solo acepta mensajes de su propio iframe. Con O se abre su PR.
+- Un flujo no tiene terminal: el portátil muestra lo que hace, y no se le puede escribir ni mandar a casa desde la oficina.
+
+### Tableros de Azure DevOps
+
+En una planta cuyo `origin` está en Azure DevOps (`dev.azure.com`, `visualstudio.com`), los tableros **Issues** y **Pull Requests** se llenan desde Nexura (`apps/server/src/office/office-api.ts` y `azure-board.ts`), con su autenticación de Azure DevOps (`az login`, o el PAT de `NEXURA_AZURE_PAT_FILE`; ver el README). Las plantas de GitHub siguen usando el `gh` de la oficina. En esas plantas las ventanas dicen "Azure DevOps" donde upstream dice "GitHub", los `#N` del Markdown enlazan al work item N y las líneas añadidas y quitadas de los PR abiertos salen del checkout local.
+
+| En la oficina | En Azure DevOps |
+|---|---|
+| Issues | work items del proyecto: abiertos y los 40 cerrados más recientes |
+| Labels | el tipo de work item y sus tags |
+| Asignarse (al empezar una tarea) | `System.AssignedTo` |
+| Cerrar | el estado final de su tipo (`Completed`, o `Removed` si "not planned") |
+| Pull requests | activos, completados y abandonados |
+| Revisión | los votos de los revisores |
+| Checks | las directivas del PR |
+| Merge | completar con squash, merge (no fast-forward) o rebase; también auto-complete |
+| Diff | se calcula con `git` en el checkout local, porque ADO no lo da por REST |
+
+En la ventana de un issue (de ADO o de GitHub), **🚀 Resolve with Nexura** abre **Nuevo flujo** en Nexura con el ticket, el origen y el repo rellenados. No lanza nada hasta que eliges perfil y modelo y confirmas.
+
+### Trabajadores de la oficina en repos de Azure DevOps
+
+- **Plantas**: el ascensor ofrece los repos configurados en Nexura como `nexura/<nombre>`. Al elegir uno, su carpeta se abre como planta tal cual, sin clonar, porque `gh` no puede clonar desde ADO.
+- **Claude**: en esas plantas recibe con `--append-system-prompt` la equivalencia de los comandos `gh` a `az` (Azure CLI con la extensión `azure-devops`, `az extension add --name azure-devops`). Todos los comandos de esa nota se han probado contra una organización real. Necesitan `az login` o, en organizaciones sin Entra, `AZURE_DEVOPS_EXT_PAT` en el entorno de la oficina.
+- **PR**: los que se abren desde una mesa o desde **Changes** se crean a través de Nexura. Si el prompt dice `Closes #N`, el PR queda enlazado al work item N.
+- **Pendiente**: las limitaciones están en [`third_party/agent-office.patches.md`](../third_party/agent-office.patches.md).
+
+### Probar sin cuota
+
+`/try-fake` más una oficina con un `claude` falso por delante en el `PATH`:
+
+1. Arranca Nexura con `NEXURA_OFFICE_TOKEN=t NEXURA_OFFICE_URL=http://127.0.0.1:4602 NEXURA_URL=http://localhost:<port> NEXURA_OFFICE_WEB_URL=http://localhost:4602 node .claude/skills/try-fake/start.mjs --port <port>`.
+2. Arranca la oficina con `node third_party/agent-office/bin/agent-office.js <temp>/sandbox --port 4602 --password test`. Antes, define:
+   - `NEXURA_OFFICE_TOKEN=t` y `NEXURA_URL=http://localhost:<port>`;
+   - `NEXURA_FRAME_ANCESTORS=http://localhost:<port>`;
+   - un `AGENT_OFFICE_HOME` temporal;
+   - un directorio al principio del `PATH` con un `claude.cmd` que ejecute `fixtures/fake-claude.mjs`, porque la oficina lanza `claude -p` para leer los límites del plan.
 
 Agent Office guarda sus datos en `~/agent-office` por defecto y puede crear checkouts de proyectos desde el ascensor. Nexura conserva sus datos en `data/`. Ambos servidores escuchan solo en la máquina local al arrancarlos con los scripts de Nexura.
 
 El paquete publicado en npm como `agent-office` tiene una versión y un binario distintos de los del repositorio fijado aquí. Las dependencias de esta copia se instalan dentro de `third_party/agent-office/` mediante su propio `package-lock.json`.
+
+Los tests de la oficina se ejecutan con `npm test --prefix third_party/agent-office`; los de nuestra integración, con `node --import tsx --test tests/nexura-*.test.ts` dentro de esa carpeta. En Windows fallan 17 tests de upstream (`tests/workers.test.ts`) que dependen de scripts con shebang.

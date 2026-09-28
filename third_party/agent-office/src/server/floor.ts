@@ -9,6 +9,7 @@ import { excludeFromGit } from './config.js';
 import { agentProviders, configuredProvider } from './agents.js';
 import { WorkerManager, type HookEnv } from './workers.js';
 import { GitHub, MergeWatch } from './github.js';
+import { trackerClass } from './nexura/tracker.js'; // nexura
 import { TaskQueue } from './queue.js';
 import { Changes } from './changes.js';
 import { Decor } from './decor.js';
@@ -155,7 +156,7 @@ export class Floor {
       ctx.prompts,
     );
 
-    this.github = new GitHub(
+    this.github = new (trackerClass(this.project.remote))( // nexura: Azure DevOps boards through Nexura; was new GitHub(
       def.dir,
       (state) => ctx.emit(this, { t: 'gh.issues', state }),
       (state) => {

@@ -5,6 +5,7 @@ import path from 'node:path';
 import { FLOOR_PALETTES, MAX_FLOORS, normalizeRepo, sameRepo } from '../shared/floors.js';
 import type { ProjectsDirState, RepoChoice } from '../shared/protocol.js';
 import { gh } from './github.js';
+import { nexuraCheckout, withNexuraRepos } from './nexura/floors.js'; // nexura
 
 /** A floor as floors.json keeps it. */
 export interface FloorDef {
@@ -168,6 +169,8 @@ export class Building {
    * checkout that's already where the clone would go is used as it is.
    */
   async add(input: string, by: string, started: (def: FloorDef) => void): Promise<FloorDef | string> {
+    const nexura = await nexuraCheckout(input); // nexura
+    if (nexura) return this.addCheckout(nexura.name, nexura.dir, by, started); // nexura
     const wanted = normalizeRepo(input);
     if (!wanted) return 'Pick a repository, or type it as owner/name';
     if (this.defs.some((d) => sameRepo(d.repo, wanted))) return `${wanted} already has a floor`;
@@ -216,13 +219,26 @@ export class Building {
   async repos(refresh = false): Promise<RepoChoice[]> {
     const cached = this.repoCache;
     if (cached && !refresh && Date.now() - cached.at < REPOS_TTL_MS) return cached.repos;
-    const repos = listRepos(this.dataDir);
+    const repos = withNexuraRepos(listRepos(this.dataDir)); // nexura: was listRepos(this.dataDir)
     this.repoCache = { at: Date.now(), repos };
     // A failure is worth asking again next time, not keeping for five minutes.
     repos.catch(() => {
       if (this.repoCache?.repos === repos) this.repoCache = undefined;
     });
     return repos;
+  }
+
+  /** nexura: a checkout Nexura already has (see nexura/floors.ts) becomes a floor where it is, without cloning. */
+  addCheckout(name: string, dir: string, by: string, started: (def: FloorDef) => void): FloorDef | string {
+    const abs = path.resolve(dir);
+    if (!existsSync(abs)) return `${abs} isn't there any more`;
+    if (this.defs.some((d) => path.resolve(d.dir) === abs)) return `${name} already has a floor`;
+    if (this.defs.length + this.cloning.size >= MAX_FLOORS) return `The building is full (${MAX_FLOORS} floors)`;
+    const def = this.newDef(name, originRepo(abs), abs, by);
+    started(def);
+    this.defs.push(def);
+    this.save();
+    return def;
   }
 
   private newDef(name: string, repo: string | undefined, dir: string, by: string): FloorDef {

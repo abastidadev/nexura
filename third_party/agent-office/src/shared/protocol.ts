@@ -126,6 +126,8 @@ export interface WorkerInfo {
   lastInput?: { by: string; at: number };
   /** The meeting it was called to, for a worker at the meeting room's table (see Meeting). */
   meeting?: string;
+  /** nexura: a Nexura run shown at a desk, with no terminal; opening it opens the run (see server/nexura/bridge.ts). */
+  external?: { source: 'nexura'; runId: string; url: string };
 }
 
 /** Session usage. The persistent office ledger continues to cover Claude Code only. */

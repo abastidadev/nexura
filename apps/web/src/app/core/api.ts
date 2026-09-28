@@ -275,6 +275,10 @@ export class Api {
     return firstValueFrom(this.http.get<AgentInfo[]>(refresh ? "/api/agents?refresh=1" : "/api/agents"));
   }
 
+  public getOffice(): Promise<{ url: string; bridge: boolean }> {
+    return firstValueFrom(this.http.get<{ url: string; bridge: boolean }>("/api/office"));
+  }
+
   public getSettings(): Promise<NexuraSettings> {
     return firstValueFrom(this.http.get<NexuraSettings>("/api/settings"));
   }

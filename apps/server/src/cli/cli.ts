@@ -4,7 +4,8 @@ import { parseArgs } from "node:util";
 import type { AgentKind, Run, RunRequest, StepName, StepRun } from "@nexura/shared";
 import { createApiServer } from "../api/api-server.ts";
 import { PrWatcher } from "../forge/pr-watcher.ts";
-import { loadConfig } from "../config/config-loader.ts";
+import { loadConfig, loadRepos } from "../config/config-loader.ts";
+import { OfficeBridge } from "../office/office-bridge.ts";
 import { Orchestrator } from "../orchestrator/orchestrator.ts";
 import { accountUsage } from "../runner/account-usage.ts";
 import { RunStore } from "../store/run-store.ts";
@@ -115,6 +116,8 @@ async function main(): Promise<void> {
       const { orchestrator, store } = createOrchestrator(Number(values.concurrency ?? DEFAULT_CONCURRENCY));
       const port = Number(values.port ?? DEFAULT_PORT);
       new PrWatcher(orchestrator).start();
+      // Only under `npm run start:all`, which shares a token with the 3D office (docs/office-3d.md).
+      OfficeBridge.fromEnv(process.env, { port, listRuns: () => store.listRuns(), repos: () => loadRepos() })?.start(orchestrator);
       const server = createApiServer(orchestrator, store);
       server.on("error", (error: NodeJS.ErrnoException) => {
         console.error(

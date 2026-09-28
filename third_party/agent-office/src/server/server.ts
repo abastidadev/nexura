@@ -38,6 +38,8 @@ import { WB_MAX_FILE_BYTES } from '../shared/whiteboard.js';
 import { MAX_FLOORS } from '../shared/floors.js';
 import { lookFromSeed, sanitizeLook } from '../shared/avatar.js';
 import { EMOTE_EVERY, EmoteBucket, isEmote } from '../shared/emotes.js';
+import { frameHeaders as nexuraFrameHeaders } from './nexura/frame.js'; // nexura
+import { NexuraBridge } from './nexura/bridge.js'; // nexura
 import { isThemePick } from '../shared/theme.js';
 import { PROMPTS, PROMPT_MAX, isPromptId } from '../shared/prompts.js';
 import { ROOF, isDrink } from '../shared/rooftop.js';
@@ -235,6 +237,7 @@ export async function startServer(cfg: Config) {
       c.ws.send(json);
     }
   };
+  const nexura = new NexuraBridge(process.env.NEXURA_OFFICE_TOKEN, { floors: () => floors.values(), emit: (f, msg) => toFloor(f as Floor, msg) }); // nexura
   const toastFloor = (floor: Floor | undefined, text: string, level: ToastLevel = 'info') => {
     if (floor) toFloor(floor, { t: 'toast', text, level });
   };
@@ -511,7 +514,7 @@ export async function startServer(cfg: Config) {
   const floorView = (floor: Floor | undefined): FloorView => ({
     floor: floor?.id ?? null,
     project: floor?.project ?? null,
-    workers: floor?.workers.list() ?? [],
+    workers: [...(floor?.workers.list() ?? []), ...nexura.list(floor)], // nexura: was floor?.workers.list() ?? []
     issues: floor?.github.issues ?? { items: [], fetchedAt: 0, loading: false },
     pulls: floor?.github.pulls ?? { items: [], fetchedAt: 0, loading: false },
     queue: floor?.queue.state() ?? { tasks: [], maxWorkers: 0 },
@@ -550,10 +553,7 @@ export async function startServer(cfg: Config) {
       'content-type': MIME[ext] ?? 'application/octet-stream',
       'cache-control': cache ? 'public, max-age=31536000, immutable' : 'no-store',
       'x-content-type-options': 'nosniff',
-      // Nexura embeds the office on its local production, development and fake-test ports.
-      ...(ext === '.html'
-        ? { 'content-security-policy': "frame-ancestors 'self' http://localhost:4300 http://127.0.0.1:4300 http://localhost:4310 http://127.0.0.1:4310 http://localhost:4320 http://127.0.0.1:4320" }
-        : { 'x-frame-options': 'DENY' }),
+      ...nexuraFrameHeaders(ext), // nexura: was 'x-frame-options': 'DENY'
       'referrer-policy': 'no-referrer',
     });
     createReadStream(file).pipe(res);
@@ -674,6 +674,7 @@ export async function startServer(cfg: Config) {
         return send(res, 200, { ok: true }, { 'set-cookie': auth.clearCookie(req) });
       }
       if (p === '/api/health') return send(res, 200, { ok: true });
+      if (p === '/nexura/workers') return await nexura.handle(req, res); // nexura
 
       if (p.startsWith('/assets/')) {
         const file = publicFile(p);

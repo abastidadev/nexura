@@ -61,6 +61,7 @@ import { projectOf } from "../memory/memory-store.ts";
 import type { Orchestrator, PrReviewRequest } from "../orchestrator/orchestrator.ts";
 import type { RunStore } from "../store/run-store.ts";
 import { TerminalServer } from "../terminal/terminal-server.ts";
+import { registerOfficeRoutes } from "../office/office-api.ts";
 import { readRepoNotes, saveRepoNotes } from "../workspace/repo-context.ts";
 
 const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
@@ -434,6 +435,9 @@ export function createApiServer(
   }));
   route("GET", "/api/quota", () => orchestrator.getQuota() ?? null);
   route("GET", "/api/settings", () => orchestrator.getSettings());
+  // Where the browser opens the 3D office (docs/office-3d.md); whether this server shows its runs there.
+  route("GET", "/api/office", () => ({ url: process.env.NEXURA_OFFICE_WEB_URL?.trim() || "http://localhost:4600", bridge: Boolean(process.env.NEXURA_OFFICE_URL && process.env.NEXURA_OFFICE_TOKEN) }));
+  registerOfficeRoutes(route, () => loadConfig().repos);
   // Which agent CLIs are installed (`--version`, free). Cached: it spawns three processes.
   let agents: { at: number; list: Promise<AgentInfo[]> } | undefined;
   route("GET", "/api/agents", (_params, _body, url) => {

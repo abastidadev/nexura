@@ -41,6 +41,7 @@ import { OfficeSound } from './sound';
 import { DesktopNotifier, askNotifyPermission, notifyPermission, waitingOnSomeone } from './notify';
 import { NextUp, waitingInOrder, waitingLabel } from './nextup';
 import { $, h, clip, closeAllModals, doingNow, modalOpen, onDoingChange, onModalChange, openModal, readingNow, toast, STATUS_LABEL } from './ui/dom';
+import { nexuraCardRefusal, nexuraDeskKey, nexuraHint, nexuraScreen, openNexuraRun, watchForgeWords } from './nexura/external'; // nexura
 import { openTerminal, openTerminalFor, routeTerminalMessage, type TerminalFind } from './ui/terminal';
 import { openSearch } from './ui/search';
 import { openChanges, openChangesFor, routeChangesMessage } from './ui/changes';
@@ -326,6 +327,7 @@ store.on('jukebox', () => {
 });
 // The arcade cabinet next to it: BLOCKFALL up close, and on its screen for everyone else on the floor.
 const cabinet = new Cabinet(office.cabinet.screen, net, { openTerminal: (id) => openWorkerTerminal(id), sound: (kind, lines) => sound.arcade(kind, lines) });
+watchForgeWords(() => store.project); // nexura: "GitHub" reads "Azure DevOps" on Azure DevOps floors
 const notifier = new DesktopNotifier(() => settings.notify, (id) => openWorkerTerminal(id));
 
 // ---- Golf off the balcony --------------------------------------------------------------------------
@@ -1174,7 +1176,7 @@ function syncWorkers() {
     // Keys clack while it types, not while it reads, watches its tests or browses.
     if (deskDef) sound.setTyping(w.id, deskDef.x, deskDef.z, w.status === 'working' && (!w.action || w.action === 'edit'));
     const again = w.kind === 'shell' ? 'restart' : 'resume';
-    v.laptop.setPlaceholder(w.status === 'offline' ? `💤 ${w.name} is asleep — press R to ${again}` : w.status === 'exited' ? `${w.name} exited` : 'booting…');
+    v.laptop.setPlaceholder(w.external ? nexuraScreen(w) : w.status === 'offline' ? `💤 ${w.name} is asleep — press R to ${again}` : w.status === 'exited' ? `${w.name} exited` : 'booting…');
   }
   for (const [id, v] of workerViews) {
     if (store.workers.has(id)) continue;
@@ -1540,6 +1542,7 @@ function pointToWaiting(now: number) {
 function openWorkerTerminal(id: string, find?: TerminalFind) {
   const w = store.workers.get(id);
   if (!w) return;
+  if (w.external) return openNexuraRun(w); // nexura
   if (isAsleep(w.status)) resumeWorker(w);
   openTerminal(net, id, () => openWorkerChanges(id), find);
 }
@@ -1656,6 +1659,7 @@ function interact(target: Interactable | null, key: DeskKey, note = aimedNote) {
   if (key === 'E' && carrying && dropCard(target, carrying, note)) return;
   if (target.kind === 'desk' && target.deskId) {
     const w = store.workerAtDesk(target.deskId);
+    if (w?.external) return nexuraDeskKey(w, key); // nexura
     // Nobody is hired at the meeting table: a meeting seats its own workers there.
     if (!w && DESK_BY_ID.get(target.deskId)?.room) return key === 'E' ? showMeeting() : undefined;
     if (key === 'B' && !w) return openShell(target.deskId);
@@ -2123,6 +2127,7 @@ function onQueue(issue: number): boolean {
 
 /** Why the worker at a desk can't be handed an issue card right now, or '' when it can. */
 function cantTakeCard(w: WorkerInfo): string {
+  if (w.external) return nexuraCardRefusal(w); // nexura
   if (w.kind === 'shell') return `${w.name} is a shell, not an agent`;
   if (isAsleep(w.status)) return `${w.name} is asleep — press R to resume first`;
   if (w.status === 'needs_input') return `${w.name} is waiting on an answer — open the terminal first`;
@@ -2507,6 +2512,7 @@ function deskHint(deskId: string): Hint {
       ],
     };
   }
+  if (w.external) return nexuraHint(w, STATUS_LABEL[w.status], key, aside); // nexura
   const doing = w.activity ? clip(w.activity, 48) : '';
   const workerProvider = w.kind === 'agent' ? resolvedProvider(w.provider, store.project) : undefined;
   const spent = w.kind === 'agent' && w.usage ? usageLabel(w.usage, workerProvider) : '';
