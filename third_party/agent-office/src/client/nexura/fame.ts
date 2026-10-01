@@ -45,8 +45,11 @@ function paintFrame(g: CanvasRenderingContext2D, w: number, hh: number, merge: D
   g.textAlign = 'center';
   if (!merge) {
     g.fillStyle = '#adb5bd';
-    g.font = `800 ${hh * 0.09}px ${FONT}`;
-    g.fillText(i === 0 ? 'Aquí colgará tu primera PR integrada' : '', w / 2, hh / 2);
+    g.font = `800 ${hh * 0.075}px ${FONT}`;
+    if (i === 0) {
+      g.fillText('Aquí colgará', w / 2, hh * 0.45);
+      g.fillText('tu primera PR integrada', w / 2, hh * 0.56);
+    }
     return;
   }
   g.font = `${hh * 0.3}px ${FONT}`;

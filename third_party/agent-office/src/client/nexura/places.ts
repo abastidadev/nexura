@@ -21,4 +21,5 @@ export const PLACES = {
   /** The game room: the futbolín table and the trivia cabinet, between the pods and the lounge. */
   futbolin: { x: 5.6, z: 5.4, rotY: 0 },
   trivia: { x: 3.4, z: 7.9, rotY: Math.PI },
+  race: { x: 7.2, z: 8.0, rotY: Math.PI },
 } as const;

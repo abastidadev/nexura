@@ -8,6 +8,7 @@ import { mesh, roundedBox, textPlane, toon } from '../world/toon';
 import type { Interactable } from '../world/types';
 import type { Fixture } from '../world/office/fixture';
 import { openApproveFlow } from './desk';
+import { openPorra } from './bets';
 import { currentDigest, onDigest, type DigestFlow } from './digest';
 import { openNexuraPage, openNexuraRunId } from './external';
 import { FONT, fit, panel, type Panel } from './panel';
@@ -145,6 +146,7 @@ function openControl() {
               h('span.nx-pill', { class: f.waiting ? 'wait' : 'run' }, f.waiting ? '✋ espera' : (f.current ?? f.status)),
               h('span.nx-pill', {}, `$${f.costUsd.toFixed(2)}`),
               f.waiting ? h('button.btn.primary', { type: 'button', onclick: () => openApproveFlow(f, () => openNexuraRunId(f.runId)) }, 'Aprobar…') : '',
+              h('button.btn', { type: 'button', onclick: () => openPorra(f) }, '🎲'),
               h('button.btn', { type: 'button', onclick: () => openNexuraRunId(f.runId) }, 'Abrir'),
             ),
           )

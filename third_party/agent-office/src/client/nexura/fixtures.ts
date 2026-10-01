@@ -7,5 +7,6 @@ import { inboxFixture } from './inbox';
 import { controlRoomFixture } from './control-room';
 import { reviewsFixture, todayFixture, vendingFixture } from './boards';
 import { fameFixture } from './fame';
+import { futbolinFixture, gameRoomFixture, raceFixture, triviaFixture } from './games';
 
-export const nexuraFixtures = [trophyFixture, duckFixture, shopFixture, inboxFixture, controlRoomFixture, reviewsFixture, todayFixture, vendingFixture, fameFixture] as const;
+export const nexuraFixtures = [trophyFixture, duckFixture, shopFixture, inboxFixture, controlRoomFixture, reviewsFixture, todayFixture, vendingFixture, fameFixture, gameRoomFixture, futbolinFixture, triviaFixture, raceFixture] as const;

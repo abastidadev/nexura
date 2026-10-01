@@ -3,6 +3,8 @@
 import type { WorkerInfo } from '../../shared/protocol';
 import { h, toast } from '../ui/dom';
 import { approveLabel, openApprove } from './desk';
+import { openPorra } from './bets';
+import { flowOf } from './digest';
 
 /** Messages Nexura's Oficina 3D page listens for (apps/web/src/app/features/office-3d). */
 export type NexuraPage = 'reviews' | 'shop' | 'achievements' | 'metrics' | 'runs';
@@ -96,6 +98,8 @@ export function nexuraDeskKey(w: WorkerInfo, key: string): void {
     return;
   }
   if (key === 'P' && openApprove(w, () => openNexuraRun(w))) return;
+  const flow = w.external && flowOf(w.external.runId);
+  if (key === 'C' && flow) return openPorra(flow);
   if (key === 'E' || key === 'O' || key === 'C' || key === 'P') openNexuraRun(w);
 }
 
@@ -123,6 +127,7 @@ export function nexuraHint(
       w.activity ? aside(w.activity) : '',
       w.external?.costUsd ? aside(`💸 $${w.external.costUsd.toFixed(2)}`) : '',
       approveLabel(w) ? key('P', approveLabel(w)!) : '',
+      w.external && flowOf(w.external.runId) ? key('C', 'Porra') : '',
       key('E', 'Abrir en Nexura'),
       w.pr ? key('O', `PR #${w.pr.number}`) : '',
     ],
