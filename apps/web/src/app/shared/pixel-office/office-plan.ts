@@ -70,7 +70,8 @@ export type Item = {
   z?: number;
 };
 
-export type DecorKind = "shelf" | "window" | "clock" | "picture" | "tv" | "whiteboard" | "dartboard" | "cabinets" | "door" | "rug" | "mat";
+/** `trophies` and `shop` link to Logros and Tienda (the 3D office has the same two). */
+export type DecorKind = "shelf" | "window" | "clock" | "picture" | "tv" | "whiteboard" | "dartboard" | "cabinets" | "door" | "rug" | "mat" | "trophies" | "shop";
 
 /** Painted on the background: wall decoration, rugs, the entrance. Pixels. */
 export type Decor = { kind: DecorKind; x: number; y: number; w: number; h: number; variant: number; color?: string };
@@ -393,10 +394,10 @@ function furnishWork(b: Builder, room: Room, empty: boolean): void {
   // The clock only once; then windows, shelves and whiteboards repeat.
   const pattern: [DecorKind, number][] = [
     ["window", 3],
-    ["shelf", 3],
+    ["trophies", 3],
     ["clock", 2],
     ["whiteboard", 4],
-    ["shelf", 3],
+    ["shop", 3],
     ["window", 3],
   ];
   const repeat = [0, 1, 3, 4, 5];
@@ -410,7 +411,7 @@ function furnishWork(b: Builder, room: Room, empty: boolean): void {
       b.decor.push({ kind, x: x * TILE + 4, y: TILE + 3, w: 8, h: 8, variant: 0 });
     } else {
       b.decor.push({ kind, x: x * TILE + 2, y: TILE + 1, w: size * TILE - 4, h: 2 * TILE - 2, variant: index });
-      b.poi(kind === "shelf" ? "shelf" : kind === "window" ? "window" : "whiteboard", x + Math.floor(size / 2), r, "up");
+      b.poi(kind === "shelf" || kind === "trophies" || kind === "shop" ? "shelf" : kind === "window" ? "window" : "whiteboard", x + Math.floor(size / 2), r, "up");
     }
     x += size + 1;
   }

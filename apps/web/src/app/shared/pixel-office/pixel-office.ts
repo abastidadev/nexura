@@ -1,4 +1,5 @@
 import { afterRenderEffect, Component, computed, DestroyRef, ElementRef, inject, input, output, signal, viewChild } from "@angular/core";
+import { Router } from "@angular/router";
 import { ACTIVITY_LABELS, type AgentNode } from "../../core/agents";
 import { elapsedMs, formatDuration } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
@@ -82,6 +83,7 @@ const CLOTHES: Record<ModelFamily, string> = {
   host: { class: "block" },
 })
 export class PixelOffice {
+  private readonly router = inject(Router);
   private readonly store = inject(NexuraStore);
   private readonly host = inject<ElementRef<HTMLElement>>(ElementRef);
   private readonly canvas = viewChild.required<ElementRef<HTMLCanvasElement>>("canvas");
@@ -241,6 +243,8 @@ export class PixelOffice {
       this.select.emit(hit.member.node);
     } else if (hit?.kind === "team") {
       this.selectTeam.emit(hit.teamId);
+    } else if (hit?.kind === "trophies" || hit?.kind === "shop") {
+      void this.router.navigate([hit.kind === "trophies" ? "/achievements" : "/shop"]);
     }
   }
 

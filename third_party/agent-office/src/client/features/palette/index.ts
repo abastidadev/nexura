@@ -21,6 +21,7 @@ import { openTeam } from '../../ui/team';
 import { IS_MAC } from '../../ui/termkeys';
 import { openWhiteboard } from '../whiteboard/ui';
 import type { InteractKind, Interactable } from '../../world/types';
+import { nexuraPaletteEntries } from '../../nexura/palette'; // nexura
 
 export type PaletteParts = Pick<Parts, 'walking' | 'waiting' | 'actions' | 'hud' | 'hanging' | 'meeting' | 'telescope'>;
 
@@ -105,6 +106,7 @@ export function installPalette(ctx: Ctx, parts: PaletteParts) {
     out.push(at('services', 'the Services board', { icon: '🌐', kind: 'Board', title: 'Services board', detail: 'Web servers the workers are running', open: () => openServices() }));
     out.push(at('whiteboard', 'the whiteboard', { icon: '📝', kind: 'Board', title: 'Whiteboard', open: () => openWhiteboard(net) }));
     out.push(at('meeting', 'the meeting room', { icon: '🤝', kind: 'Board', title: 'Meeting room', keywords: ['call a meeting'], open: () => meeting.showMeeting() }));
+    out.push(...nexuraPaletteEntries(office.interactables, walkThen)); // nexura: the shop, the control room, the games…
 
     for (const pr of store.pulls.items) {
       out.push(

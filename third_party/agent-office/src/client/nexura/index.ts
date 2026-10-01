@@ -10,7 +10,8 @@ import type { Person } from '../world/character';
 import { animate, dress, forget } from './cosmetics';
 import { watchForgeWords } from './external';
 import { openShop } from './shop';
-import { startDigest } from './digest';
+import { onDigest, startDigest } from './digest';
+import { maybeTour } from './tour';
 import { thingOf } from './things';
 import { nexura, sendOutfit, startWallet, wallet } from './wallet';
 import { sanitizeOutfit } from '../../shared/nexura-outfit';
@@ -28,7 +29,7 @@ declare module '../world/types' {
   }
 }
 
-export type NexuraParts = Pick<Parts, 'peers' | 'me'>;
+export type NexuraParts = Pick<Parts, 'peers' | 'me' | 'walking'>;
 
 export function installNexura(ctx: Ctx, parts: NexuraParts) {
   ctx.interactions.define('nexura', {
@@ -41,9 +42,26 @@ export function installNexura(ctx: Ctx, parts: NexuraParts) {
   startWallet(ctx.net, openShop);
   startDigest();
   // Back in the office (or after a reconnect, which starts you over): your outfit, and the day's visit.
+  const walkThen = (...a: Parameters<Parts['walking']['walkThen']>) => parts.walking.walkThen(...a);
   ctx.messages.on('welcome', () => {
     sendOutfit();
     void nexura('rewards/office', { kind: 'visit' }).catch(() => undefined);
+    maybeTour(() => ctx.office.interactables, walkThen);
+  });
+
+  // On a map with a herald (the castle's Hand of the King), he cries out Nexura's flows that end or wait.
+  onDigest((next, before) => {
+    const herald = ctx.world().herald;
+    if (!herald || !before) return;
+    for (const flow of next.active) {
+      const was = before.active.find((f) => f.runId === flow.runId);
+      if (flow.waiting && !was?.waiting) herald.person.say(`¡Oíd! ¡${flow.name} aguarda la venia de su señor!`, 6);
+    }
+    for (const flow of before.active) {
+      if (next.active.some((f) => f.runId === flow.runId)) continue;
+      const merged = next.merged.some((m) => m.runId === flow.runId);
+      herald.person.say(merged ? `¡Larga vida a ${flow.name}, que ya reina en main!` : `¡${flow.name} ha cumplido su gesta!`, 6);
+    }
   });
 
   // What everyone on the floor wears, yourself included, and their pets and trails.

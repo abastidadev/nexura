@@ -178,6 +178,34 @@ function paintDecor(ctx: Ctx, d: Decor, time: Date): void {
       rect(ctx, x - 1, y + h - 2, w + 2, 2, "#bdb5a2");
       return;
     }
+    case "trophies": {
+      // A glass trophy case: gold, silver and bronze cups on two shelves.
+      rect(ctx, x, y, w, h, "#5c3d2e");
+      rect(ctx, x + 1, y + 1, w - 2, h - 2, "#1d3557");
+      const cups = ["#ffc940", "#d6dde6", "#cd7f32", "#bfe0ff"];
+      [y + 2, y + Math.floor(h / 2) + 1].forEach((top, level) => {
+        for (let cx = x + 2, i = 0; cx < x + w - 4; cx += 5, i++) {
+          const color = cups[(i + level) % cups.length]!;
+          rect(ctx, cx, top + 1, 3, 2, color);
+          rect(ctx, cx + 1, top + 3, 1, 1, color);
+          rect(ctx, cx, top + 4, 3, 1, shade(color, 0.3));
+        }
+        rect(ctx, x + 1, top + 5, w - 2, 1, "#8a5a34");
+      });
+      rect(ctx, x + 1, y + 1, 1, h - 2, "rgba(255,255,255,0.35)");
+      return;
+    }
+    case "shop": {
+      // A shop window with a striped awning and goods on the counter.
+      for (let sx = 0; sx < w; sx += 3) rect(ctx, x + sx, y, Math.min(3, w - sx), 3, sx % 6 ? "#f4f4f0" : "#e04040");
+      rect(ctx, x, y + 3, w, h - 3, "#8a5a34");
+      rect(ctx, x + 1, y + 4, w - 2, h - 7, "#fff3d6");
+      rect(ctx, x + 3, y + 7, 3, 3, "#1b1b1b");
+      rect(ctx, x + 9, y + 7, 3, 3, "#ffd640");
+      rect(ctx, x + 15, y + 7, 3, 3, "#4cc9f0");
+      rect(ctx, x + w - 7, y + 5, 5, 2, "#ffc940");
+      return;
+    }
     case "shelf": {
       rect(ctx, x, y, w, h, "#7a4a2a");
       rect(ctx, x + 1, y + 1, w - 2, h - 2, "#4a2e1a");

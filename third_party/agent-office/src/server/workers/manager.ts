@@ -29,7 +29,7 @@ import type { HookEnv, OpenedPr, RepoSource, RunAs, Worker, WorkerContext, Worke
 import { clamp, safeEq, truncate } from './util.js';
 import { COLORS, NAMES, newWorker } from './worker.js';
 import { WorkerTrees, lostMessage } from './worktree.js';
-import { nexuraDeskTaken, withNexuraArgs, windowsSpawn } from '../nexura/workers.js'; // nexura
+import { nexuraDeskTaken, withNexuraArgs, withNexuraPrompt, windowsSpawn } from '../nexura/workers.js'; // nexura
 
 const SCREEN_INTERVAL_MS = 250;
 /** How often a steady typist's "last typed" time is refreshed for everyone. */
@@ -665,7 +665,7 @@ export class WorkerManager {
     const commandPath = isShell ? undefined : configured ? this.agentPath : resolveCommand(command);
     const base = isShell ? (WIN && !process.env.SHELL ? [] : ['-l']) : configured ? [...this.agentArgs] : [];
     // Its provider's command line, and anything it sets for this run (see ProviderAdapter.launch).
-    const plan: LaunchPlan = adapter ? adapter.launch({ h: this.handleOf(w), args: withNexuraArgs(base, adapter.id, this.dir), prompt, resumeSessionId, station, setup: this.setups[adapter.id] }) : { args: base }; // nexura: on Azure DevOps floors, how gh translates to az; was args: base
+    const plan: LaunchPlan = adapter ? adapter.launch({ h: this.handleOf(w), args: withNexuraArgs(base, adapter.id, this.dir), prompt: withNexuraPrompt(prompt, adapter.id, this.dir), resumeSessionId, station, setup: this.setups[adapter.id] }) : { args: base }; // nexura: on Azure DevOps floors, how gh translates to az; was args: base, prompt
     const { args } = plan;
     if (plan.rotateToken) w.hookToken = randomBytes(16).toString('hex');
     const env = childEnv();
@@ -703,7 +703,7 @@ export class WorkerManager {
       // renders its updates into this same terminal (see dsh.ts).
       const file = commandPath ?? shell;
       const acpArgs = commandPath ? args : shellRun(['exec', command, ...args].map((a, i) => (i < 2 ? a : shq(a))).join(' '));
-      launchAcp(this.ctx, w, term, { file, args: acpArgs, cwd, env, resumeSessionId, prompt });
+      launchAcp(this.ctx, w, term, { file, args: acpArgs, cwd, env, resumeSessionId, prompt: withNexuraPrompt(prompt, adapter.id, this.dir) }); // nexura: the Azure DevOps note; was prompt
       this.emitUpdate(w);
       this.persist();
       return;

@@ -60,11 +60,17 @@ export function azureNote(repo: AzureRepo): string {
   return note.replace(/[<>|&^%"]/g, '');
 }
 
-/** Extra arguments for Claude on this floor: the Azure DevOps note, when its origin is on Azure DevOps. */
-export function nexuraClaudeArgs(dir: string): string[] {
+/** The Azure DevOps note for this floor's agents, when its origin is on Azure DevOps. */
+export function nexuraAzureNote(dir: string): string | undefined {
   const url = originUrl(dir);
   const repo = isAzureRemote(url) ? parseAzureRemote(url) : undefined;
-  return repo ? ['--append-system-prompt', azureNote(repo)] : [];
+  return repo ? azureNote(repo) : undefined;
+}
+
+/** Extra arguments for Claude on this floor: the Azure DevOps note, when its origin is on Azure DevOps. */
+export function nexuraClaudeArgs(dir: string): string[] {
+  const note = nexuraAzureNote(dir);
+  return note ? ['--append-system-prompt', note] : [];
 }
 
 /** The open pull request from `branch` of an Azure DevOps checkout; undefined on any other (ask gh). */
