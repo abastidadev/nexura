@@ -4,6 +4,7 @@ import { Router, RouterLink, RouterLinkActive, RouterOutlet } from "@angular/rou
 import { Api } from "./core/api";
 import { RUN_STATUS, TONE_CLASSES, type Tone } from "./core/format";
 import { draftStatus, draftTitle } from "./features/tickets/ticket-format";
+import { setupStatus, setupTitle } from "./features/ai-setup/ai-setup-format";
 import { isPrReview, NexuraStore, reviewLink, type Notice, type Toast } from "./core/nexura-store";
 import { Notifier } from "./core/notifier";
 import { readStorage, writeStorage } from "./core/storage";
@@ -57,6 +58,7 @@ export class App implements OnInit {
     { path: "/runs", label: "Flujos", icon: "flows" },
     { path: "/reviews", label: "Revisiones", icon: "reviews" },
     { path: "/tickets", label: "Tickets", icon: "ticket" },
+    { path: "/ai-setup", label: "Setup IA", icon: "wand" },
     { path: "/terminal", label: "Terminal", icon: "terminal" },
     { path: "/agents", label: "Agentes", icon: "agents" },
     { path: "/office-3d", label: "Oficina 3D", icon: "office" },
@@ -93,6 +95,7 @@ export class App implements OnInit {
     const runs = new Map(this.store.runs().map((run) => [run.id, run]));
     const conversations = new Map(this.store.conversations().map((conversation) => [conversation.id, conversation]));
     const drafts = new Map(this.store.ticketDrafts().map((draft) => [draft.id, draft]));
+    const setups = new Map(this.store.aiSetupSessions().map((session) => [session.id, session]));
     return this.store.openTabs().flatMap((id): HeaderTab[] => {
       const run = runs.get(id);
       if (run) {
@@ -150,6 +153,23 @@ export class App implements OnInit {
           dot: TONE_CLASSES[state.tone].dot,
           link: ["/tickets"],
           queryParams: { draft: id },
+          comments: 0,
+        }];
+      }
+      const setup = setups.get(id);
+      if (setup) {
+        const state = setupStatus(setup);
+        const title = setupTitle(setup);
+        return [{
+          id,
+          icon: "wand",
+          label: title.slice(0, 28),
+          title: `Setup IA · ${title}`,
+          status: state.label,
+          live: state.live,
+          dot: TONE_CLASSES[state.tone].dot,
+          link: ["/ai-setup"],
+          queryParams: { session: id },
           comments: 0,
         }];
       }

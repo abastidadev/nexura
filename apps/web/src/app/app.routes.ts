@@ -33,6 +33,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/tickets/tickets-page").then((m) => m.TicketsPage),
   },
   {
+    path: "ai-setup",
+    title: "Nexura · Setup IA",
+    loadComponent: () => import("./features/ai-setup/ai-setup-page").then((m) => m.AiSetupPage),
+  },
+  {
     path: "terminal",
     title: "Nexura · Terminal",
     loadComponent: () => import("./features/terminal/terminal-page").then((m) => m.TerminalPage),

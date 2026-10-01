@@ -60,7 +60,7 @@ const MAX_MESSAGES = 60;
  * Files the assistant must not read (Claude honours these; the others rely on their sandbox):
  * the drafts end up on a board, and the board's own tickets are untrusted input in the prompt.
  */
-const SECRET_READS = ["Read(**/.env*)", "Read(**/*.pem)", "Read(**/*.key)", "Read(**/*.pfx)", "Read(**/secrets*)", "Read(**/.npmrc)"];
+export const SECRET_READS = ["Read(**/.env*)", "Read(**/*.pem)", "Read(**/*.key)", "Read(**/*.pfx)", "Read(**/secrets*)", "Read(**/.npmrc)"];
 /** Things that look like credentials: a ticket carrying one is not created without being edited. */
 const SECRET_PATTERNS: [RegExp, string][] = [
   [/-----BEGIN [A-Z ]*PRIVATE KEY-----/, "una clave privada"],
@@ -71,10 +71,14 @@ const SECRET_PATTERNS: [RegExp, string][] = [
   [/\b(?:password|passwd|pwd|secret|api[_-]?key|client[_-]?secret|connectionstring)\s*[:=]\s*\S{6,}/i, "una contraseña o clave"],
 ];
 
+/** What the first thing in the text that looks like a credential is, if any. */
+export function secretInText(text: string): string | undefined {
+  return SECRET_PATTERNS.find(([pattern]) => pattern.test(text))?.[1];
+}
+
 /** The first thing in the items that looks like a credential, if any. */
 export function secretIn(items: TicketItem[]): string | undefined {
-  const text = items.flatMap((item) => [item.title, item.description, item.acceptanceCriteria, item.reproSteps]).join("\n");
-  return SECRET_PATTERNS.find(([pattern]) => pattern.test(text))?.[1];
+  return secretInText(items.flatMap((item) => [item.title, item.description, item.acceptanceCriteria, item.reproSteps]).join("\n"));
 }
 
 /** A request the draft cannot take right now; `status` is the HTTP status the API answers with. */

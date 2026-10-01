@@ -33,6 +33,10 @@ import type {
   RunRequest,
   StepDefinition,
   NewTicketDraft,
+  AiSetupFile,
+  AiSetupRepo,
+  AiSetupSession,
+  NewAiSetupSession,
   TicketDetails,
   TicketDraft,
   TicketItem,
@@ -266,6 +270,46 @@ export class Api {
     return firstValueFrom(this.http.delete<void>(`/api/ticket-drafts/${id}`));
   }
 
+  /** Configured repos and which are plugin marketplaces (Setup IA). */
+  public aiSetupRepos(): Promise<AiSetupRepo[]> {
+    return firstValueFrom(this.http.get<AiSetupRepo[]>("/api/ai-setup/repos"));
+  }
+
+  public listAiSetup(): Promise<AiSetupSession[]> {
+    return firstValueFrom(this.http.get<AiSetupSession[]>("/api/ai-setup"));
+  }
+
+  /** Creates the session; the assistant's first turn arrives over the WebSocket. */
+  public startAiSetup(request: NewAiSetupSession): Promise<AiSetupSession> {
+    return firstValueFrom(this.http.post<AiSetupSession>("/api/ai-setup", request));
+  }
+
+  public updateAiSetup(id: string, files: AiSetupFile[]): Promise<AiSetupSession> {
+    return firstValueFrom(this.http.put<AiSetupSession>(`/api/ai-setup/${id}`, { files: setupEdits(files) }));
+  }
+
+  /** The person's message, with the files as they are on screen. */
+  public replyAiSetup(id: string, text: string, files: AiSetupFile[]): Promise<AiSetupSession> {
+    return firstValueFrom(this.http.post<AiSetupSession>(`/api/ai-setup/${id}/message`, { text, files: setupEdits(files) }));
+  }
+
+  public cancelAiSetup(id: string): Promise<AiSetupSession> {
+    return firstValueFrom(this.http.post<AiSetupSession>(`/api/ai-setup/${id}/cancel`, {}));
+  }
+
+  public removeAiSetupFile(id: string, key: string): Promise<AiSetupSession> {
+    return firstValueFrom(this.http.delete<AiSetupSession>(`/api/ai-setup/${id}/files/${encodeURIComponent(key)}`));
+  }
+
+  /** Writes the files into the repo's working tree (no commit). */
+  public applyAiSetup(id: string, files: AiSetupFile[]): Promise<AiSetupSession> {
+    return firstValueFrom(this.http.post<AiSetupSession>(`/api/ai-setup/${id}/apply`, { files: setupEdits(files) }));
+  }
+
+  public deleteAiSetup(id: string): Promise<void> {
+    return firstValueFrom(this.http.delete<void>(`/api/ai-setup/${id}`));
+  }
+
   /** Native folder dialog on the Nexura machine; "" when cancelled. */
   public pickFolder(initial = ""): Promise<string> {
     return firstValueFrom(this.http.post<{ path: string }>("/api/system/pick-folder", { initial })).then((response) => response.path);
@@ -379,4 +423,9 @@ export class Api {
   public conversationHistory(id: string): Promise<TranscriptMessage[]> {
     return firstValueFrom(this.http.get<TranscriptMessage[]>(`/api/conversations/${id}/history`));
   }
+}
+
+/** What the server takes from an edited file: which one, where and what. */
+function setupEdits(files: AiSetupFile[]): Pick<AiSetupFile, "key" | "path" | "content">[] {
+  return files.map(({ key, path, content }) => ({ key, path, content }));
 }

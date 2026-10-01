@@ -67,6 +67,11 @@
                 <span class="ml-auto size-2 rounded-full bg-info nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="El asistente de tickets está pensando"></span>
               }
             }
+            @case ("/ai-setup") {
+              @if (store.thinkingAiSetup()) {
+                <span class="ml-auto size-2 rounded-full bg-info nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="El asistente de Setup IA está pensando"></span>
+              }
+            }
             @case ("/terminal") {
               @if (store.runningConversations()) {
                 <span class="ml-auto size-2 rounded-full bg-ok nx-pulse" [class.lg:absolute]="collapsed()" [class.lg:top-2]="collapsed()" [class.lg:right-2]="collapsed()" role="img" aria-label="Conversaciones activas"></span>
