@@ -1,6 +1,7 @@
 import type { AchievementView } from "./achievements.ts";
 import type { Conversation } from "./conversation.ts";
 import type { NexuraEvent, TokenUsage } from "./events.ts";
+import type { AiSetupSession } from "./ai-setup.ts";
 import type { TicketDraft } from "./tickets.ts";
 
 /** Steps shipped with Nexura, in pipeline order. Users can add their own (see StepDefinition.custom). */
@@ -726,6 +727,8 @@ export type ServerMessage =
   | { type: "conversationDeleted"; id: string }
   | { type: "ticketDraft"; draft: TicketDraft }
   | { type: "ticketDraftDeleted"; id: string }
+  | { type: "aiSetup"; session: AiSetupSession }
+  | { type: "aiSetupDeleted"; id: string }
   /** A trophy just unlocked. */
   | { type: "achievement"; achievement: AchievementView }
   /** The 3D office, in its own window, asks the Nexura window the user last used to show this page. */

@@ -1,0 +1,191 @@
+@let current = session();
+<header class="flex flex-wrap items-center gap-3 border-b border-border px-4 py-3">
+  <div class="min-w-0 flex-1">
+    <h2 class="truncate text-md font-semibold">{{ title() }}</h2>
+    <p class="truncate text-xs text-muted">
+      {{ modeLabels[current.mode] }} · {{ current.repo }} · asistente: {{ agentLabels[current.agent.agent] }} ({{ current.agent.model }})
+    </p>
+  </div>
+  <nx-status-pill [tone]="status().tone" [label]="status().label" [live]="status().live" />
+  <button type="button" class="nx-icon-btn" [attr.aria-label]="applied() ? 'Quitar de la lista' : 'Borrar sesión'" [attr.title]="applied() ? 'Quitar de la lista' : 'Borrar sesión'" (click)="remove()">
+    <nx-icon name="trash" [size]="16" />
+  </button>
+</header>
+
+<div class="grid min-h-0 flex-1 grid-rows-2 lg:grid-cols-[minmax(0,1fr)_minmax(26rem,42rem)] lg:grid-rows-1">
+  <nx-ticket-chat class="min-h-0 border-b border-border lg:border-r lg:border-b-0" [draft]="current" (send)="reply($event)" (stop)="stop()" />
+
+  <section class="flex min-h-0 flex-col" [attr.aria-label]="current.mode === 'assess' ? 'Valoración' : 'Ficheros propuestos'">
+    <div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto p-4">
+      @if (error(); as message) {
+        <p class="rounded-md border border-err/40 bg-err-soft px-2.5 py-1.5 text-sm text-err" role="alert">{{ message }}</p>
+      }
+
+      @if (current.mode === "assess") {
+        @if (current.assessment; as assessment) {
+          @if (assessment.profile) {
+            <div class="rounded-lg border border-border p-3">
+              <h3 class="text-sm font-semibold">Perfil del proyecto</h3>
+              <p class="mt-1 text-sm whitespace-pre-wrap text-fg-soft">{{ assessment.profile }}</p>
+            </div>
+          }
+          @if (assessment.strengths.length || assessment.issues.length) {
+            <div class="grid gap-3 sm:grid-cols-2">
+              @if (assessment.strengths.length) {
+                <div class="rounded-lg border border-ok/40 bg-ok-soft p-3">
+                  <h3 class="text-sm font-semibold text-ok">Lo que ya está bien</h3>
+                  <ul class="mt-1 list-disc pl-5 text-sm">
+                    @for (item of assessment.strengths; track item) {
+                      <li>{{ item }}</li>
+                    }
+                  </ul>
+                </div>
+              }
+              @if (assessment.issues.length) {
+                <div class="rounded-lg border border-warn/40 bg-warn-soft p-3">
+                  <h3 class="text-sm font-semibold text-warn">Lo que falla</h3>
+                  <ul class="mt-1 list-disc pl-5 text-sm">
+                    @for (item of assessment.issues; track item) {
+                      <li>{{ item }}</li>
+                    }
+                  </ul>
+                </div>
+              }
+            </div>
+          }
+          <h3 class="text-sm font-semibold">Recomendaciones</h3>
+          @for (rec of assessment.recommendations; track rec.key) {
+            <article class="flex flex-col gap-2 rounded-lg border border-border p-3">
+              <div class="flex flex-wrap items-center gap-1.5 text-xs">
+                <span class="rounded-full px-2 py-0.5 font-medium" [class]="priorityClasses[rec.priority]">{{ priorityLabels[rec.priority] }}</span>
+                <span class="rounded-full bg-surface-3 px-2 py-0.5">{{ kindLabels[rec.kind] }}</span>
+                <span class="rounded-full bg-surface-3 px-2 py-0.5">{{ scopeLabels[rec.scope] }}</span>
+              </div>
+              <h4 class="font-semibold">{{ rec.title }}</h4>
+              <p class="text-sm whitespace-pre-wrap text-fg-soft">{{ rec.why }}</p>
+              @if (rec.command) {
+                <div class="flex items-center gap-2 rounded-md bg-surface-2 px-2.5 py-1.5">
+                  <code class="min-w-0 flex-1 truncate font-mono text-xs" [title]="rec.command">{{ rec.command }}</code>
+                  <button type="button" class="nx-btn nx-btn-ghost nx-btn-sm" (click)="copy(rec.command)">{{ copied() === rec.command ? "Copiado" : "Copiar" }}</button>
+                </div>
+              }
+              @if (rec.createPrompt) {
+                <div class="flex flex-wrap gap-2">
+                  <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="createFrom(rec)" [title]="rec.createPrompt">
+                    <nx-icon name="wand" [size]="13" />Crear en {{ current.repo }}
+                  </button>
+                  @if (rec.scope === "toolkit" && toolkitRepo(); as toolkit) {
+                    <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="createFrom(rec, toolkit)">
+                      <nx-icon name="wand" [size]="13" />Crear en {{ toolkit }}
+                    </button>
+                  }
+                </div>
+              }
+            </article>
+          } @empty {
+            <p class="text-sm text-fg-soft">Sin recomendaciones.</p>
+          }
+        } @else {
+          <p class="text-sm text-fg-soft">{{ current.status === "thinking" ? "El asistente está mirando el repo…" : "Aún no hay valoración." }}</p>
+        }
+      } @else {
+        @if (applied()) {
+          <div class="rounded-lg border border-ok/40 bg-ok-soft p-4">
+            <p class="flex items-center gap-2 font-semibold text-ok"><nx-icon name="done" [size]="18" />Escrito en {{ current.repo }}</p>
+            <ul class="mt-2 flex flex-col gap-1 font-mono text-sm">
+              @for (file of files(); track file.key) {
+                <li>{{ file.path }}</li>
+              }
+            </ul>
+            <p class="mt-3 text-sm text-fg-soft">
+              Nexura no hace commit. Revisa los cambios con <code class="font-mono">git diff</code>, pruébalo en una sesión nueva (una skill no funciona hasta que se ve disparar) y haz el commit tú, sin firma de IA.
+            </p>
+          </div>
+        }
+
+        @if (current.placement; as placement) {
+          @if (placement.reason) {
+            <div class="flex flex-col gap-2 rounded-lg border p-3" [class]="placement.scope === 'toolkit' ? 'border-info/40 bg-info-soft' : 'border-border'">
+              <p class="text-sm">
+                <strong>{{ placement.scope === "toolkit" ? "Encaja en el ai-toolkit" + (placement.plugin ? " (plugin " + placement.plugin + ")" : "") : "Va en " + scopeLabels[placement.scope].toLowerCase() }}.</strong>
+                {{ placement.reason }}
+              </p>
+              @if (placement.scope === "toolkit" && toolkitRepo(); as toolkit) {
+                <button type="button" class="nx-btn nx-btn-sm self-start" [disabled]="busy()" (click)="startCreate(current.idea, toolkit)">
+                  <nx-icon name="wand" [size]="13" />Hacerlo en {{ toolkit }}
+                </button>
+              }
+            </div>
+          }
+        }
+
+        @if (!applied()) {
+          <div class="rounded-lg border p-3" [class]="ready() ? 'border-ok/40 bg-ok-soft' : 'border-border'">
+            @if (ready()) {
+              <p class="flex items-center gap-2 text-sm font-medium text-ok"><nx-icon name="check" [size]="15" />Listo para escribir</p>
+            } @else if (gaps().length) {
+              <p class="text-sm font-medium">Para que quede completo falta:</p>
+              <ul class="mt-1 list-disc pl-5 text-sm text-fg-soft">
+                @for (gap of gaps(); track gap) {
+                  <li>{{ gap }}</li>
+                }
+              </ul>
+            } @else {
+              <p class="text-sm text-fg-soft">{{ current.status === "thinking" ? "El asistente está preparando los ficheros…" : "Revisa los ficheros y contesta al asistente si te pregunta algo." }}</p>
+            }
+          </div>
+        }
+
+        @if (files().length) {
+          <div class="flex items-center gap-1 overflow-x-auto border-b border-border" role="tablist" aria-label="Ficheros">
+            @for (file of files(); track file.key; let index = $index) {
+              <button type="button" role="tab" class="nx-tab shrink-0" [class.nx-tab-on]="tab() === index" [attr.aria-selected]="tab() === index" (click)="tab.set(index)" [title]="file.path">
+                {{ file.path.split("/").slice(-2).join("/") }}
+              </button>
+            }
+          </div>
+        }
+
+        @if (files()[tab()]; as file) {
+          <div class="flex flex-col gap-2">
+            <div class="flex flex-wrap items-center gap-1.5 text-xs">
+              <span class="rounded-full bg-surface-3 px-2 py-0.5">{{ kindLabels[file.kind] }}</span>
+              @if (file.written) {
+                <span class="rounded-full bg-ok-soft px-2 py-0.5 text-ok">Escrito</span>
+              } @else if (file.baseHash) {
+                <span class="rounded-full bg-warn-soft px-2 py-0.5 text-warn">Sobrescribe un fichero existente</span>
+              } @else {
+                <span class="rounded-full bg-info-soft px-2 py-0.5 text-info">Nuevo</span>
+              }
+              <span class="min-w-0 flex-1 truncate text-fg-soft">{{ file.purpose }}</span>
+              @if (editable() && !file.written) {
+                <button type="button" class="nx-btn nx-btn-ghost nx-btn-sm" (click)="removeFile(file)">Quitar</button>
+              }
+            </div>
+            <label class="nx-label" for="setup-path">Ruta en el repo</label>
+            <input id="setup-path" class="nx-input font-mono text-sm" [value]="file.path" [disabled]="!editable() || !!file.written" (input)="edit(tab(), { path: $any($event.target).value })" />
+            <label class="nx-label" for="setup-content">Contenido</label>
+            <textarea
+              id="setup-content"
+              class="nx-input min-h-96 font-mono text-xs leading-relaxed"
+              rows="24"
+              spellcheck="false"
+              [value]="file.content"
+              [disabled]="!editable() || !!file.written"
+              (input)="edit(tab(), { content: $any($event.target).value })"
+            ></textarea>
+          </div>
+        } @else if (current.status !== "thinking" && !applied()) {
+          <p class="text-sm text-fg-soft">El asistente aún no ha propuesto ficheros.</p>
+        }
+      }
+    </div>
+
+    @if (current.mode === "create" && !applied()) {
+      <footer class="flex flex-wrap items-center gap-2 border-t border-border p-3">
+        <span class="nx-hint flex-1">Se escribe en tu copia del repo, sin commit.</span>
+        <button type="button" class="nx-btn nx-btn-primary" [disabled]="!editable() || !files().length" (click)="write()">Escribir en el repo</button>
+      </footer>
+    }
+  </section>
+</div>

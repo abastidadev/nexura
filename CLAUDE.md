@@ -49,6 +49,11 @@ To see the UI or a flow without spending quota, use the `/try-fake` skill.
 - Available variables are built in `Orchestrator.renderPrompt` (`apps/server/src/orchestrator/orchestrator.ts`); an unknown variable silently renders as "(nada)", so double-check them.
 - Custom steps are created from the UI; to add a **built-in** step use the `/new-step` skill.
 
+## Setup IA (`config/ai-setup/`)
+
+- `guide.md`, `toolkit.md` and `templates.md` are copies of the ai-toolkit's rules, catalogue and templates: when the toolkit changes them, update the copy (templates verbatim). `prompt.md`, `assess.md`, `create.md`, `reply.md` and `schema.json` are Nexura's own; the fake answers live in `fixtures/fake-steps.mjs` (`aiSetup`).
+- The server only writes agent configuration paths (`isAgentConfigPath`, plus plugins in a marketplace repo): keep `apps/server/src/ai-setup/setup-files.ts` and its tests in step with any new path.
+
 ## MCP servers (`.mcp.json`)
 
 - `angular-cli` (read-only): Angular best practices and docs for the current version. Check it before writing new Angular APIs.

@@ -165,6 +165,9 @@ export function stepAnswer({ step, count, prompt, hasSchema }) {
     case "ticketDraft":
       output = ticketDraftAnswer(prompt);
       break;
+    case "aiSetup":
+      output = aiSetupAnswer(prompt);
+      break;
     default:
       if (hasSchema) {
         error = `fake: unknown step for prompt: ${prompt.slice(0, 80)}`;
@@ -219,6 +222,60 @@ function ticketDraftAnswer(prompt) {
     board,
     suggestSplit: false,
     missing: ["La cuenta con la que se reproduce"],
+    ready: false,
+  };
+}
+
+/**
+ * The Setup IA assistant: an assessment with two recommendations, or a project skill that the
+ * first turn leaves half done (a question, `missing`) and an answer completes.
+ */
+function aiSetupAnswer(prompt) {
+  const noAssessment = { profile: "", strengths: [], issues: [], recommendations: [] };
+  const project = { scope: "project", plugin: "", reason: "Usa los scripts de este repo." };
+  if (/[Mm]odo:? \*\*Valoración\*\*/.test(prompt)) {
+    return {
+      message: "He mirado el repo: tiene CLAUDE.md pero ninguna skill ni hook. Te propongo dos cosas.",
+      questions: [],
+      assessment: {
+        profile: "Node + TypeScript, tests con un script de npm, sin CI.",
+        strengths: ["Hay un CLAUDE.md en la raíz"],
+        issues: ["El CLAUDE.md no dice cómo lanzar los tests"],
+        recommendations: [
+          { kind: "plugin", scope: "user", priority: "high", title: "Instalar core del ai-toolkit", why: "Commits convencionales y el guard de git.", command: "claude plugin install core@ai-toolkit", createPrompt: "" },
+          { kind: "skill", scope: "project", priority: "medium", title: "Skill para lanzar los tests", why: "El repo tiene un script de tests propio.", command: "", createPrompt: "Una skill que lance los tests del repo y explique los fallos" },
+        ],
+      },
+      placement: project,
+      files: [],
+      missing: [],
+      ready: true,
+    };
+  }
+  const skill = (description, limits) => ({
+    path: ".claude/skills/run-tests/SKILL.md",
+    kind: "skill",
+    purpose: "Lanza los tests del repo y explica los fallos",
+    content: `---\nname: run-tests\ndescription: ${description}\n---\n\n# Run tests\n\n## 1. Get your bearings\n\n\`\`\`\nnpm test\n\`\`\`\n${limits}`,
+  });
+  if (prompt.includes("## Lo que dice la persona")) {
+    return {
+      message: "Hecho: la skill ya dice cuándo usarla y lleva sus límites.",
+      questions: [],
+      assessment: noAssessment,
+      placement: project,
+      files: [skill('Runs the tests and explains the failures. Use when the user asks to run the tests. Tambien en espanol - "lanza los tests", "pasa los tests".', "\n## Limits\n\n- Never edits the tests to make them pass.\n")],
+      missing: [],
+      ready: true,
+    };
+  }
+  return {
+    message: "Es una skill de proyecto: usa el script de tests de este repo.",
+    questions: [{ text: "¿Debe arreglar los fallos o solo explicarlos?", options: ["Solo explicarlos", "Arreglarlos"] }],
+    assessment: noAssessment,
+    placement: project,
+    files: [skill("Runs the tests.", "")],
+    missing: ["Qué hace la skill cuando un test falla"],
     ready: false,
   };
 }

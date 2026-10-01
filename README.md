@@ -34,12 +34,14 @@ apps/server/src/
   forge/                    elige Azure DevOps o GitHub según el remote origin; vigilancia de PRs
   api/                      REST + WebSocket (/ws eventos, /pty terminales) en :4310
   terminal/                 PTY (@lydell/node-pty, binarios precompilados) para la terminal embebida
+  ai-setup/                 sección Setup IA: valoración y creación de skills, agentes, hooks y MCP, y escritura controlada en el repo
   conversations/            sección Terminal: CLIs interactivos en el servidor, transcripciones de cada CLI y traspaso entre agentes
   cli/                      comando nexura
 apps/web/                   UI Angular 22 + Tailwind v4 (tabs, nuevo flujo, vista del flujo)
 third_party/agent-office/   Agent Office 3D completo, licencia MIT, con parches locales en src/*/nexura/ (ver agent-office.patches.md)
 config/profiles/*.json      minimal / standard / full / copilot-test
 config/steps/<paso>/        step.json (tools, allowlist, timeout) · prompt.md · schema.json
+config/ai-setup/            reglas, catálogo y plantillas del ai-toolkit para Setup IA, y sus prompts
 config/repos.json           tus repos (local, gitignored; ver repos.example.json)
 fixtures/                   stream-json reales + fake-claude/codex/copilot.mjs para tests sin tokens (y fake-interactive.mjs, su modo TUI)
 ```
@@ -107,6 +109,12 @@ npm run spike     # vuelve a grabar los fixtures reales (gasta un poco de cuota)
   - **Dividir en frontend y backend**: si el trabajo toca los dos lados, el asistente lo propone y el botón lo separa en dos items enlazados (en Azure con un enlace *Related*; en GitHub con una línea `Related: #n` en los dos).
   - Nada se crea hasta *Crear en…*, que pide confirmación. Después, cada item tiene **Lanzar proceso**, que abre *Nuevo flujo* con ese ticket ya cargado.
   - Los borradores se guardan en SQLite (con la conversación) y se retoman desde la lista; un turno cortado por un reinicio queda en error y se reenvía. El asistente respeta la pausa por cuota de Configuración → General.
+- **Setup IA** (pestaña de la cabecera): prepara un proyecto para trabajar con agentes (Claude Code, y también Codex y Copilot) a la manera del ai-toolkit.
+  - **Valorar el proyecto**: el asistente mira el repo y devuelve su perfil (stack, tests, lint, CI), lo que ya está bien, lo que falla en lo que existe (una skill sin frases en español, un revisor que puede escribir, un MCP declarado dos veces o sin versión fijada…) y las una o dos recomendaciones más valiosas por tipo: plugins del ai-toolkit según el stack, instrucciones, skills, agentes, hooks y MCP. Es el método del `claude-automation-recommender` de Anthropic (plugin `claude-code-setup`), replicado en el prompt para que funcione con los tres agentes en modo headless y priorice el catálogo del departamento. Cada recomendación trae el comando para instalarla (con *Copiar*) o un botón **Crear** que abre una sesión de creación con la petición ya escrita.
+  - **Crear algo**: cuentas lo que necesitas y el asistente decide qué pieza es (skill, agente, hook, MCP o `CLAUDE.md`), si va en el repo o encaja en el ai-toolkit (la prueba de «¿sería incorrecta en otro repo?»; si tienes el ai-toolkit en Configuración → Repos, ofrece hacerla allí) y escribe los ficheros completos siguiendo sus plantillas: `description` con cuándo usarla y frases en español, `## Limits`, menos de 200 líneas, `tools` restringidos en los agentes. En un repo que sea un marketplace de plugins escribe también la eval de disparo, la versión del `plugin.json` y el `CHANGELOG`. Nexura comprueba esas reglas en la propuesta y las enseña como pendientes.
+  - Lo que el asistente recibe, sin tokens: el inventario de skills, agentes y MCP que vería `claude` en el repo (también los de tu usuario y los plugins instalados), los ficheros de configuración de agentes que hay, el mapa del repo, las notas, la memoria y, copiados del ai-toolkit en `config/ai-setup/`, su catálogo (`toolkit.md`), sus reglas (`guide.md`) y sus plantillas (`templates.md`, tal cual). Trabaja en solo lectura (Read, Glob y Grep, sin shell ni MCP salvo la memoria en lectura).
+  - **Escribir en el repo**: nada se escribe hasta que lo confirmas, y nunca hace commit. Nexura escribe solo configuración de agentes (`CLAUDE.md`, `AGENTS.md`, `.claude/`, `.mcp.json`, `.codex/`, `.agents/`, las instrucciones de Copilot en `.github/`; en un marketplace, también `plugins/`, `.claude-plugin/`, `CHANGELOG.md` y `README.md`), dentro del repo y sin seguir enlaces que salgan de él, con JSON válido y sin nada que parezca una credencial. Si un fichero ha cambiado en disco desde que el asistente lo leyó, no lo sobrescribe. Los hooks, `settings.json` y `.mcp.json` ejecutan comandos en tu máquina: la confirmación lo avisa, léelos antes.
+  - Las sesiones se guardan en SQLite y se retoman desde la lista, como los borradores de Tickets.
 - **Depuración**: en el paso que falló, reintentar (editando prompt, modelo o esfuerzo), continuar su sesión de Claude con una instrucción, o saltarlo. En modo paso a paso, se para antes de cada paso para revisar o editar el prompt.
 - **Cuota**: medidor en vivo de las ventanas de 5 h y 7 días del plan.
 - **Terminal embebida** (xterm.js + PTY): botón *Terminal* abre PowerShell en el worktree del flujo; *Abrir en Claude* reanuda la sesión de un paso (`claude --resume`) para seguir hablando con él a mano. Nexura marca como confiables solo sus worktrees (`*.worktrees/nexura-*`) en `~/.claude.json` y quita la marca al borrarlos; desactívalo con `NEXURA_TRUST_WORKTREES=0`.
