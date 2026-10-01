@@ -5,7 +5,8 @@ import { h, toast } from '../ui/dom';
 import { approveLabel, openApprove } from './desk';
 
 /** Messages Nexura's Oficina 3D page listens for (apps/web/src/app/features/office-3d). */
-export type NexuraMessage = { type: 'nexura:open-run'; runId: string } | { type: 'nexura:new-run'; repoDir?: string; ticketId: string; source: 'azure' | 'github'; project?: string };
+export type NexuraPage = 'reviews' | 'shop' | 'achievements' | 'metrics' | 'runs';
+export type NexuraMessage = { type: 'nexura:open-run'; runId: string } | { type: 'nexura:new-run'; repoDir?: string; ticketId: string; source: 'azure' | 'github'; project?: string } | { type: 'nexura:open-page'; page: NexuraPage; repo?: string };
 
 /**
  * Sends a message to Nexura when the office is framed by it; false when it isn't. It carries only
@@ -46,7 +47,7 @@ if (window.parent === window) {
  * Shows something in the Nexura window you already have open (on your other screen, say), which
  * navigates there without stealing the focus from the office. With no Nexura window, a new tab.
  */
-function openInNexura(request: { kind: 'run'; runId: string } | { kind: 'new-run'; ticketId: string; source: 'azure' | 'github'; repoDir?: string }, fallbackUrl: string) {
+function openInNexura(request: { kind: 'run'; runId: string } | { kind: 'new-run'; ticketId: string; source: 'azure' | 'github'; repoDir?: string } | { kind: 'page'; page: NexuraPage; repo?: string }, fallbackUrl: string) {
   if (nexuraWindows.count > 0) {
     void fetch('/api/nexura/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) })
       .then((r) => {
@@ -61,6 +62,21 @@ function openInNexura(request: { kind: 'run'; runId: string } | { kind: 'new-run
     return;
   }
   window.open(fallbackUrl, '_blank', 'noopener');
+}
+
+/** Opens a page of Nexura (Revisiones, the shop…): around the office when Nexura frames it, else in its window. */
+export function openNexuraPage(page: NexuraPage, repo?: string): void {
+  if (toNexura({ type: 'nexura:open-page', page, ...(repo ? { repo } : {}) })) return;
+  if (!nexuraWindows.url && !nexuraWindows.count) {
+    toast('Abre Nexura (npm run start:all) para ver esto');
+    return;
+  }
+  openInNexura({ kind: 'page', page, ...(repo ? { repo } : {}) }, `${nexuraWindows.url}/${page}${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`);
+}
+
+/** Opens a run of Nexura by its id (from the control room's list). */
+export function openNexuraRunId(runId: string): void {
+  if (!toNexura({ type: 'nexura:open-run', runId })) openInNexura({ kind: 'run', runId }, `${nexuraWindows.url}/runs/${runId}`);
 }
 
 /** Opens the Nexura run a worker stands for: around the office when Nexura frames it, else in Nexura's window. */

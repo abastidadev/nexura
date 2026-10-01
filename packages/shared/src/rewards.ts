@@ -258,6 +258,10 @@ export type OfficeRewardEvent =
 export type TriviaQuestion = { id: string; repo: string; question: string; options: string[] };
 export type TriviaAnswer = { correct: boolean; answer: string; coins: number; earnedToday: number };
 
+/** Pages of Nexura the 3D office may open (Revisiones from the reviews board, the shop…). */
+export const OFFICE_PAGES = { reviews: "/reviews", shop: "/shop", achievements: "/achievements", metrics: "/metrics", runs: "/runs" } as const;
+export type OfficePage = keyof typeof OFFICE_PAGES;
+
 // ---- What the 3D office shows of Nexura ----------------------------------------------------------
 
 /** A flow running, for the control room's monitor wall. */

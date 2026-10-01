@@ -21,7 +21,12 @@ export function approveLabel(w: WorkerInfo): string | undefined {
 /** The approval window for a flow waiting at its desk; false when it isn't waiting (the caller opens the run instead). */
 export function openApprove(w: WorkerInfo, openRun: () => void): boolean {
   const flow = w.external && flowOf(w.external.runId);
-  if (!flow?.waiting) return false;
+  return flow ? openApproveFlow(flow, openRun) : false;
+}
+
+/** The approval window for a flow waiting for you (from its desk or the control room). */
+export function openApproveFlow(flow: DigestFlow, openRun: () => void): boolean {
+  if (!flow.waiting) return false;
   const what = WAITING[flow.waiting];
   const status = h('p.nx-muted', { role: 'status' });
   const send = async (skip: boolean, button: HTMLButtonElement) => {

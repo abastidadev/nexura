@@ -16,8 +16,8 @@ export const PLACES = {
   summary: { x: 1.4, z: -8.6, rotY: 0 },
   /** The quota vending machine, at the end of the kitchen counter. */
   vending: { x: -9.2, z: FLOOR.maxZ - 0.55, rotY: Math.PI },
-  /** The Hall of Fame: a freestanding gallery wall in the west aisle, south of the control room. */
-  fame: { x: FLOOR.minX + 1.6, z: 7.2, rotY: Math.PI / 2, length: 5.4 },
+  /** The Hall of Fame: a freestanding gallery wall between the pods and the lounge, facing the lounge (clear of the exit door). */
+  fame: { x: 5.0, z: -1.2, rotY: Math.PI / 2, length: 5.4 },
   /** The game room: the futbolín table and the trivia cabinet, between the pods and the lounge. */
   futbolin: { x: 5.6, z: 5.4, rotY: 0 },
   trivia: { x: 3.4, z: 7.9, rotY: Math.PI },
