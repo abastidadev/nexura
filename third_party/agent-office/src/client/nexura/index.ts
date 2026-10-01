@@ -13,7 +13,7 @@ import { openShop } from './shop';
 import { onDigest, startDigest } from './digest';
 import { maybeTour } from './tour';
 import { thingOf } from './things';
-import { nexura, sendOutfit, startWallet, wallet } from './wallet';
+import { nexura, nexuraOwner, sendOutfit, startWallet, wallet } from './wallet';
 import { sanitizeOutfit } from '../../shared/nexura-outfit';
 import './achievements';
 import './ducks';
@@ -44,6 +44,7 @@ export function installNexura(ctx: Ctx, parts: NexuraParts) {
   // Back in the office (or after a reconnect, which starts you over): your outfit, and the day's visit.
   const walkThen = (...a: Parameters<Parts['walking']['walkThen']>) => parts.walking.walkThen(...a);
   ctx.messages.on('welcome', () => {
+    if (!nexuraOwner()) return;
     sendOutfit();
     void nexura('rewards/office', { kind: 'visit' }).catch(() => undefined);
     maybeTour(() => ctx.office.interactables, walkThen);

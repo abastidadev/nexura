@@ -63,6 +63,15 @@ export function item(id: string): ShopItem | undefined {
   return rewards?.catalog.find((i) => i.id === id);
 }
 
+/**
+ * Whether this browser is the Nexura user's: Nexura is personal (one wallet, one outfit), so only the
+ * office opened inside Nexura or on the machine itself shows the coins and wears what was bought.
+ * Teammates on a shared office see your outfit on you, and nothing of Nexura's shop is locked for them.
+ */
+export function nexuraOwner(): boolean {
+  return window.parent !== window || ['localhost', '127.0.0.1', '[::1]', '::1'].includes(location.hostname);
+}
+
 /** Whether a room or game of the shop is yours. Without Nexura there's no shop, so nothing is locked. */
 export function owns(itemId: string): boolean {
   if (!connected) return true;
@@ -107,6 +116,7 @@ export function setWallet(next: Rewards): void {
 }
 
 export async function loadWallet(): Promise<void> {
+  if (!nexuraOwner()) return;
   try {
     setWallet(await nexura<Rewards>('rewards'));
   } catch {
@@ -123,6 +133,7 @@ function renderChip() {
 
 /** The balance in the corner, polled now and then, and the outfit sent whenever you (re)join. */
 export function startWallet(n: Net, openShop: () => void): void {
+  if (!nexuraOwner()) return;
   net = n;
   chip = h('button.nx-wallet', { type: 'button', title: 'Tus monedas de Nexura: abre la tienda', onclick: openShop });
   chip.hidden = true;

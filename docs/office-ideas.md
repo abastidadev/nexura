@@ -6,6 +6,17 @@ Cada idea indica qué es, por qué merece la pena y dónde se engancharía. El e
 
 Regla para todas: el código va en `src/server/nexura/` y `src/client/nexura/`, con enganches de una línea en upstream (ver [agent-office.patches.md](../third_party/agent-office.patches.md)). Con los registros, casi todo entra como una pieza propia: un `Fixture` en `floorPlan()`, un `ctx.interactions.define(...)`, una ruta en `http/routes/index.ts`.
 
+## Estado
+
+Todas las ideas de abajo están hechas, junto con un sistema de monedas y una tienda diaria (ver [README](../README.md#tienda-y-monedas) y [office-3d.md](office-3d.md#tienda-monedas-y-salas)). Donde lo hecho difiere de lo propuesto:
+
+- **Bloqueado en la tienda**: solo ocio. La Galería de la fama (2.3) y los tres juegos (3.3, 3.4 y 3.5) se compran. La sala de control, aprobar, los tableros y la máquina de cuota son de trabajo y nunca se bloquean.
+- **Gran Premio (3.4)**: un circuito de sobremesa en la sala de juegos de cada planta, no en la azotea, para tenerlo junto a los otros juegos y a la vista de los flujos.
+- **Futbolín (3.5)**: contra la máquina o a dos jugadores en el mismo teclado. Jugar en línea entre dos navegadores necesitaría mensajes nuevos en el protocolo de la oficina, que las reglas de parches no permiten (solo campos opcionales).
+- **Coste en la tarjeta (1.4)**: en la tarjeta y en la barra de ayuda de la mesa, como texto (`$0.42`), no como el contador de tokens de upstream, que Nexura no envía por flujo.
+- **Agentes nuevos sin la nota de Azure DevOps (5)**: Claude la recibe como system prompt; los demás, delante de su primer prompt. Un trabajador contratado sin prompt no la recibe: los otros CLI no admiten un system prompt que la oficina les pueda pasar.
+- **Cuentas por persona (5)**: el monedero y la ropa son de quien usa Nexura. Solo se muestran en la oficina abierta dentro de Nexura o en la propia máquina; el resto de la planta ve tu ropa, pero no tus monedas.
+
 ## Recomendación: por dónde empezar
 
 | # | Idea | Esfuerzo | Por qué primero |

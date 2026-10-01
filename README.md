@@ -126,6 +126,15 @@ La sección **Logros** premia el trabajo terminado, las buenas revisiones y la c
 - Salen de lo que Nexura ya ve, sin tokens: flujos de tickets terminados, revisiones publicadas de PRs ajenas (no las que abrieron tus flujos), PRs integradas, tickets creados en Tickets y lo que haces en la oficina.
 - **Comentarios corregidos**: cada `prPollSeconds`, Nexura sigue por REST las PRs de tus revisiones publicadas. Un comentario tuyo (salvo los *nit*) cuenta como corregido cuando su hilo deja de estar activo después de que el autor suba commits nuevos.
 - Se guardan en `data/achievements.sqlite`, aparte de los flujos: borrar un flujo no quita un trofeo. Lo anterior a esta versión cuenta: al arrancar se desbloquea en silencio y aparece como *Nuevo*.
+
+## Tienda y monedas
+
+La sección **Tienda** tiene un monedero y una tienda que cambia cada día a medianoche. Las monedas salen de lo mismo que los logros, sin tokens: flujos terminados (más si pasan a la primera), PR integradas, revisiones publicadas, tickets creados, cada logro según su nivel, la visita diaria a la Oficina 3D, los patitos de cada semana y los juegos. Cada movimiento tiene una clave única, así que nada se cobra dos veces; al estrenar la tienda se paga en silencio el historial.
+
+- **Qué se compra**: sombreros, complementos, mascotas que te siguen, estelas y placas para tu personaje de la Oficina 3D (los ve toda la planta), y salas y juegos que empiezan bloqueados: la Galería de la fama, el futbolín, el Trivial del repo y el Gran Premio. Lo de trabajo (sala de control, aprobar flujos, tableros) nunca se bloquea.
+- **La tienda del día**: 6 ofertas sacadas con el día como semilla, siempre con una sala o un juego mientras quede alguno por desbloquear, y una con un 30 % de descuento. Se guarda al sacarla, así que comprar no la baraja.
+- **Apuestas**: la *porra* (¿pasará un flujo la revisión y QA sin volver a implementar? acertar paga el doble) y el *Gran Premio* (qué flujo en marcha termina primero; paga la apuesta por el número de corredores). Si el flujo no termina, se devuelve.
+- Se guarda en `data/rewards.sqlite`. Más detalle de lo que pasa en la oficina en [docs/office-3d.md](docs/office-3d.md#tienda-monedas-y-salas).
 - Al ganar uno aparece un aviso arriba a la derecha, como en las consolas, con su sonido. El catálogo está en `packages/shared/src/achievements.ts` y las reglas en `apps/server/src/achievements/rules.ts`; los umbrales son una primera propuesta.
 
 ## Métricas y ajuste
