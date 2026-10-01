@@ -4,3 +4,4 @@ export * from "./conversation.ts";
 export * from "./tickets.ts";
 export * from "./agent-activity.ts";
 export * from "./achievements.ts";
+export * from "./rewards.ts";

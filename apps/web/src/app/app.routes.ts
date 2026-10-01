@@ -53,6 +53,11 @@ export const routes: Routes = [
     loadComponent: () => import("./features/achievements/achievements").then((m) => m.AchievementsPage),
   },
   {
+    path: "shop",
+    title: "Nexura · Tienda",
+    loadComponent: () => import("./features/shop/shop").then((m) => m.ShopPage),
+  },
+  {
     path: "metrics",
     title: "Nexura · Métricas",
     loadComponent: () => import("./features/metrics/metrics").then((m) => m.MetricsPage),

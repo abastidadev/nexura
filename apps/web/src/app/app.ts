@@ -61,6 +61,7 @@ export class App implements OnInit {
     { path: "/agents", label: "Agentes", icon: "agents" },
     { path: "/office-3d", label: "Oficina 3D", icon: "office" },
     { path: "/achievements", label: "Logros", icon: "trophy" },
+    { path: "/shop", label: "Tienda", icon: "shop" },
   ];
   protected readonly systemNav: NavItem[] = [
     { path: "/metrics", label: "Métricas", icon: "metrics" },

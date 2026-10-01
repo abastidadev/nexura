@@ -93,6 +93,9 @@ export class NexuraStore {
   public readonly freshAchievements = signal(0);
   /** Bumps with every trophy won, for views that show achievements to reload. */
   public readonly achievementsVersion = signal(0);
+  /** Coins in the wallet (null until first known); bumps `rewardsVersion` whenever they move. */
+  public readonly coins = signal<number | null>(null);
+  public readonly rewardsVersion = signal(0);
   private trophyTimer?: ReturnType<typeof setTimeout>;
   private readonly windowId = crypto.randomUUID();
   /** PR reviews that finished while the user was not looking at them. */
@@ -152,6 +155,7 @@ export class NexuraStore {
   public async init(): Promise<void> {
     this.connect();
     void this.refreshAchievements();
+    void this.refreshCoins();
     const [runs, config, quota, settings, conversations, drafts] = await Promise.all([
       this.api.listRuns(),
       this.api.getConfig(),
@@ -230,6 +234,26 @@ export class NexuraStore {
   public dismissTrophy(): void {
     this.trophies.update((queue) => queue.slice(1));
     this.showTrophy();
+  }
+
+  /** The wallet's balance, for the sidebar; a failure just leaves it off. */
+  public async refreshCoins(): Promise<void> {
+    const summary = await this.api.getRewards().catch(() => undefined);
+    if (summary) {
+      this.coins.set(summary.coins);
+    }
+  }
+
+  /** Coins came in or went out: the balance, and a quiet toast for what came in (no notice, no system notification). */
+  private coinsMoved(delta: number, balance: number, reason: string): void {
+    this.coins.set(balance);
+    this.rewardsVersion.update((version) => version + 1);
+    if (delta <= 0) {
+      return;
+    }
+    const toast: Toast = { id: ++this.toastSeq, title: `🪙 +${delta} monedas`, body: reason, tone: "accent", link: { path: ["/shop"] } };
+    this.toasts.update((toasts) => [...toasts, toast].slice(-MAX_TOASTS));
+    setTimeout(() => this.dismissToast(toast.id), TOAST_MS);
   }
 
   /** The Logros page was opened: nothing is new any more. */
@@ -558,6 +582,9 @@ export class NexuraStore {
         break;
       case "achievement":
         this.trophy(message.achievement);
+        break;
+      case "coins":
+        this.coinsMoved(message.delta, message.balance, message.reason);
         break;
       case "open": {
         // Only one window follows: the one used last (any, if none is known).

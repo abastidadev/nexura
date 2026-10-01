@@ -21,6 +21,9 @@ import {
   type StepName,
   type NewTicketDraft,
   type OfficeAchievementEvent,
+  type BetKind,
+  type OfficeRewardEvent,
+  type ShopSlot,
   type TicketDraftUpdate,
   type TicketSource,
   type WorkItemScope,
@@ -40,6 +43,8 @@ import {
 import { NEXURA_HOME } from "../config/paths.ts";
 import { rejectReason } from "./request-guard.ts";
 import { AchievementService } from "../achievements/achievement-service.ts";
+import { RewardError, RewardService } from "../rewards/reward-service.ts";
+import { RewardStore } from "../rewards/reward-store.ts";
 import { AzureError } from "../azure/azure-client.ts";
 import { ConversationManager } from "../conversations/conversation-manager.ts";
 import { ConversationStore } from "../conversations/conversation-store.ts";
@@ -130,6 +135,7 @@ export function createApiServer(
     quotaUntil: (agent) => orchestrator.quotaPauseFor(agent),
   }),
   achievements = new AchievementService(),
+  rewards = new RewardService(new RewardStore(), { runs: () => store.listRuns(200), repos: () => loadConfig().repos }),
 ): Server {
   const routes: Route[] = [];
   const terminals = new TerminalServer(store);
@@ -496,6 +502,27 @@ export function createApiServer(
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
   });
+  /** Coins, today's shop, what you own and wear, and your bets. Zero tokens. */
+  route("GET", "/api/rewards", () => rewards.summary());
+  route("POST", "/api/rewards/buy", (_params, body) => rewards.buy(String((body as { itemId?: unknown })?.itemId ?? "")));
+  route("POST", "/api/rewards/equip", (_params, body) => {
+    const { slot, itemId } = (body ?? {}) as { slot?: unknown; itemId?: unknown };
+    return rewards.equip(String(slot) as ShopSlot, typeof itemId === "string" ? itemId : null);
+  });
+  route("POST", "/api/rewards/bets", (_params, body) => {
+    const { kind, runId, stake } = (body ?? {}) as { kind?: unknown; runId?: unknown; stake?: unknown };
+    return rewards.bet({ kind: String(kind) as BetKind, runId: String(runId), stake: Number(stake) });
+  });
+  /** What the 3D office reports for coins: a daily visit, a duck of this week's season, a game. */
+  route("POST", "/api/rewards/office", (_params, body) => {
+    const paid = rewards.office((body ?? {}) as OfficeRewardEvent);
+    return { ...paid, coins: rewards.summary().coins };
+  });
+  route("GET", "/api/rewards/trivia", () => rewards.triviaQuestion());
+  route("POST", "/api/rewards/trivia", (_params, body) => {
+    const { id, option } = (body ?? {}) as { id?: unknown; option?: unknown };
+    return rewards.triviaAnswer(String(id), String(option));
+  });
   route("GET", "/api/metrics/cost-by-step", () => store.costByStep());
   route("GET", "/api/metrics", (_params, _body, url) => store.metrics(Number(url.searchParams.get("days")) || undefined));
   route("GET", "/api/metrics/account-usage", (_params, _body, url) => accountUsage(url.searchParams.has("refresh")));
@@ -527,7 +554,7 @@ export function createApiServer(
       const params = match.params!.slice(1).map(decodeURIComponent);
       sendJson(response, 200, await match.candidate.handler(params, body, url));
     } catch (error) {
-      const status = error instanceof HttpError ? error.status : 400;
+      const status = error instanceof HttpError || error instanceof RewardError ? error.status : 400;
       sendJson(response, status, { error: error instanceof Error ? error.message : String(error) });
     }
   });
@@ -576,9 +603,15 @@ export function createApiServer(
   // Achievements watch the same messages the UI gets; theirs (a trophy won) go out too.
   achievements.sync(store.listRuns(1000), tickets.list());
   achievements.on("message", broadcast);
+  // Coins pay for what the trophies record: the history quietly the first time, then announced.
+  rewards.settle(achievements, false);
+  rewards.on("message", broadcast);
+  achievements.on("message", () => rewards.settle(achievements, true));
   orchestrator.on("message", (message) => {
     if (message.type === "run") {
       achievements.observeRun(message.run);
+      rewards.settle(achievements, true);
+      rewards.observeRun(message.run);
     } else if (message.type === "runDeleted") {
       achievements.forgetRun(message.runId);
     }
@@ -586,12 +619,14 @@ export function createApiServer(
   tickets.on("message", (message) => {
     if (message.type === "ticketDraft") {
       achievements.observeDraft(message.draft);
+      rewards.settle(achievements, true);
     }
   });
   server.on("close", () => {
     conversations.dispose();
     tickets.dispose();
     achievements.close();
+    rewards.close();
   });
 
   return server;

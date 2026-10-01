@@ -3,6 +3,10 @@ import { inject, Service } from "@angular/core";
 import { firstValueFrom } from "rxjs";
 import type {
   AchievementsSummary,
+  Bet,
+  BetKind,
+  RewardsSummary,
+  ShopSlot,
   AgentAccountUsage,
   AgentInfo,
   AgentKind,
@@ -282,6 +286,22 @@ export class Api {
 
   public markAchievementsSeen(): Promise<void> {
     return firstValueFrom(this.http.post<void>("/api/achievements/seen", {}));
+  }
+
+  public getRewards(): Promise<RewardsSummary> {
+    return firstValueFrom(this.http.get<RewardsSummary>("/api/rewards"));
+  }
+
+  public buyItem(itemId: string): Promise<RewardsSummary> {
+    return firstValueFrom(this.http.post<RewardsSummary>("/api/rewards/buy", { itemId }));
+  }
+
+  public equipItem(slot: ShopSlot, itemId: string | null): Promise<RewardsSummary> {
+    return firstValueFrom(this.http.post<RewardsSummary>("/api/rewards/equip", { slot, itemId }));
+  }
+
+  public placeBet(kind: BetKind, runId: string, stake: number): Promise<Bet> {
+    return firstValueFrom(this.http.post<Bet>("/api/rewards/bets", { kind, runId, stake }));
   }
 
   public getOffice(): Promise<{ url: string; bridge: boolean }> {

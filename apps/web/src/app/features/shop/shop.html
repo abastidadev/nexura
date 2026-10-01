@@ -1,0 +1,204 @@
+<div class="mx-auto flex max-w-7xl flex-col gap-6 px-5 py-7 md:px-8 md:py-9">
+  <div class="flex flex-wrap items-end justify-between gap-3">
+    <div>
+      <h1 class="text-2xl font-semibold tracking-tight md:text-[1.75rem]">Tienda</h1>
+      <p class="mt-1 text-sm text-muted">Gana monedas con tu trabajo y jugando en la Oficina 3D, y gástalas en tu personaje, salas y juegos. La tienda cambia cada día.</p>
+    </div>
+    <a routerLink="/office-3d" class="nx-btn nx-btn-sm">🏢 Ir a la Oficina 3D</a>
+  </div>
+
+  @if (loadError() && !summary()) {
+    <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">No se pudo cargar la tienda. Comprueba que el servidor de Nexura sigue en marcha.</p>
+  }
+  @if (error(); as error) {
+    <p class="rounded-md border border-err/40 bg-err-soft px-3 py-2 text-sm text-err" role="alert">{{ error }}</p>
+  }
+
+  @if (summary(); as summary) {
+    <div class="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)]">
+      <section class="nx-card relative overflow-hidden p-5 md:p-6" aria-labelledby="wallet">
+        <div class="pointer-events-none absolute -top-20 -right-16 size-64 rounded-full bg-[#ffc940]/15 blur-3xl" aria-hidden="true"></div>
+        <div class="relative">
+          <span class="nx-eyebrow">Tu monedero</span>
+          <div class="mt-2 flex items-baseline gap-2">
+            <span class="text-4xl" aria-hidden="true">🪙</span>
+            <span id="wallet" class="text-4xl font-bold tracking-tight tabular-nums">{{ summary.coins }}</span>
+            <span class="text-sm text-muted">monedas</span>
+          </div>
+          <p class="mt-2 text-sm text-fg-soft">Hoy has ganado <span class="font-semibold text-fg tabular-nums">{{ summary.earnedToday }}</span>.</p>
+          <div class="mt-4 rounded-xl bg-surface-2 px-3 py-2.5 text-sm">
+            <span class="font-medium">🦆 Temporada de patitos {{ summary.ducks.season }}</span>
+            <div class="mt-1.5 flex gap-1.5" aria-label="Patitos encontrados esta semana">
+              @for (n of [1, 2, 3, 4, 5]; track n) {
+                <span class="flex size-7 items-center justify-center rounded-full text-sm ring-1" [class]="summary.ducks.found.includes(n) ? 'bg-[#ffd60a]/25 ring-[#ffd60a]/60' : 'bg-surface-3 ring-border opacity-50'">{{ summary.ducks.found.includes(n) ? '🦆' : '?' }}</span>
+              }
+            </div>
+            <p class="mt-1.5 text-2xs text-muted">Cambian de escondite cada lunes. Los cinco de la semana dan un premio extra.</p>
+          </div>
+        </div>
+      </section>
+
+      <section class="nx-card p-5 md:p-6" aria-labelledby="outfit">
+        <div class="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 id="outfit" class="font-semibold">Tu personaje en la oficina</h2>
+          <span class="text-2xs text-muted">{{ collection().count }} artículos en tu colección</span>
+        </div>
+        <ul class="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-5">
+          @for (part of outfit(); track part.slot) {
+            <li class="flex flex-col items-center gap-1 rounded-xl bg-surface-2 px-2 py-3 text-center">
+              <span class="text-3xl" [class.opacity-30]="!part.item" aria-hidden="true">{{ part.item?.icon ?? '—' }}</span>
+              <span class="text-2xs text-muted">{{ kindLabels[part.slot] }}</span>
+              <span class="w-full truncate text-xs font-medium">{{ part.item?.name ?? 'Nada' }}</span>
+            </li>
+          }
+        </ul>
+      </section>
+    </div>
+
+    <section aria-labelledby="today">
+      <div class="flex flex-wrap items-baseline justify-between gap-2">
+        <h2 id="today" class="text-lg font-semibold">Hoy en la tienda</h2>
+        <span class="text-sm text-muted">Cambia en <span class="font-semibold text-fg tabular-nums">{{ countdown() }}</span></span>
+      </div>
+      <ul class="mt-3 grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
+        @for (offer of offers(); track offer.itemId) {
+          <li class="nx-card relative flex flex-col overflow-hidden p-4" [class.ring-2]="offer.deal" [class.ring-[#ffc940]]="offer.deal">
+            <div class="pointer-events-none absolute -top-10 -right-10 size-32 rounded-full blur-2xl" [class]="rarityGlow[offer.item.rarity]" aria-hidden="true"></div>
+            @if (offer.deal) {
+              <span class="absolute top-3 right-3 rounded-full bg-[#ffc940] px-2 py-0.5 text-2xs font-bold text-[#5c4300]">Oferta del día</span>
+            }
+            <div class="relative flex items-start gap-3">
+              <span class="flex size-14 shrink-0 items-center justify-center rounded-2xl bg-surface-2 text-3xl" aria-hidden="true">{{ offer.item.icon }}</span>
+              <div class="min-w-0 flex-1">
+                <span class="block font-semibold">{{ offer.item.name }}</span>
+                <span class="mt-1 flex flex-wrap gap-1.5">
+                  <span class="rounded-full px-2 py-0.5 text-2xs font-medium ring-1" [class]="rarityChip[offer.item.rarity]">{{ rarityLabels[offer.item.rarity] }}</span>
+                  <span class="rounded-full bg-surface-3 px-2 py-0.5 text-2xs text-fg-soft">{{ kindLabels[offer.item.kind] }}</span>
+                </span>
+              </div>
+            </div>
+            <p class="relative mt-3 flex-1 text-sm text-fg-soft">{{ offer.item.description }}</p>
+            <div class="relative mt-4 flex items-center justify-between gap-2">
+              <span class="flex items-baseline gap-1.5">
+                <span class="text-lg font-bold tabular-nums">🪙 {{ offer.price }}</span>
+                @if (offer.deal) {
+                  <span class="text-sm text-muted line-through tabular-nums">{{ offer.item.price }}</span>
+                }
+              </span>
+              @if (offer.owned) {
+                <span class="rounded-full bg-ok-soft px-2.5 py-1 text-xs font-medium text-ok">✓ En tu colección</span>
+              } @else {
+                <button type="button" class="nx-btn nx-btn-primary nx-btn-sm" [disabled]="busy() !== null || !canAfford(offer.price)" (click)="buy(offer.item)" [attr.title]="canAfford(offer.price) ? null : 'Te faltan ' + (offer.price - summary.coins) + ' monedas'">
+                  {{ busy() === offer.itemId ? 'Comprando…' : canAfford(offer.price) ? 'Comprar' : 'Faltan ' + (offer.price - summary.coins) }}
+                </button>
+              }
+            </div>
+          </li>
+        }
+      </ul>
+    </section>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <section class="nx-card p-5" aria-labelledby="wardrobe">
+        <h2 id="wardrobe" class="font-semibold">Tu colección</h2>
+        @if (collection().bySlot.length) {
+          @for (group of collection().bySlot; track group.slot) {
+            <h3 class="mt-4 text-2xs font-semibold tracking-wide text-muted uppercase">{{ kindLabels[group.slot] }}</h3>
+            <ul class="mt-1.5 flex flex-wrap gap-2">
+              @for (item of group.items; track item.id) {
+                <li>
+                  <button type="button" class="flex items-center gap-2 rounded-xl px-3 py-2 text-sm ring-1 transition" [class]="isEquipped(item) ? 'bg-accent-soft ring-accent text-accent' : 'bg-surface-2 ring-border hover:ring-accent/50'" [disabled]="busy() !== null" (click)="equip(group.slot, isEquipped(item) ? null : item)" [attr.aria-pressed]="isEquipped(item)">
+                    <span aria-hidden="true">{{ item.icon }}</span>{{ item.name }}
+                    <span class="text-2xs opacity-80">{{ isEquipped(item) ? '· Puesto' : '· Ponérselo' }}</span>
+                  </button>
+                </li>
+              }
+            </ul>
+          }
+        } @else {
+          <p class="mt-3 rounded-xl border border-dashed border-border px-4 py-6 text-center text-sm text-muted">Aún no tienes nada para tu personaje. Lo que compres aparece aquí y se ve en la Oficina 3D.</p>
+        }
+
+        <h3 class="mt-5 text-2xs font-semibold tracking-wide text-muted uppercase">Salas y juegos</h3>
+        <ul class="mt-1.5 flex flex-col gap-1.5">
+          @for (item of collection().unlocked; track item.id) {
+            <li class="flex items-start gap-2 rounded-lg bg-surface-2 px-3 py-2 text-sm"><span aria-hidden="true">{{ item.icon }}</span><span><span class="font-medium">{{ item.name }}</span> <span class="text-muted">· {{ where[item.id] }}</span></span></li>
+          }
+          @for (item of collection().locked; track item.id) {
+            <li class="flex items-start gap-2 rounded-lg px-3 py-2 text-sm text-muted ring-1 ring-border"><span aria-hidden="true">🔒</span><span><span class="font-medium">{{ item.icon }} {{ item.name }}</span> · bloqueado. Aparecerá algún día en la tienda (🪙 {{ item.price }}).</span></li>
+          }
+        </ul>
+      </section>
+
+      <section class="nx-card p-5" aria-labelledby="bets">
+        <h2 id="bets" class="font-semibold">Apuestas</h2>
+        <p class="mt-1 text-sm text-muted">La porra: ¿pasará el flujo la revisión y QA sin volver a implementar? Si aciertas, cobras el doble. Se cierra cuando el flujo llega a revisión o QA.</p>
+        <label class="mt-3 flex items-center gap-2 text-sm">
+          <span class="text-fg-soft">Apuesta</span>
+          <input type="number" class="nx-input w-24" [min]="betLimits.min" [max]="betLimits.max" step="10" [value]="stake()" (change)="setStake($any($event.target).value)" />
+          <span class="text-muted">monedas ({{ betLimits.min }}–{{ betLimits.max }})</span>
+        </label>
+        <ul class="mt-3 flex flex-col gap-2">
+          @for (run of activeFlows(); track run.id) {
+            <li class="flex flex-wrap items-center gap-2 rounded-xl bg-surface-2 px-3 py-2 text-sm">
+              <span class="min-w-0 flex-1 truncate font-medium">{{ runLabel(run.id) }} <span class="font-normal text-muted">· {{ run.request.ticketText.slice(0, 60) }}</span></span>
+              @if (betOn(run); as bet) {
+                <span class="rounded-full bg-info-soft px-2 py-0.5 text-2xs text-info">🎲 {{ bet.stake }} a «{{ bet.kind === 'first-try' ? 'a la primera' : 'vuelve' }}»</span>
+              } @else {
+                <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy() !== null" (click)="bet('first-try', run)">🎯 A la primera</button>
+                <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy() !== null" (click)="bet('retry', run)">🔁 Vuelve</button>
+              }
+              @if (raceUnlocked() && activeFlows().length > 1 && !openRace()) {
+                <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy() !== null" (click)="bet('race', run)" title="Gana stake × número de flujos en carrera">🏎️ Gana la carrera</button>
+              }
+            </li>
+          } @empty {
+            <li class="rounded-xl border border-dashed border-border px-4 py-5 text-center text-sm text-muted">No hay flujos en marcha. Lanza uno y apuesta mientras trabaja.</li>
+          }
+        </ul>
+        @if (summary.bets.length) {
+          <h3 class="mt-5 text-2xs font-semibold tracking-wide text-muted uppercase">Tus apuestas</h3>
+          <ul class="mt-1.5 flex flex-col gap-1">
+            @for (bet of summary.bets.slice(0, 8); track bet.id) {
+              <li class="flex items-center gap-2 text-sm">
+                <span class="rounded-full px-2 py-0.5 text-2xs font-medium" [class]="betStatus[bet.status].cls">{{ betStatus[bet.status].label }}</span>
+                <span class="min-w-0 flex-1 truncate">{{ betText(bet) }}</span>
+                <span class="text-muted tabular-nums">🪙 {{ bet.stake }}{{ bet.payout ? ' → ' + bet.payout : '' }}</span>
+              </li>
+            }
+          </ul>
+        }
+      </section>
+    </div>
+
+    <div class="grid gap-4 lg:grid-cols-2">
+      <section class="nx-card p-5" aria-labelledby="earn">
+        <h2 id="earn" class="font-semibold">¿Cómo gano monedas?</h2>
+        <ul class="mt-3 flex flex-col gap-1.5">
+          @for (rule of rules; track rule.text) {
+            <li class="flex items-center gap-3 text-sm">
+              <span class="w-6 text-center" aria-hidden="true">{{ rule.icon }}</span>
+              <span class="flex-1 text-fg-soft">{{ rule.text }}</span>
+              <span class="font-semibold tabular-nums">🪙 {{ rule.coins }}</span>
+            </li>
+          }
+        </ul>
+      </section>
+
+      <section class="nx-card p-5" aria-labelledby="history">
+        <h2 id="history" class="font-semibold">Movimientos</h2>
+        <ul class="mt-3 flex max-h-80 flex-col gap-1 overflow-y-auto">
+          @for (entry of summary.history; track entry.key) {
+            <li class="flex items-center gap-3 text-sm">
+              <span class="w-14 shrink-0 text-right font-semibold tabular-nums" [class]="entry.amount > 0 ? 'text-ok' : 'text-err'">{{ entry.amount > 0 ? '+' : '' }}{{ entry.amount }}</span>
+              <span class="min-w-0 flex-1 truncate">{{ entry.reason }}</span>
+              <span class="shrink-0 text-2xs text-muted">{{ entry.at | date: "d MMM, HH:mm" }}</span>
+            </li>
+          } @empty {
+            <li class="text-sm text-muted">Sin movimientos todavía.</li>
+          }
+        </ul>
+      </section>
+    </div>
+  }
+</div>

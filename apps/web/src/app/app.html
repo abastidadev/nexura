@@ -79,6 +79,11 @@
                 </span>
               }
             }
+            @case ("/shop") {
+              @if (store.coins() !== null && !collapsed()) {
+                <span class="ml-auto inline-flex items-center gap-0.5 rounded-full bg-[#ffc940]/15 px-1.5 text-[10px] font-semibold text-[#b8860b] tabular-nums">🪙 {{ store.coins() }}<span class="sr-only"> monedas</span></span>
+              }
+            }
             @case ("/agents") {
               @if (workingAgents()) {
                 <span class="ml-auto inline-flex h-4 min-w-4 items-center justify-center rounded-full bg-info-soft px-1 text-[10px] font-semibold text-info tabular-nums ring-2 ring-surface lg:top-1 lg:right-1" [class.lg:absolute]="collapsed()" [class.lg:ml-0]="collapsed()">

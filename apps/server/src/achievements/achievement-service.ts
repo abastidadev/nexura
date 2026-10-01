@@ -13,7 +13,7 @@ import {
   type ServerMessage,
   type TicketDraft,
 } from "@nexura/shared";
-import { AchievementStore, type Unlock } from "./achievement-store.ts";
+import { AchievementStore, type Fact, type Unlock } from "./achievement-store.ts";
 import { factsOfDraft, factsOfRun, flowPrKeys, isActiveFlow, prKey } from "./facts.ts";
 import { evaluate, isComplete } from "./rules.ts";
 
@@ -139,6 +139,17 @@ export class AchievementService extends EventEmitter<{ message: [ServerMessage] 
       byTier,
       ducks: this.store.facts().filter((fact) => fact.kind === "duck").map((fact) => Number(fact.key)).sort(),
     };
+  }
+
+  /** Everything recorded so far, for the coins (apps/server/src/rewards). */
+  public facts(): Fact[] {
+    return this.store.facts();
+  }
+
+  /** Ids of the trophies won, with when. */
+  public unlocked(): { id: string; tier: AchievementTier; title: string; at: string }[] {
+    const unlocks = this.store.unlocks();
+    return ACHIEVEMENTS.filter((def) => unlocks.has(def.id)).map((def) => ({ id: def.id, tier: def.tier, title: def.title, at: unlocks.get(def.id)!.unlockedAt }));
   }
 
   /** The Logros page was opened: nothing is new any more. */
