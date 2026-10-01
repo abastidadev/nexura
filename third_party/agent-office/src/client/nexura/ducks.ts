@@ -2,7 +2,7 @@
 // Nexura counts) they move to five other hiding places of the ones below. Finding one counts for the
 // trophies (duck 1 to 5) and, once per season, pays coins; all five of a season pay a bonus.
 import * as THREE from 'three';
-import { BALCONY, BOOKSHELF, CABINET, FLOOR, GONG, JUKEBOX, LOFT, MEETING_TABLE, WHITEBOARD } from '../../shared/layout';
+import { BOOKSHELF, CABINET, FLOOR, GONG, JUKEBOX, LOFT, MEETING_TABLE, WHITEBOARD } from '../../shared/layout';
 import { aside, hintTitle, key } from '../core/hint';
 import type { Interactable } from '../world/types';
 import type { Fixture } from '../world/office/fixture';
@@ -19,8 +19,8 @@ export const DUCK_SPOTS: readonly (readonly [number, number, number])[] = [
   [BOOKSHELF.x + 0.55, BOOKSHELF.height + 0.07, BOOKSHELF.z - 0.02],
   [-12.3, 1.03, 12.35],
   [16.45, 0, -12.7],
-  // Against the wall: the south-east corner gets a pumpkin at Halloween (world/holiday.ts).
-  [BALCONY.maxX - 0.35, 0, BALCONY.minZ + 0.35],
+  // By the trophy case (the balcony's corners have a pumpkin at Halloween and hide it from the room).
+  [FLOOR.maxX - 0.35, 0, -5.45],
   [FLOOR.maxX - 0.75, LOFT.y + 0.52, (LOFT.minZ + LOFT.maxZ) / 2 + 0.45],
   [JUKEBOX.x - 0.05, JUKEBOX.height + 0.01, JUKEBOX.z],
   [CABINET.x, CABINET.height + 0.01, CABINET.z],
