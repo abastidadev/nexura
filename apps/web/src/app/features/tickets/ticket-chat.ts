@@ -1,6 +1,15 @@
 import { afterRenderEffect, Component, computed, ElementRef, input, linkedSignal, output, signal, viewChild } from "@angular/core";
-import { AGENT_LABELS, type TicketDraft, type TicketQuestion } from "@nexura/shared";
+import { AGENT_LABELS, type AgentKind, type TicketChatMessage, type TicketQuestion } from "@nexura/shared";
 import { Icon } from "../../shared/icon";
+
+/** What the chat shows: a ticket draft or a Setup IA session. `created`/`applied` close it. */
+export type ChatThread = {
+  messages: TicketChatMessage[];
+  status: string;
+  activity?: string;
+  error?: string;
+  agent: { agent: AgentKind };
+};
 
 /**
  * The conversation with the assistant. Its questions come with suggested answers: a click
@@ -61,7 +70,7 @@ import { Icon } from "../../shared/icon";
       }
     </div>
 
-    @if (draft().status !== "created") {
+    @if (draft().status !== "created" && draft().status !== "applied") {
       <form class="flex flex-col gap-2 border-t border-border p-3" (submit)="$event.preventDefault(); submit()">
         @if (pickedLines().length) {
           <ul class="flex flex-col gap-0.5 text-sm text-fg-soft">
@@ -88,7 +97,7 @@ import { Icon } from "../../shared/icon";
   `,
 })
 export class TicketChat {
-  public readonly draft = input.required<TicketDraft>();
+  public readonly draft = input.required<ChatThread>();
   public readonly send = output<string>();
   public readonly stop = output<void>();
 

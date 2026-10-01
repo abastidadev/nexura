@@ -1,6 +1,6 @@
 import { computed, DestroyRef, effect, inject, Service, signal, type Signal, type WritableSignal } from "@angular/core";
 import { Router } from "@angular/router";
-import type { AchievementView, Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage, TicketDraft } from "@nexura/shared";
+import type { AchievementView, AiSetupSession, Conversation, NexuraSettings, QuotaInfo, Run, ServerMessage, TicketDraft } from "@nexura/shared";
 import { setCustomStepLabels, stepLabel, type Tone } from "./format";
 import { Api, type NexuraConfigView, type StoredEvent } from "./api";
 import { Notifier, type Chime } from "./notifier";
@@ -62,6 +62,7 @@ export class NexuraStore {
   private readonly runsById = signal<Record<string, Run>>({});
   private readonly conversationsById = signal<Record<string, Conversation>>({});
   private readonly ticketDraftsById = signal<Record<string, TicketDraft>>({});
+  private readonly aiSetupById = signal<Record<string, AiSetupSession>>({});
   private readonly eventSignals = new Map<string, WritableSignal<StoredEvent[]>>();
   private readonly loadedEvents = new Set<string>();
   private socket?: WebSocket;
@@ -109,6 +110,9 @@ export class NexuraStore {
   /** Tickets section: drafts and created tickets, the most recently touched first. */
   public readonly ticketDrafts = computed(() => Object.values(this.ticketDraftsById()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
   public readonly thinkingDrafts = computed(() => this.ticketDrafts().filter((draft) => draft.status === "thinking").length);
+  /** Setup IA section: assessments and creations, the most recently touched first. */
+  public readonly aiSetupSessions = computed(() => Object.values(this.aiSetupById()).sort((a, b) => b.updatedAt.localeCompare(a.updatedAt)));
+  public readonly thinkingAiSetup = computed(() => this.aiSetupSessions().filter((session) => session.status === "thinking").length);
   public readonly activeCount = computed(
     () => this.runs().filter((run) => !isPrReview(run) && ["running", "queued", "waiting-rate-limit", "paused"].includes(run.status)).length,
   );
@@ -152,13 +156,14 @@ export class NexuraStore {
   public async init(): Promise<void> {
     this.connect();
     void this.refreshAchievements();
-    const [runs, config, quota, settings, conversations, drafts] = await Promise.all([
+    const [runs, config, quota, settings, conversations, drafts, setups] = await Promise.all([
       this.api.listRuns(),
       this.api.getConfig(),
       this.api.getQuota(),
       this.api.getSettings(),
       this.api.listConversations(),
       this.loadTicketDrafts(),
+      this.loadAiSetup(),
     ]);
     this.settings.set(settings);
     this.conversationsById.set(Object.fromEntries(conversations.map((conversation) => [conversation.id, conversation])));
@@ -167,9 +172,12 @@ export class NexuraStore {
     if (quota) {
       this.quota.set(quota);
     }
-    // Drop tabs (and their names) of flows, reviews, terminals and tickets that no longer exist.
+    // Drop tabs (and their names) of flows, reviews, terminals, tickets and Setup IA sessions that no longer exist.
     const exists = (id: string): boolean =>
-      runs.some((run) => run.id === id) || conversations.some((conversation) => conversation.id === id) || (drafts ?? []).some((draft) => draft.id === id);
+      runs.some((run) => run.id === id) ||
+      conversations.some((conversation) => conversation.id === id) ||
+      (drafts ?? []).some((draft) => draft.id === id) ||
+      (setups ?? []).some((session) => session.id === id);
     this.openTabs.update((tabs) => tabs.filter(exists));
     this.tabLabels.update((labels) => Object.fromEntries(Object.entries(labels).filter(([id]) => exists(id))));
     this.unseenReviews.update((ids) => ids.filter((id) => runs.some((run) => run.id === id)));
@@ -262,6 +270,23 @@ export class NexuraStore {
       this.ticketDraftsById.set(Object.fromEntries(drafts.map((draft) => [draft.id, draft])));
     }
     return drafts;
+  }
+
+  /** Sessions of the Setup IA section; a failure leaves the rest of the app working. */
+  private async loadAiSetup(): Promise<AiSetupSession[] | undefined> {
+    const sessions = await this.api.listAiSetup().catch(() => undefined);
+    if (sessions) {
+      this.aiSetupById.set(Object.fromEntries(sessions.map((session) => [session.id, session])));
+    }
+    return sessions;
+  }
+
+  public upsertAiSetup(session: AiSetupSession): void {
+    this.aiSetupById.update((all) => ({ ...all, [session.id]: session }));
+  }
+
+  public forgetAiSetup(id: string): void {
+    this.aiSetupById.update(({ [id]: _removed, ...rest }) => rest);
   }
 
   public ticketDraft(id: string): Signal<TicketDraft | undefined> {
@@ -517,6 +542,7 @@ export class NexuraStore {
         .listConversations()
         .then((conversations) => this.conversationsById.set(Object.fromEntries(conversations.map((conversation) => [conversation.id, conversation]))));
       void this.loadTicketDrafts();
+      void this.loadAiSetup();
     };
     socket.onmessage = (message) => this.handle(JSON.parse(String(message.data)) as ServerMessage);
     socket.onclose = () => {
@@ -555,6 +581,12 @@ export class NexuraStore {
         break;
       case "ticketDraftDeleted":
         this.forgetTicketDraft(message.id);
+        break;
+      case "aiSetup":
+        this.upsertAiSetup(message.session);
+        break;
+      case "aiSetupDeleted":
+        this.forgetAiSetup(message.id);
         break;
       case "achievement":
         this.trophy(message.achievement);

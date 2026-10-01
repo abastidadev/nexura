@@ -20,6 +20,8 @@ import {
   type ServerMessage,
   type StepName,
   type NewTicketDraft,
+  type NewAiSetupSession,
+  type AiSetupUpdate,
   type OfficeAchievementEvent,
   type TicketDraftUpdate,
   type TicketSource,
@@ -49,6 +51,8 @@ import { repoRemoteOf } from "../forge/remote.ts";
 import { listTickets, loadTicket, ticketOptions, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
 import { TicketAssistant, TicketDraftError } from "../tickets/ticket-assistant.ts";
 import { TicketDraftStore } from "../tickets/ticket-draft-store.ts";
+import { AiSetupAssistant, AiSetupError } from "../ai-setup/ai-setup-assistant.ts";
+import { AiSetupStore } from "../ai-setup/ai-setup-store.ts";
 import { GithubError } from "../github/github-client.ts";
 import { pickFolder } from "../system/folder-picker.ts";
 import { Ledger } from "../ledger/ledger.ts";
@@ -130,6 +134,10 @@ export function createApiServer(
     quotaUntil: (agent) => orchestrator.quotaPauseFor(agent),
   }),
   achievements = new AchievementService(),
+  aiSetup = new AiSetupAssistant(new AiSetupStore(), {
+    settings: () => orchestrator.getSettings(),
+    quotaUntil: (agent) => orchestrator.quotaPauseFor(agent),
+  }),
 ): Server {
   const routes: Route[] = [];
   const terminals = new TerminalServer(store);
@@ -433,6 +441,33 @@ export function createApiServer(
   route("POST", "/api/ticket-drafts/:id/create", ([id], body) => ticketCall(() => tickets.create(id!, edits(body))));
   route("DELETE", "/api/ticket-drafts/:id", ([id]) => ticketCall(() => tickets.delete(id!)));
 
+  // ---- Setup IA: assess a repo's agent setup, or write a skill, agent, hook… with the assistant.
+  const setupCall = async <T>(call: () => T | Promise<T>): Promise<T> => {
+    try {
+      return await call();
+    } catch (error) {
+      throw error instanceof AiSetupError ? new HttpError(error.status, error.message) : error;
+    }
+  };
+  // `files` (optional) = the person's latest edits, applied before the turn or the write.
+  const setupEdits = (body: unknown): AiSetupUpdate | undefined => {
+    const files = (body as { files?: unknown } | undefined)?.files;
+    return Array.isArray(files) ? { files } : undefined;
+  };
+  route("GET", "/api/ai-setup/repos", () => aiSetup.repoKinds());
+  route("GET", "/api/ai-setup", () => aiSetup.list());
+  route("GET", "/api/ai-setup/:id", ([id]) => setupCall(() => aiSetup.get(id!)));
+  route("POST", "/api/ai-setup", (_params, body) => setupCall(() => aiSetup.start(body as NewAiSetupSession)));
+  route("PUT", "/api/ai-setup/:id", ([id], body) => setupCall(() => aiSetup.update(id!, setupEdits(body) ?? { files: [] })));
+  route("POST", "/api/ai-setup/:id/message", ([id], body) =>
+    setupCall(() => aiSetup.reply(id!, String((body as { text?: string }).text ?? ""), setupEdits(body))),
+  );
+  route("POST", "/api/ai-setup/:id/cancel", ([id]) => setupCall(() => aiSetup.cancel(id!)));
+  route("DELETE", "/api/ai-setup/:id/files/:key", ([id, key]) => setupCall(() => aiSetup.removeFile(id!, key!)));
+  /** The only call that writes into the repo: the person pressed «Escribir en el repo». */
+  route("POST", "/api/ai-setup/:id/apply", ([id], body) => setupCall(() => aiSetup.apply(id!, setupEdits(body))));
+  route("DELETE", "/api/ai-setup/:id", ([id]) => setupCall(() => aiSetup.delete(id!)));
+
   /** Native folder dialog on the machine running Nexura (it is a local app). */
   route("POST", "/api/system/pick-folder", async (_params, body) => ({
     path: await pickFolder(String((body as { initial?: string }).initial ?? "")),
@@ -573,6 +608,7 @@ export function createApiServer(
   orchestrator.on("message", broadcast);
   conversations.on("message", broadcast);
   tickets.on("message", broadcast);
+  aiSetup.on("message", broadcast);
   // Achievements watch the same messages the UI gets; theirs (a trophy won) go out too.
   achievements.sync(store.listRuns(1000), tickets.list());
   achievements.on("message", broadcast);
@@ -591,6 +627,7 @@ export function createApiServer(
   server.on("close", () => {
     conversations.dispose();
     tickets.dispose();
+    aiSetup.dispose();
     achievements.close();
   });
 

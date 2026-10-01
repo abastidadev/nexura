@@ -1,0 +1,78 @@
+{
+  "type": "object",
+  "properties": {
+    "message": { "type": "string", "description": "Para la persona, en español llano: qué has visto y qué propones (2-4 frases)" },
+    "questions": {
+      "type": "array",
+      "description": "Como mucho 3 preguntas concretas",
+      "items": {
+        "type": "object",
+        "properties": {
+          "text": { "type": "string" },
+          "options": { "type": "array", "items": { "type": "string" }, "description": "2-4 respuestas sugeridas cortas" }
+        },
+        "required": ["text", "options"],
+        "additionalProperties": false
+      }
+    },
+    "assessment": {
+      "type": "object",
+      "description": "Modo valoración. En modo crear: profile vacío y listas vacías",
+      "properties": {
+        "profile": { "type": "string", "description": "Stack, herramientas y tamaño, 2-3 líneas" },
+        "strengths": { "type": "array", "items": { "type": "string" } },
+        "issues": { "type": "array", "items": { "type": "string" } },
+        "recommendations": {
+          "type": "array",
+          "description": "1-2 por tipo, como mucho 8, de más a menos prioritaria",
+          "items": {
+            "type": "object",
+            "properties": {
+              "kind": { "type": "string", "enum": ["skill", "agent", "hook", "mcp", "plugin", "instructions", "settings", "command"] },
+              "scope": { "type": "string", "enum": ["project", "toolkit", "user"] },
+              "priority": { "type": "string", "enum": ["high", "medium", "low"] },
+              "title": { "type": "string" },
+              "why": { "type": "string", "description": "La razón concreta en este repo" },
+              "command": { "type": "string", "description": "Comando de instalación si instalar es todo el trabajo; si no, vacío" },
+              "createPrompt": { "type": "string", "description": "Petición para el modo Crear si hay que escribir algo; si no, vacío" }
+            },
+            "required": ["kind", "scope", "priority", "title", "why", "command", "createPrompt"],
+            "additionalProperties": false
+          }
+        }
+      },
+      "required": ["profile", "strengths", "issues", "recommendations"],
+      "additionalProperties": false
+    },
+    "placement": {
+      "type": "object",
+      "description": "Modo crear: dónde va la pieza",
+      "properties": {
+        "scope": { "type": "string", "enum": ["project", "toolkit", "user"] },
+        "plugin": { "type": "string", "description": "Plugin del ai-toolkit si scope es toolkit; si no, vacío" },
+        "reason": { "type": "string" }
+      },
+      "required": ["scope", "plugin", "reason"],
+      "additionalProperties": false
+    },
+    "files": {
+      "type": "array",
+      "description": "Modo crear: los ficheros completos. En modo valoración, vacío",
+      "items": {
+        "type": "object",
+        "properties": {
+          "path": { "type": "string", "description": "Relativo a la raíz del repo, con /" },
+          "kind": { "type": "string", "enum": ["skill", "agent", "hook", "mcp", "plugin", "instructions", "settings", "command"] },
+          "purpose": { "type": "string", "description": "Para qué es, una línea" },
+          "content": { "type": "string", "description": "El contenido completo del fichero" }
+        },
+        "required": ["path", "kind", "purpose", "content"],
+        "additionalProperties": false
+      }
+    },
+    "missing": { "type": "array", "items": { "type": "string" }, "description": "Lo que falta, en frases cortas en español" },
+    "ready": { "type": "boolean" }
+  },
+  "required": ["message", "questions", "assessment", "placement", "files", "missing", "ready"],
+  "additionalProperties": false
+}
