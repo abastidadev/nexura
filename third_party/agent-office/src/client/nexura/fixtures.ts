@@ -3,5 +3,6 @@
 import { trophyFixture } from './achievements';
 import { duckFixture } from './ducks';
 import { shopFixture } from './shop';
+import { inboxFixture } from './inbox';
 
-export const nexuraFixtures = [trophyFixture, duckFixture, shopFixture] as const;
+export const nexuraFixtures = [trophyFixture, duckFixture, shopFixture, inboxFixture] as const;

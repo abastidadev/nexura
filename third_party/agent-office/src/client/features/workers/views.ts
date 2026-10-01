@@ -33,6 +33,7 @@ import { Arrivals, Departures } from './leaving';
 import { Sendoffs } from './sendhome';
 import { nexuraScreen } from '../../nexura/external'; // nexura
 import { nexuraLaptopScreen } from '../../nexura/screen'; // nexura
+import { nexuraWorkerProps } from '../../nexura/worker-props'; // nexura
 
 // The kinds of thing you can use that this defines (see InteractKinds in world/types.ts).
 declare module '../../world/types' {
@@ -165,6 +166,7 @@ export function installWorkerViews(ctx: Ctx, core: CoreState, parts: WorkerViews
       v.model.setLost(!!w.lost);
       const engineBadge = w.kind === 'agent' ? modelBadge(w.provider, w.model, w.effort) : undefined;
       v.model.setTask(meetingCard(w) ?? (w.task && w.kind === 'agent' ? { ...w.task, name: `${providerLabel(w.provider, store.project)}${engineBadge ? ` · ${engineBadge}` : ''} · ${w.task.name}` } : w.task));
+      nexuraWorkerProps(v.model, w); // nexura: a flow's step and agent
       const deskDef = plan().byId.get(w.deskId);
       // Keys clack while it types, not while it reads, watches its tests or browses.
       if (deskDef) sound.setTyping(w.id, deskDef.x, deskDef.z, w.status === 'working' && (!w.action || w.action === 'edit'));

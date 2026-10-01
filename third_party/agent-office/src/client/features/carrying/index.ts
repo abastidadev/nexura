@@ -16,6 +16,7 @@ import { officeChoice } from '../../ui/provider';
 import { hiringPaused } from '../../ui/usage';
 import type { Interactable } from '../../world/types';
 import { nexuraCardRefusal } from '../../nexura/external'; // nexura
+import { nexuraDropCard } from '../../nexura/inbox'; // nexura
 
 export interface CarryingDeps {
   /** Puts `card` in your hands, or none: what ctx.carrying says from then on. */
@@ -87,6 +88,7 @@ export function installCarrying(ctx: Ctx, deps: CarryingDeps) {
    * of those, so E does what it always does there.
    */
   function dropCard(it: Interactable, card: CarriedIssue, note: GhIssue | null): boolean {
+    if (it.kind === 'nexura') return nexuraDropCard(it, card, putBack); // nexura: Nexura's mailbox
     if (it.kind === 'issues') {
       if (note) pickUp(note);
       else putBack();

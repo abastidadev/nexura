@@ -100,7 +100,7 @@ export interface WorkerInfo {
   /** Sent out by a map's herald (the castle's Hand of the King), so every browser has it run to its seat from beside them. */
   via?: 'herald';
   /** nexura: a Nexura run shown at a desk, with no terminal; opening it opens the run (see server/nexura/bridge.ts). */
-  external?: { source: 'nexura'; runId: string; url: string; screen?: NexuraScreen }; // nexura: `screen` is what its laptop shows
+  external?: { source: 'nexura'; runId: string; url: string; screen?: NexuraScreen; step?: string; costUsd?: number }; // nexura: `screen` is what its laptop shows, `step` the one it's on
 }
 
 /** Where the branch of a worker whose worktree was deleted still is (see WorkerInfo.lost). */

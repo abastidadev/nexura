@@ -10,6 +10,7 @@ import type { Person } from '../world/character';
 import { animate, dress, forget } from './cosmetics';
 import { watchForgeWords } from './external';
 import { openShop } from './shop';
+import { startDigest } from './digest';
 import { thingOf } from './things';
 import { nexura, sendOutfit, startWallet, wallet } from './wallet';
 import { sanitizeOutfit } from '../../shared/nexura-outfit';
@@ -38,6 +39,7 @@ export function installNexura(ctx: Ctx, parts: NexuraParts) {
   watchForgeWords(() => store.project);
 
   startWallet(ctx.net, openShop);
+  startDigest();
   // Back in the office (or after a reconnect, which starts you over): your outfit, and the day's visit.
   ctx.messages.on('welcome', () => {
     sendOutfit();

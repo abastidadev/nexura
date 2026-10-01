@@ -41,7 +41,7 @@ test('nexura: a run sits at the back desk of its own project floor and the offic
   assert.equal(b.apply([run()]), 1);
   const [w] = b.list(app);
   assert.equal(w.deskId, DESKS.at(-1)!.id);
-  assert.deepEqual(w.external, { source: 'nexura', runId: 'r1', url: 'http://localhost:4310/runs/r1' });
+  assert.deepEqual(w.external, { source: 'nexura', runId: 'r1', url: 'http://localhost:4310/runs/r1', step: 'implement' });
   assert.deepEqual(b.list(other), []);
   assert.deepEqual(sent, [['app', { t: 'worker.update', worker: w }]]);
   assert.equal(nexuraDeskTaken(app.workers, w.deskId), true);
@@ -117,5 +117,23 @@ test('nexura: POST /nexura/workers needs the shared token and does nothing witho
   assert.equal((await post(b, '', 'Bearer secret', 'GET')).status, 405);
   const ok = await post(b, JSON.stringify({ workers: [run(), { junk: true }] }), 'Bearer secret');
   assert.deepEqual(ok, { status: 200, body: { ok: true, seated: 1 } });
+  b.stop();
+});
+
+test('nexura: the gong rings once on the floor when a flow PR merges, and the card shows the step and cost', () => {
+  const app = floor('app', '/code/app');
+  const { b, sent } = bridge([app]);
+  const screen = (state: 'open' | 'merged') => ({ steps: [], log: [], repos: [], pr: { number: 7, title: 'PR', provider: 'github' as const, state } });
+  b.apply([run({ step: 'release', costUsd: 1.234, screen: screen('open') })]);
+  const [w] = b.list(app);
+  assert.equal(w.external?.step, 'release');
+  assert.equal(w.external?.costUsd, 1.234);
+  assert.match(w.task?.name ?? '', /release · \$1\.23/);
+  sent.length = 0;
+  b.apply([run({ step: 'release', screen: screen('merged') })]);
+  assert.deepEqual(sent.filter(([, m]) => m.t === 'gong'), [['app', { t: 'gong', why: 'merged', pr: 7, by: 'Nexura' }]]);
+  sent.length = 0;
+  b.apply([run({ step: 'release', screen: screen('merged') })]);
+  assert.deepEqual(sent.filter(([, m]) => m.t === 'gong'), []);
   b.stop();
 });
