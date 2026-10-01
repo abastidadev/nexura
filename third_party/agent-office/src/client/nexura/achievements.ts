@@ -3,12 +3,11 @@
 // hide around the room; and a few secrets (the Konami code, a visit at night, a hole in one) count
 // too. What you do goes to Nexura through the office's server (server/nexura/achievements.ts).
 // When the office is framed by Nexura, Nexura shows the trophy toast; on its own, the office does.
-import * as THREE from 'three';
-import { BALCONY, BOOKSHELF, FLOOR, LOFT } from '../../shared/layout';
-import { buildCase, buildDuck, fillCase, squeak, type CaseView, type Tier } from './trophy-case';
+import { buildCase, fillCase, type CaseView, type Tier } from './trophy-case';
+import { aside, hintTitle, key } from '../core/hint';
+import { nexuraThing } from './things';
 import { h, openModal } from '../ui/dom';
 import type { Fixture } from '../world/office/fixture';
-import type { Collider, Interactable } from '../world/types';
 
 type Category = 'tickets' | 'reviews' | 'constancy' | 'office' | 'legend';
 
@@ -46,15 +45,6 @@ const TOAST_MS = 20_000;
 const GOLF_KEY = 'agent-office.golf';
 const KONAMI = ['ArrowUp', 'ArrowUp', 'ArrowDown', 'ArrowDown', 'ArrowLeft', 'ArrowRight', 'ArrowLeft', 'ArrowRight', 'b', 'a'];
 
-/** Where the ducks hide: [x, y, z]. On the bookshelf, by the fridge, behind a plant, on the balcony, and upstairs. */
-export const DUCKS: readonly (readonly [number, number, number])[] = [
-  [BOOKSHELF.x + 0.55, BOOKSHELF.height + 0.07, BOOKSHELF.z - 0.02],
-  [-12.3, 1.03, 12.35],
-  [16.45, 0, -12.7],
-  [BALCONY.maxX - 0.35, 0, BALCONY.minZ + 0.35], // against the wall: the south-east corner gets a pumpkin at Halloween (world/holiday.ts)
-  [FLOOR.maxX - 0.75, LOFT.y + 0.52, (LOFT.minZ + LOFT.maxZ) / 2 + 0.45],
-];
-
 // ---- Talking to Nexura ------------------------------------------------------------------------------
 
 let summary: Summary | null = null;
@@ -83,7 +73,7 @@ async function load(): Promise<void> {
   }
 }
 
-async function report(event: OfficeEvent): Promise<void> {
+export async function report(event: OfficeEvent): Promise<void> {
   if (!connected) return;
   try {
     const r = await fetch('/api/nexura/achievements', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(event) });
@@ -168,77 +158,42 @@ function checkGolf() {
 // ---- The trophy case and the ducks ------------------------------------------------------------------
 
 const cases: CaseView[] = [];
-const ducks: { group: THREE.Group; n: number }[] = [];
 
 function plaqueText(): string {
   return summary ? `🏆 Logros · ${summary.unlocked}/${summary.total}` : '🏆 Logros';
 }
 
 /**
- * Nexura's things on an office floor: the trophy case and the ducks. One of the floor's fixtures (see
- * world/office/build.ts); starts talking to Nexura the first time a floor is built.
+ * The trophy case on an office floor: one of the floor's fixtures (see fixtures.ts); starts talking to
+ * Nexura the first time a floor is built.
  */
-export const nexuraFixture: Fixture = () => {
+export const trophyFixture: Fixture = () => {
   start();
-  const group = new THREE.Group();
   const trophyCase = buildCase(plaqueText());
-  group.add(trophyCase.group);
-  const colliders: Collider[] = [trophyCase.collider];
-  const interactables: Interactable[] = [trophyCase.interactable];
   cases.push(trophyCase.view);
   fillCase(trophyCase.view, summary?.achievements ?? [], plaqueText());
-
-  DUCKS.forEach(([x, y, z], i) => {
-    const duck = buildDuck();
-    duck.position.set(x, y, z);
-    // Each looks somewhere a little different.
-    duck.rotation.y = [Math.PI, -Math.PI / 2, Math.PI * 0.75, -Math.PI * 0.8, Math.PI / 2][i] ?? 0;
-    const it: Interactable = { kind: 'nexura', nexura: `duck-${i + 1}`, x, z, ...(y > 2.5 ? { y: LOFT.y } : {}), radius: 1.3 };
-    duck.userData.interact = it;
-    group.add(duck);
-    interactables.push(it);
-    ducks.push({ group: duck, n: i + 1 });
-  });
-  return { group, colliders, interactables };
+  return { group: trophyCase.group, colliders: [trophyCase.collider], interactables: [trophyCase.interactable] };
 };
 
 onChange.add(() => cases.forEach((view) => fillCase(view, summary?.achievements ?? [], plaqueText())));
 
-// ---- Using them -------------------------------------------------------------------------------------
+// ---- Using it ---------------------------------------------------------------------------------------
 
-function duckOf(it: Interactable): number {
-  return Number(/^duck-(\d)$/.exec(it.nexura ?? '')?.[1] ?? 0);
-}
+nexuraThing('trophies', {
+  hint: () => {
+    const about = summary ? `${summary.unlocked}/${summary.total} · ${summary.points} pts` : connected ? '' : 'sin conexión con Nexura';
+    return { k: `trophies${about}`, parts: [hintTitle('🏆 Vitrina de logros'), about ? aside(about) : '', key('E', 'Ver los logros')] };
+  },
+  use: (_it, k) => {
+    if (k !== 'E') return;
+    openTrophyRoom();
+    void report({ kind: 'use', what: 'trophies' });
+  },
+});
 
-/** E at the trophy case or at a duck. */
-export function nexuraInteract(it: Interactable): void {
-  const duck = duckOf(it);
-  if (duck) {
-    if (!connected) return officeToast('🦆 ¡Cuac! Arranca la oficina con Nexura (npm run start:all) para que cuente.');
-    if (summary?.ducks.includes(duck)) return officeToast(`🦆 Este ya lo tenías · ${summary.ducks.length}/${DUCKS.length}`);
-    const quack = ducks.find((d) => d.n === duck)?.group;
-    if (quack) squeak(quack);
-    void report({ kind: 'duck', duck }).then(() => officeToast(`🦆 ¡Cuac! Patito ${summary?.ducks.length ?? 1}/${DUCKS.length}`));
-    return;
-  }
-  openTrophyRoom();
-  void report({ kind: 'use', what: 'trophies' });
-}
-
-/** The hint bar at the trophy case or a duck. `title`, `key` and `aside` are main.ts's hint pieces. */
-export function nexuraThingHint(
-  it: Interactable,
-  title: (text: string) => HTMLElement,
-  key: (k: string, label: string) => HTMLElement,
-  aside: (text: string) => HTMLElement,
-): { k: string; parts: (HTMLElement | string)[] } {
-  const duck = duckOf(it);
-  if (duck) {
-    const had = summary?.ducks.includes(duck);
-    return { k: `duck${duck}${had}`, parts: [title(had ? '🦆 Patito de goma' : '🦆 ¿Y esto?'), had ? aside(`ya lo tienes · ${summary?.ducks.length}/${DUCKS.length}`) : key('E', 'Cogerlo')] };
-  }
-  const about = summary ? `${summary.unlocked}/${summary.total} · ${summary.points} pts` : connected ? '' : 'sin conexión con Nexura';
-  return { k: `trophies${about}`, parts: [title('🏆 Vitrina de logros'), about ? aside(about) : '', key('E', 'Ver los logros')] };
+/** The ducks found ever (for the trophies), and whether Nexura answers. */
+export function trophyState(): { connected: boolean; ducks: number[] } {
+  return { connected, ducks: summary?.ducks ?? [] };
 }
 
 // ---- The list of trophies ---------------------------------------------------------------------------
@@ -291,7 +246,7 @@ function openTrophyRoom() {
           {},
           h('div', {}, h('b', {}, `${summary.points}`), ` de ${summary.maxPoints} puntos`),
           h('div.nx-ach-bar.big', {}, h('span', { style: `width:${pct}%` })),
-          h('div', {}, `${summary.unlocked} de ${summary.total} logros · ${pct} %`, summary.ducks.length ? ` · 🦆 ${summary.ducks.length}/${DUCKS.length}` : ''),
+          h('div', {}, `${summary.unlocked} de ${summary.total} logros · ${pct} %`, summary.ducks.length ? ` · 🦆 ${summary.ducks.length} patitos` : ''),
         ),
       ),
       ...groups.flatMap(([c, list]) => [
@@ -343,7 +298,7 @@ function nextTrophy() {
 }
 
 /** A short message in the office's own toast spot (top center), in Nexura's words. */
-function officeToast(text: string) {
+export function officeToast(text: string) {
   const el = h('div.toast', {}, text);
   document.getElementById('toasts')?.append(el);
   setTimeout(() => {

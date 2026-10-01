@@ -22,6 +22,7 @@ import {
   type NewTicketDraft,
   type OfficeAchievementEvent,
   type BetKind,
+  type DashboardInbox,
   type OfficeRewardEvent,
   type ShopSlot,
   type TicketDraftUpdate,
@@ -70,6 +71,7 @@ import type { RunStore } from "../store/run-store.ts";
 import { TerminalServer } from "../terminal/terminal-server.ts";
 import { registerOfficeRoutes } from "../office/office-api.ts";
 import { openTarget } from "../office/office-open.ts";
+import { officeContinue, officeDigest } from "../office/office-digest.ts";
 import { readRepoNotes, saveRepoNotes } from "../workspace/repo-context.ts";
 
 const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
@@ -501,6 +503,27 @@ export function createApiServer(
     } catch (error) {
       throw new HttpError(400, error instanceof Error ? error.message : String(error));
     }
+  });
+  /** What the 3D office shows of Nexura in one go (control room, Hall of Fame, today, reviews, quota). */
+  let inboxCache: { at: number; inbox: Promise<DashboardInbox | undefined> } | undefined;
+  route("GET", "/api/office/digest", async () => {
+    if (!inboxCache || Date.now() - inboxCache.at > 60_000) {
+      inboxCache = { at: Date.now(), inbox: loadInbox(loadConfig().repos, store.listRuns(500)).catch(() => undefined) };
+    }
+    const today = new Date().toDateString();
+    return officeDigest({
+      runs: store.listRuns(300),
+      inbox: await inboxCache.inbox,
+      quota: orchestrator.getQuota(),
+      trophiesToday: achievements.unlocked().filter((unlock) => new Date(unlock.at).toDateString() === today).map((unlock) => unlock.title),
+      coinsToday: rewards.summary().earnedToday,
+    });
+  });
+  /** The office continues a paused flow as proposed, or skips the step (editing stays in Nexura). */
+  route("POST", "/api/office/runs/:id/continue", ([id], body) => {
+    const run = requireRun(id!);
+    orchestrator.continue(run.id, officeContinue(run, Boolean((body as { skip?: unknown } | undefined)?.skip)));
+    return { ok: true };
   });
   /** Coins, today's shop, what you own and wear, and your bets. Zero tokens. */
   route("GET", "/api/rewards", () => rewards.summary());

@@ -39,6 +39,7 @@ export const routes: readonly Route[] = [
   githubRoutes.github,
   nexuraRoutes.achievements, // nexura
   nexuraRoutes.open, // nexura
+  nexuraRoutes.proxy, // nexura: after the two above, which it would answer too
   pageRoutes.office,
   pageRoutes.lite,
   pageRoutes.bundle,

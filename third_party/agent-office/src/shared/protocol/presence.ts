@@ -4,6 +4,7 @@ import type { Look } from '../avatar.js';
 import type { BarGame } from '../bargames.js';
 import type { EmoteId } from '../emotes.js';
 import type { DrinkId } from '../rooftop.js';
+import type { NexuraOutfit } from '../nexura-outfit.js'; // nexura
 import type { Me } from './accounts.js';
 import type { FloorInfo, FloorView, ProjectsDirState } from './floors.js';
 import type { LeaveOnMergeState, MachineState, MapState, NotifyState, PromptsState, SkyState, ThemeState, UpgradeState } from './settings.js';
@@ -17,6 +18,8 @@ export interface CarriedIssue {
 
 export interface PeerInfo {
   id: string;
+  /** nexura: what they wear from Nexura's shop (see shared/nexura-outfit.ts). */
+  nexura?: NexuraOutfit;
   name: string;
   color: string;
   /** Skin tone and hair, picked on the character select screen. */
@@ -97,7 +100,7 @@ export type PresenceClientMsg =
   | { t: 'carry'; issue?: number; title?: string }
   /** An emote (hold G, or 1–6): everyone else on your floor sees your character do it. Rate limited, see EmoteBucket. */
   | { t: 'emote'; emote: EmoteId }
-  | { t: 'profile'; name: string; color: string; look: Look }
+  | { t: 'profile'; name: string; color: string; look: Look; nexura?: NexuraOutfit } // nexura: was … look: Look }
   /** What you have open now (see PeerInfo.doing and PeerInfo.reading); none when you're back in the office. */
   | { t: 'doing'; what?: string; reading?: boolean }
   | { t: 'voice'; voice: boolean; muted: boolean; sharing: boolean }

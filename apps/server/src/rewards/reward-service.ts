@@ -7,6 +7,7 @@ import {
   DAILY_GAME_CAP,
   OFFICE_DUCKS,
   SHOP_ITEM_BY_ID,
+  SHOP_ITEMS,
   SHOP_SLOTS,
   drawShop,
   duckSeason,
@@ -234,6 +235,7 @@ export class RewardService extends EventEmitter<{ message: [ServerMessage] }> {
       shop: { day, nextAt: tomorrow.toISOString(), offers: offers.map((offer) => ({ ...offer, owned: owned.has(offer.itemId) })) },
       bets: this.store.bets().slice(0, 30),
       ducks: { season, found: this.store.keys(`duck:${season}:`).map((key) => Number(key.split(":").pop())).sort() },
+      catalog: SHOP_ITEMS,
     };
   }
 

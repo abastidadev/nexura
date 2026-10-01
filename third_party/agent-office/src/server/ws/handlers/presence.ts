@@ -3,6 +3,7 @@
 import type { ChatLine, PresenceClientMsg } from '../../../shared/protocol.js';
 import { seatHereOn } from '../../../shared/maps/index.js';
 import { sanitizeLook } from '../../../shared/avatar.js';
+import { sanitizeOutfit } from '../../../shared/nexura-outfit.js'; // nexura
 import { isEmote } from '../../../shared/emotes.js';
 import { ROOF, isDrink } from '../../../shared/rooftop.js';
 import { isBarGame } from '../../../shared/bargames.js';
@@ -91,6 +92,7 @@ export const presenceHandlers = {
     if (name && !c.accountId) c.peer.name = name;
     if (COLOR_RE.test(msg.color)) c.peer.color = msg.color;
     c.peer.look = sanitizeLook(msg.look, c.peer.look);
+    if ('nexura' in msg) c.peer.nexura = sanitizeOutfit(msg.nexura); // nexura: the shop's outfit; a profile without the field keeps it
     ctx.broadcast({ t: 'peer.update', peer: c.peer });
   },
   voice(ctx, c, msg) {

@@ -174,7 +174,7 @@ parts.pointer = installPointer(ctx, core, parts);
 installChat(ctx);
 parts.talk = installVoice(ctx, { tv: parts.tv });
 parts.hud = installHud(ctx, core, parts);
-installNexura(ctx); // nexura: the trophy case, the ducks, and Azure DevOps floors' words
+installNexura(ctx, parts); // nexura: the trophy case, the ducks, the shop and what people wear from it, Azure DevOps floors' words
 
 // ---- Main loop ---------------------------------------------------------------------------------------
 fitWindow(ctx);

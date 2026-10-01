@@ -7,6 +7,7 @@ import { sameOrigin } from '../http/util.js';
 import { NexuraBridge } from './bridge.js';
 import { handleAchievements } from './achievements.js';
 import { handleOpen } from './open.js';
+import { handleProxy } from './proxy.js';
 
 const bridges = new WeakMap<Ctx, NexuraBridge>();
 
@@ -25,4 +26,6 @@ export const nexuraRoutes = {
   workers: { path: '/nexura/workers', auth: 'public', handle: (ctx, { req, res }) => nexuraBridge(ctx).handle(req, res) },
   achievements: { path: '/api/nexura/achievements', auth: 'session', handle: (ctx, { req, res }) => handleAchievements(req, res, () => sameOrigin(req, ctx.cfg)) },
   open: { path: '/api/nexura/open', auth: 'session', handle: (ctx, { req, res }) => handleOpen(req, res, () => sameOrigin(req, ctx.cfg)) },
+  /** The wallet, shop, bets, trivia, digest and continuing a flow (see proxy.ts for the paths that pass). */
+  proxy: { prefix: '/api/nexura/', auth: 'session', handle: (ctx, { req, res, path }) => handleProxy(req, res, path, () => sameOrigin(req, ctx.cfg)) },
 } satisfies Record<string, Route>;

@@ -1,0 +1,61 @@
+/* nexura: the windows and corners of Nexura's things in the office, in the office's own look (thick
+   ink outlines, paper and a hard drop shadow). The trophy case's are in achievements.ts. */
+
+.nx-wallet {
+  position: fixed; top: 64px; left: 12px; z-index: 20; display: flex; align-items: center; gap: 6px;
+  padding: 6px 12px; border: 3px solid var(--ink); border-radius: 999px; background: #fff3c4; color: var(--ink);
+  box-shadow: 0 3px 0 var(--ink); font: 800 14px var(--font); cursor: pointer;
+}
+.nx-wallet[hidden] { display: none; }
+.nx-wallet b { font-size: 16px; font-weight: 900; }
+.nx-wallet small { font-size: 11px; opacity: .65; }
+.nx-wallet:hover { transform: translateY(-1px); }
+
+.nx-shop-modal { width: min(980px, 100%); }
+.nx-shop-body { display: flex; flex-direction: column; gap: 12px; }
+.nx-shop-hero { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding: 14px; border: 3px solid var(--ink); border-radius: 16px; background: #fff; box-shadow: 0 4px 0 var(--ink); }
+.nx-shop-coins { display: flex; align-items: baseline; gap: 8px; font-weight: 900; }
+.nx-shop-coins span { font-size: 28px; }
+.nx-shop-coins b { font-size: 34px; }
+.nx-shop-coins small { font-size: 13px; opacity: .65; }
+.nx-shop-when { font-weight: 700; font-size: 13px; }
+.nx-shop-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.nx-shop-card { position: relative; display: flex; flex-direction: column; gap: 6px; padding: 12px; border: 3px solid var(--ink); border-radius: 14px; background: #fff; box-shadow: 0 3px 0 var(--ink); }
+.nx-shop-card.rare { background: #eef8ff; }
+.nx-shop-card.epic { background: #f5edff; }
+.nx-shop-card.legendary { background: #fff6d6; }
+.nx-shop-card.deal { outline: 3px dashed #f5b82e; outline-offset: 3px; }
+.nx-shop-deal { position: absolute; top: -12px; right: 10px; padding: 2px 8px; border: 2px solid var(--ink); border-radius: 999px; background: #ffc940; font-size: 11px; font-weight: 900; }
+.nx-shop-icon { font-size: 40px; line-height: 1; }
+.nx-shop-name { font-weight: 900; font-size: 15px; }
+.nx-shop-tags { display: flex; gap: 6px; flex-wrap: wrap; }
+.nx-shop-tags span { padding: 1px 8px; border: 2px solid var(--ink); border-radius: 999px; font-size: 11px; font-weight: 800; background: var(--paper-2); }
+.nx-shop-tags .r.rare { background: #bde0fe; }
+.nx-shop-tags .r.epic { background: #d8c3ff; }
+.nx-shop-tags .r.legendary { background: #ffd166; }
+.nx-shop-desc { flex: 1; margin: 0; font-size: 12.5px; font-weight: 600; opacity: .8; }
+.nx-shop-buy { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.nx-shop-price { font-weight: 900; font-size: 16px; }
+.nx-shop-price s { margin-left: 6px; font-size: 12px; opacity: .55; }
+.nx-shop-owned { font-weight: 800; color: #0a8f6a; }
+.nx-shop-wardrobe { display: flex; flex-wrap: wrap; gap: 8px; }
+.nx-shop-piece { display: inline-flex; align-items: center; gap: 6px; padding: 6px 12px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; font: 800 13px var(--font); color: var(--ink); cursor: pointer; }
+.nx-shop-piece small { font-size: 11px; opacity: .6; }
+.nx-shop-piece.on { background: #c8f7e4; box-shadow: 0 3px 0 var(--ink); }
+.nx-shop-piece.unlocked { cursor: default; background: var(--paper-2); }
+.nx-shop-status { min-height: 1.2em; margin: 0; font-weight: 800; font-size: 13px; }
+
+/* Shared by the boards, games and dialogs of the other Nexura things. */
+.nx-win { width: min(760px, 100%); }
+.nx-win .body { display: flex; flex-direction: column; gap: 10px; }
+.nx-row { display: flex; align-items: center; gap: 10px; padding: 8px 12px; border: 3px solid var(--ink); border-radius: 12px; background: #fff; font-weight: 700; font-size: 13px; }
+.nx-row .grow { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.nx-pill { padding: 1px 8px; border: 2px solid var(--ink); border-radius: 999px; font-size: 11px; font-weight: 800; background: var(--paper-2); white-space: nowrap; }
+.nx-pill.ok { background: #c8f7e4; }
+.nx-pill.run { background: #bde0fe; }
+.nx-pill.bad { background: #ffc2cf; }
+.nx-pill.wait { background: #ffe69c; }
+.nx-big { font-size: 28px; font-weight: 900; }
+.nx-muted { opacity: .65; font-weight: 600; }
+.nx-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.nx-locked { padding: 18px; border: 3px dashed var(--ink); border-radius: 14px; background: var(--paper-2); text-align: center; font-weight: 800; }

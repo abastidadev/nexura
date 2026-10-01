@@ -244,6 +244,8 @@ export type RewardsSummary = {
   bets: Bet[];
   /** This week's duck season and the ducks found in it. */
   ducks: { season: string; found: number[] };
+  /** The whole catalog, so the 3D office needs no copy of it. */
+  catalog: readonly ShopItem[];
 };
 
 /** What the 3D office reports for coins (besides the achievement events). */
@@ -255,3 +257,33 @@ export type OfficeRewardEvent =
 /** A trivia question about one of the configured repos, made from git (zero tokens). */
 export type TriviaQuestion = { id: string; repo: string; question: string; options: string[] };
 export type TriviaAnswer = { correct: boolean; answer: string; coins: number; earnedToday: number };
+
+// ---- What the 3D office shows of Nexura ----------------------------------------------------------
+
+/** A flow running, for the control room's monitor wall. */
+export type OfficeDigestFlow = {
+  runId: string;
+  name: string;
+  title: string;
+  status: string;
+  agent: string;
+  /** Its pipeline: each step once, in order, with how it stands now. */
+  steps: { step: string; status: "pending" | "running" | "succeeded" | "failed" | "skipped" }[];
+  current?: string;
+  /** Waiting on you: a step to confirm, a PR to approve, or replies to send. */
+  waiting?: "step" | "pr" | "replies";
+  costUsd: number;
+};
+
+/** A PR a flow got merged, for the Hall of Fame. */
+export type OfficeDigestMerge = { runId: string; name: string; title: string; url?: string; mergedAt: string; agents: string[] };
+
+/** Everything the office shows of Nexura in one request (zero tokens). */
+export type OfficeDigest = {
+  active: OfficeDigestFlow[];
+  merged: OfficeDigestMerge[];
+  today: { flowsDone: number; prsOpened: number; prsMerged: number; reviews: number; costUsd: number; trophies: string[]; coins: number };
+  /** Open PRs of other people to review (Revisiones). */
+  toReview: { repo: string; id: number; title: string; author: string; url: string; reviewed: boolean }[];
+  quota: { label: string; percent: number; resetsAt?: number }[];
+};
