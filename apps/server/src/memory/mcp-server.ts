@@ -22,11 +22,22 @@ type Tool = { name: string; description: string; inputSchema: object; run: (args
 
 const TYPES = ["bugfix", "decision", "architecture", "discovery", "pattern", "config", "preference"];
 const SNIPPET = 300;
+const LISTED_FILES = 5;
 
 function flag(name: string): string | undefined {
   const index = process.argv.indexOf(`--${name}`);
   return index >= 0 ? process.argv[index + 1] : undefined;
 }
+
+function filesLine(files: string[] | undefined): string {
+  if (!files?.length) {
+    return "";
+  }
+  const more = files.length > LISTED_FILES ? ` (+${files.length - LISTED_FILES})` : "";
+  return `\nFicheros: ${files.slice(0, LISTED_FILES).join(", ")}${more}`;
+}
+
+const stringList = (value: unknown): string[] => (Array.isArray(value) ? value.map(String) : typeof value === "string" && value.trim() ? [value] : []);
 
 export function formatList(observations: MemoryObservation[], empty: string): string {
   if (observations.length === 0) {
@@ -35,7 +46,7 @@ export function formatList(observations: MemoryObservation[], empty: string): st
   return observations
     .map((o) => {
       const snippet = o.content.length > SNIPPET ? o.content.slice(0, SNIPPET) + "…" : o.content;
-      return `#${o.id} [${o.type}] ${o.title}${o.topicKey ? ` (topic: ${o.topicKey})` : ""} · ${o.updatedAt.slice(0, 10)}\n${snippet}`;
+      return `#${o.id} [${o.type}] ${o.title}${o.topicKey ? ` (topic: ${o.topicKey})` : ""} · ${o.updatedAt.slice(0, 10)}${filesLine(o.files)}\n${snippet}`;
     })
     .join("\n\n");
 }
@@ -46,15 +57,22 @@ export function memoryTools(store: MemoryStore, project: () => Promise<string>, 
     {
       name: "mem_search",
       description:
-        "Busca en la memoria compartida del proyecto (decisiones, causas de bugs, convenciones, tickets anteriores). Devuelve resultados cortos con su id; usa mem_get para el contenido completo.",
+        "Busca en la memoria compartida del proyecto (decisiones, causas de bugs, convenciones, tickets anteriores) por palabras clave y/o por ficheros: con `files` devuelve primero lo guardado sobre esos ficheros o sus carpetas. Devuelve resultados cortos con su id; usa mem_get para el contenido completo.",
       inputSchema: {
         type: "object",
-        properties: { query: { type: "string", description: "Palabras clave" }, limit: { type: "number", description: "Máximo de resultados (10)" } },
-        required: ["query"],
+        properties: {
+          query: { type: "string", description: "Palabras clave" },
+          files: { type: "array", items: { type: "string" }, description: "Rutas relativas al repo, p. ej. src/app/auth/login.ts" },
+          limit: { type: "number", description: "Máximo de resultados (10)" },
+        },
       },
       run: async (args) => {
         const limit = Math.min(10, Math.max(1, Number(args["limit"]) || 10));
-        return formatList(visible(store.search(await project(), String(args["query"] ?? ""), limit + (meta.excludeTopic ? 10 : 0)), limit), "Sin resultados.");
+        const fetch = limit + (meta.excludeTopic ? 10 : 0);
+        const name = await project();
+        const found = [...store.byFiles(name, stringList(args["files"]), fetch), ...store.search(name, String(args["query"] ?? ""), fetch)];
+        const unique = [...new Map(found.map((item) => [item.id, item])).values()];
+        return formatList(visible(unique, limit), "Sin resultados.");
       },
     },
     {
@@ -63,7 +81,9 @@ export function memoryTools(store: MemoryStore, project: () => Promise<string>, 
       inputSchema: { type: "object", properties: { id: { type: "number" } }, required: ["id"] },
       run: (args) => {
         const found = store.get(Number(args["id"]));
-        return found && (!meta.excludeTopic || found.topicKey !== meta.excludeTopic) ? `#${found.id} [${found.type}] ${found.title}\n${found.content}` : `No existe la observación ${String(args["id"])}.`;
+        return found && (!meta.excludeTopic || found.topicKey !== meta.excludeTopic)
+          ? `#${found.id} [${found.type}] ${found.title}${found.files?.length ? `\nFicheros: ${found.files.join(", ")}` : ""}\n${found.content}`
+          : `No existe la observación ${String(args["id"])}.`;
       },
     },
     {
@@ -80,7 +100,7 @@ export function memoryTools(store: MemoryStore, project: () => Promise<string>, 
     tools.push({
       name: "mem_save",
       description:
-        "Guarda en la memoria compartida algo que sirva a un ticket futuro: una decisión y su porqué, la causa raíz de un bug, una convención no escrita, una trampa. Con un topic_key existente actualiza esa observación en vez de duplicarla.",
+        "Guarda en la memoria compartida algo que sirva a un ticket futuro: una decisión y su porqué, la causa raíz de un bug, una convención no escrita, una trampa. Con un topic_key existente (o el mismo tipo y título) actualiza esa observación en vez de duplicarla. Indica en `files` los ficheros a los que se refiere: así la encuentra quien vuelva a tocarlos.",
       inputSchema: {
         type: "object",
         properties: {
@@ -88,6 +108,7 @@ export function memoryTools(store: MemoryStore, project: () => Promise<string>, 
           type: { type: "string", enum: TYPES },
           content: { type: "string", description: "**Qué** / **Por qué** / **Dónde** / **Aprendido**" },
           topic_key: { type: "string", description: "Opcional, p. ej. architecture/auth-model, para temas que evolucionan" },
+          files: { type: "array", items: { type: "string" }, description: "Opcional: rutas relativas al repo a las que se refiere" },
         },
         required: ["title", "type", "content"],
       },
@@ -104,6 +125,7 @@ export function memoryTools(store: MemoryStore, project: () => Promise<string>, 
           title,
           content,
           topicKey: args["topic_key"] ? String(args["topic_key"]) : undefined,
+          ...(args["files"] !== undefined ? { files: stringList(args["files"]) } : {}),
           source: meta.source,
           runId: meta.runId,
         });

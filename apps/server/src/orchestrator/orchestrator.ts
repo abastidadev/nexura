@@ -157,6 +157,25 @@ export type OrchestratorOptions = {
 const SETTINGS_KEY = "settings";
 const MIN_PR_POLL_SECONDS = 30;
 
+/**
+ * The files a step works on, as far as the earlier outputs tell (enrich's relevant files,
+ * plan's changes, implement's changed files): `{{memory}}` brings what was learned about them.
+ */
+function memoryFiles(stepContext: StepContext | undefined): { repo?: string; path: string }[] {
+  if (!stepContext) {
+    return [];
+  }
+  const enrich = stepContext.outputs.get("enrich") as { relevantFiles?: { repo?: string; path?: string }[] } | undefined;
+  const plan = stepContext.outputs.get("plan") as { changes?: { repo?: string; path?: string }[] } | undefined;
+  const implement = stepContext.outputs.get("implement") as { filesChanged?: string[] } | undefined;
+  const files: { repo?: string; path?: string }[] = [
+    ...(implement?.filesChanged ?? []).map((path) => ({ path })),
+    ...(plan?.changes ?? []),
+    ...(enrich?.relevantFiles ?? []),
+  ];
+  return files.flatMap((file) => (typeof file.path === "string" && file.path ? [{ ...(file.repo ? { repo: file.repo } : {}), path: file.path }] : []));
+}
+
 export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; settings: [NexuraSettings] }> {
   private config: NexuraConfig;
   private readonly store: RunStore;
@@ -1338,11 +1357,13 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       ? (stepContext?.outputs.get("implement") as { filesChanged?: string[] } | undefined)?.filesChanged?.join(" ")
       : run.request.tasks.filter((task) => task.selected).map((task) => task.title).join(" ");
     const budget = Math.max(2, Math.floor(4000 / Math.max(1, run.worktrees.length)) - 100);
+    const files = memoryFiles(stepContext);
     const parts = await Promise.all(
       run.worktrees.map(async (worktree) => {
         const project = await projectOf(worktree.repoPath);
+        const ownFiles = files.filter((file) => !file.repo || file.repo === worktree.repo).map((file) => file.path);
         const text = readMemory(memoryStore(), project, [focus ?? "", title], budget,
-          run.request.ticketId ? `tickets/${run.request.ticketId}` : undefined);
+          run.request.ticketId ? `tickets/${run.request.ticketId}` : undefined, ownFiles);
         return text && run.worktrees.length > 1 ? `**${worktree.repo}**\n${text}` : text;
       }),
     );
@@ -1425,6 +1446,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       title: (run.request.ticketId ? `Ticket #${run.request.ticketId}: ${title}` : `Ticket: ${title}`).slice(0, 120),
       content,
       topicKey,
+      files: implement?.filesChanged ?? [],
       source: "nexura",
       runId: run.id,
     });

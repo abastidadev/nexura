@@ -611,6 +611,8 @@ export type MemoryObservation = {
   createdAt: string;
   updatedAt: string;
   revisions: number;
+  /** Repo-relative files it is about: found again when a later ticket touches them. */
+  files?: string[];
 };
 
 export type Metrics = {

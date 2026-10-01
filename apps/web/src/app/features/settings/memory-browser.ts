@@ -61,6 +61,14 @@ import { NexuraStore } from "../../core/nexura-store";
                   @if (item.topicKey) {
                     <p class="text-xs text-muted">Tema <span class="font-mono">{{ item.topicKey }}</span> (guardar con el mismo tema lo actualiza)</p>
                   }
+                  @if (item.files?.length) {
+                    <p class="text-xs text-muted">
+                      Ficheros
+                      @for (file of item.files; track file) {
+                        <span class="ml-1 font-mono text-fg-soft">{{ file }}</span>
+                      }
+                    </p>
+                  }
                   <pre class="font-mono text-sm whitespace-pre-wrap">{{ item.content }}</pre>
                   <div>
                     <button type="button" class="nx-btn nx-btn-sm text-err" (click)="remove(item)">Borrar</button>

@@ -41,6 +41,39 @@ describe("MemoryStore", () => {
     );
   });
 
+  it("links observations to files and finds them by file, then by folder", () => {
+    const store = new MemoryStore(":memory:");
+    const login = store.save({ project: "shop", type: "bugfix", title: "Token caducado en login", content: "x", files: ["./src/auth/login.ts", "src\\auth\\guard.ts"] });
+    const sibling = store.save({ project: "shop", type: "pattern", title: "Guards con signals", content: "y", files: ["src/auth/roles.ts"] });
+    store.save({ project: "shop", type: "pattern", title: "Otra cosa", content: "z", files: ["src/billing/invoice.ts"] });
+    store.save({ project: "other", type: "pattern", title: "Otro repo", content: "w", files: ["src/auth/login.ts"] });
+
+    expect(store.get(login.id)!.files).toEqual(["src/auth/guard.ts", "src/auth/login.ts"]);
+    // Same file first, then same folder; case-insensitive; only this project.
+    expect(store.byFiles("shop", ["SRC/auth/login.ts"]).map((o) => o.id)).toEqual([login.id, sibling.id]);
+    expect(store.byFiles("shop", ["docs/readme.md"])).toEqual([]);
+    expect(store.byFiles("shop", [])).toEqual([]);
+
+    // An update without files keeps them; with files, replaces them.
+    store.save({ project: "shop", type: "bugfix", title: "token caducado en LOGIN", content: "x2" });
+    expect(store.get(login.id)).toMatchObject({ revisions: 2, content: "x2", files: ["src/auth/guard.ts", "src/auth/login.ts"] });
+    store.save({ project: "shop", type: "bugfix", title: "Token caducado en login", content: "x3", files: ["src/auth/session.ts"] });
+    expect(store.get(login.id)!.files).toEqual(["src/auth/session.ts"]);
+
+    // The memory for a step that touches a file brings what was learned about it, even with no word in common.
+    expect(readMemory(store, "shop", "Pantalla de perfil", 6000, undefined, ["src/auth/session.ts"])).toContain("Token caducado en login");
+    store.close();
+  });
+
+  it("updates an observation with the same type and title instead of duplicating it", () => {
+    const store = new MemoryStore(":memory:");
+    const first = store.save({ project: "shop", type: "pattern", title: "Usar signals", content: "a" });
+    expect(store.save({ project: "shop", type: "pattern", title: "usar signals ", content: "b" })).toMatchObject({ id: first.id, revisions: 2 });
+    expect(store.save({ project: "shop", type: "decision", title: "Usar signals", content: "c" }).id).not.toBe(first.id);
+    expect(store.save({ project: "shop", type: "pattern", title: "Usar signals", content: "d", topicKey: "patterns/signals" }).id).not.toBe(first.id);
+    store.close();
+  });
+
   it("turns free text into a safe FTS5 query", () => {
     // FTS operators and punctuation are just words (or dropped): never a syntax error.
     expect(ftsQuery('Añadir "filtro" OR (fecha) AND NOT x*')).toBe('"anadir"* OR "filtro"* OR "fecha"* OR "not"*');
@@ -92,7 +125,7 @@ describe("MCP server", () => {
     expect(read.get(0)!.result.serverInfo.name).toBe("nexura-memory");
     expect(read.get(1)!.result.tools.map((tool: { name: string }) => tool.name)).toEqual(["mem_search", "mem_get", "mem_context"]);
 
-    const save = { name: "mem_save", arguments: { title: "Causa del N+1", type: "bugfix", content: "**Qué**: include", topic_key: "bugs/n1" } };
+    const save = { name: "mem_save", arguments: { title: "Causa del N+1", type: "bugfix", content: "**Qué**: include", topic_key: "bugs/n1", files: ["src/orders/list.ts"] } };
     const write = await call(
       ["--db", db, "--mode", "readwrite", "--project", "shop", "--source", "implement", "--run", "r1"],
       [
@@ -102,6 +135,7 @@ describe("MCP server", () => {
         { id: 3, method: "tools/call", params: { name: "mem_search", arguments: { query: "causa" } } },
         { id: 4, method: "tools/call", params: { name: "mem_save", arguments: { title: "", type: "bugfix", content: "" } } },
         { id: 5, method: "tools/call", params: { name: "nope", arguments: {} } },
+        { id: 6, method: "tools/call", params: { name: "mem_search", arguments: { files: ["src/orders/detail.ts"] } } },
       ],
     );
     expect(write.get(1)!.result.content[0].text).toBe("Guardada #1.");
@@ -109,9 +143,11 @@ describe("MCP server", () => {
     expect(write.get(3)!.result.content[0].text).toContain("#1 [bugfix] Causa del N+1 (topic: bugs/n1)");
     expect(write.get(4)!.result.isError).toBe(true);
     expect(write.get(5)!.error.code).toBe(-32602);
+    expect(write.get(6)!.result.content[0].text).toContain("#1 [bugfix] Causa del N+1");
+    expect(write.get(6)!.result.content[0].text).toContain("Ficheros: src/orders/list.ts");
 
     const store = new MemoryStore(db);
-    expect(store.get(1)).toMatchObject({ project: "shop", source: "implement", runId: "r1" });
+    expect(store.get(1)).toMatchObject({ project: "shop", source: "implement", runId: "r1", files: ["src/orders/list.ts"] });
     store.close();
   });
 

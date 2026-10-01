@@ -4,7 +4,7 @@ import type { MemoryMode } from "@nexura/shared";
 import { CONFIG_DIR, MEMORY_DB_FILE } from "../config/paths.ts";
 import type { ClaudeRunOptions } from "../runner/claude-args.ts";
 import { formatList } from "./mcp-server.ts";
-import { MemoryStore } from "./memory-store.ts";
+import { MemoryStore, type MemoryObservation } from "./memory-store.ts";
 
 /**
  * Nexura's side of the shared memory: the store it writes to without tokens, `{{memory}}`
@@ -34,13 +34,25 @@ export function closeMemoryStore(): void {
 }
 
 /**
- * `{{memory}}`: what the memory has about the ticket (full-text search on its title) and
+ * `{{memory}}`: what the memory has about the ticket (full-text search on its title), about
+ * the files the step works on (observations linked to those files or their folders) and
  * relevant to the current step. Unrelated recent observations stay available through
  * mem_context, but are not injected into every prompt. No agent turns are spent here.
  */
-export function readMemory(store: MemoryStore, project: string, query: string | string[], maxChars = MAX_MEMORY_CHARS, excludeTopic?: string): string {
-  const groups = (Array.isArray(query) ? query : [query]).map((text) =>
-    store.search(project, text, excludeTopic ? RELATED * 3 : RELATED).filter((item) => !excludeTopic || item.topicKey !== excludeTopic).slice(0, RELATED));
+export function readMemory(
+  store: MemoryStore,
+  project: string,
+  query: string | string[],
+  maxChars = MAX_MEMORY_CHARS,
+  excludeTopic?: string,
+  files: readonly string[] = [],
+): string {
+  const visible = (items: MemoryObservation[]): MemoryObservation[] => items.filter((item) => !excludeTopic || item.topicKey !== excludeTopic).slice(0, RELATED);
+  const fetch = excludeTopic ? RELATED * 3 : RELATED;
+  const groups = [
+    visible(store.byFiles(project, files, fetch)),
+    ...(Array.isArray(query) ? query : [query]).map((text) => visible(store.search(project, text, fetch))),
+  ];
   // Interleave ranked results so a broad step query cannot crowd out the ticket query.
   const matches = Array.from({ length: RELATED }, (_, rank) => groups.flatMap((group) => group[rank] ? [group[rank]!] : [])).flat();
   const related = [...new Map(matches.map((observation) => [observation.id, observation])).values()].slice(0, RELATED);
