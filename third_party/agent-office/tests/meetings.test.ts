@@ -256,6 +256,15 @@ test('in a git project the output is committed on the meeting branch, which outl
   assert.match(f.room.state().past[0].summary, /Debate · 2 rounds · 0 tokens · \$0\.00 · ✅ docs\/decision\.md on office\/meeting-pick-a-cache-/);
 });
 
+test('Pi meetings retain the chosen model and thinking level for every seat', (t) => {
+  const f = fixture({ officeDefault: { provider: 'claude', model: 'sonnet' } });
+  t.after(() => f.close());
+  assert.equal(f.start({ provider: 'pi', model: 'openai/gpt-4.1', effort: 'high' }), undefined);
+  assert.deepEqual(f.workers.map((w) => [w.provider, w.model, w.effort]), Array(3).fill(['pi', 'openai/gpt-4.1', 'high']));
+  const meeting = f.room.state().current!;
+  assert.deepEqual([meeting.provider, meeting.model, meeting.effort], ['pi', 'openai/gpt-4.1', 'high']);
+});
+
 test('only the real meeting patterns pass, not what every object inherits', () => {
   for (const id of MEETING_PATTERN_IDS) assert.equal(isMeetingPattern(id), true);
   for (const v of ['constructor', '__proto__', 'toString', 'hasOwnProperty', 'valueOf', '', 'nope', 1, null, undefined]) assert.equal(isMeetingPattern(v), false, String(v));

@@ -1,7 +1,10 @@
 import * as THREE from 'three';
-import { FLOOR, ROAD, SLAB, STREET_Y, WALL_T } from '../../shared/layout';
-import { CAR, supercar, type CarKind } from './cars';
-import type { Collider } from './office';
+import { ELEVATOR, ELEVATOR_FRONT, FLOOR, ROAD, SLAB, STREET_Y, WALL_T } from '../../shared/layout';
+import { LOT, SIDE_LOT } from '../../shared/garage';
+import { STREET_END, shoreX } from '../../shared/scenic';
+import type { Collider } from './types';
+import type { Fixture, StreetSite } from './office/fixture';
+import { canvasTexture } from './texture';
 import { mergeByMaterial, mesh, textPlane, toon, toonUnique } from './toon';
 
 const G = STREET_Y;
@@ -37,6 +40,8 @@ export interface NightParts {
   clouds: THREE.MeshToonMaterial;
   /** Rain running down the office windows. */
   wetGlass: THREE.MeshBasicMaterial;
+  /** Light you only see at night (the lighthouse's beam): see-through, `max` opaque when it's dark. */
+  glows: { mat: THREE.Material; max: number }[];
 }
 
 /** A bulb that glows `day` much by day and fully at night. */
@@ -50,17 +55,6 @@ export function bulb(night: NightParts, color: string, day = 0): THREE.MeshToonM
 
 const box = (w: number, h: number, d: number) => new THREE.BoxGeometry(w, h, d);
 
-function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  draw(c.getContext('2d')!);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.anisotropy = 8;
-  return t;
-}
-
 /** A flat, textured toon plane lying on the ground. */
 function groundPlane(w: number, d: number, x: number, y: number, z: number, map: THREE.Texture | null, color = '#ffffff'): THREE.Mesh {
   const mat = new THREE.MeshToonMaterial({ color, map, gradientMap: (toon('#fff') as THREE.MeshToonMaterial).gradientMap });
@@ -71,7 +65,10 @@ function groundPlane(w: number, d: number, x: number, y: number, z: number, map:
   return m;
 }
 
-/** Polished concrete with painted bays along the back wall and along the front. */
+/**
+ * Polished concrete with painted bays along the back wall and along the front, and a hatched box
+ * to keep clear in front of the elevator, which takes up a bay at the back.
+ */
 function garageFloorTexture(): THREE.CanvasTexture {
   const w = B.maxX - B.minX;
   const d = B.maxZ - B.minZ;
@@ -88,13 +85,35 @@ function garageFloorTexture(): THREE.CanvasTexture {
     }
     const X = (x: number) => (x - B.minX) * px;
     const Z = (z: number) => (z - B.minZ) * px;
+    const lift = { minX: ELEVATOR.x - ELEVATOR.width / 2, maxX: ELEVATOR.x + ELEVATOR.width / 2, minZ: ELEVATOR_FRONT, maxZ: ELEVATOR_FRONT + 2.2 };
     g.fillStyle = '#fffaf0';
     for (const [z0, z1] of [
       [B.minZ + 0.3, B.minZ + 5.8],
       [B.maxZ - 5.8, B.maxZ - 0.3],
     ]) {
-      for (let x = -16; x <= 16.01; x += BAY) g.fillRect(X(x) - 2, Z(z0), 4, (z1 - z0) * px);
+      for (let x = -16; x <= 16.01; x += BAY) {
+        // Not out of the elevator's shaft and across the box in front of it.
+        if (z0 < lift.maxZ && x > lift.minX - 0.1 && x < lift.maxX + 0.1) continue;
+        g.fillRect(X(x) - 2, Z(z0), 4, (z1 - z0) * px);
+      }
     }
+    // The box in front of the elevator's doors: a yellow outline, hatched across.
+    g.save();
+    g.beginPath();
+    g.rect(X(lift.minX), Z(lift.minZ), (lift.maxX - lift.minX) * px, (lift.maxZ - lift.minZ) * px);
+    g.clip();
+    g.strokeStyle = '#ffd166';
+    g.lineWidth = 7;
+    for (let d = -3; d < 6; d += 0.45) {
+      g.beginPath();
+      g.moveTo(X(lift.minX + d), Z(lift.minZ));
+      g.lineTo(X(lift.minX + d + 3), Z(lift.maxZ));
+      g.stroke();
+    }
+    g.restore();
+    g.strokeStyle = '#ffd166';
+    g.lineWidth = 8;
+    g.strokeRect(X(lift.minX) + 4, Z(lift.minZ) + 4, (lift.maxX - lift.minX) * px - 8, (lift.maxZ - lift.minZ) * px - 8);
     // Arrows down the aisle, pointing out to the street.
     g.fillStyle = '#ffd166';
     for (const x of [-8, 8]) {
@@ -113,8 +132,8 @@ function garageFloorTexture(): THREE.CanvasTexture {
 
 /**
  * Downstairs: the open garage under the office's floor slab (see world/stack.ts): concrete
- * walls at the back and on the west side, columns along the open front and east side, strip
- * lights, and a row of Lambos and a row of Ferraris.
+ * walls at the back and on the west side, columns along the open front and east side, and strip
+ * lights. The Lambos and Ferraris parked in it are features/cars/world.ts's.
  */
 export function buildGarage(group: THREE.Group, colliders: Collider[]) {
   const w = B.maxX - B.minX;
@@ -160,44 +179,6 @@ export function buildGarage(group: THREE.Group, colliders: Collider[]) {
   const light = toon('#ffffff', { emissive: '#fff4d6' });
   for (const x of [-13, -4.8, 4.8, 13]) for (const z of [-4.5, 4.5]) parts.add(mesh(box(2.6, 0.07, 0.22), light, x, ceiling - 0.04, z, false));
   group.add(mergeByMaterial(parts));
-
-  // The cars: Lambos nose-in along the back wall, Ferraris backed in facing the street.
-  const cars: [CarKind, string, number, number][] = [
-    ['lambo', '#8ac926', -14.4, -1],
-    ['lambo', '#ff7b00', -8, -1],
-    ['lambo', '#ffd000', 1.6, -1],
-    ['lambo', '#7b2cbf', 11.2, -1],
-    ['ferrari', '#d90429', -14.4, 1],
-    ['ferrari', '#d90429', -4.8, 1],
-    ['ferrari', '#ffc300', 4.8, 1],
-    ['ferrari', '#e5383b', 14.4, 1],
-  ];
-  const lot = new THREE.Group();
-  for (const [kind, color, x, face] of cars) {
-    const z = face < 0 ? B.minZ + WALL_T + 0.4 + CAR.length / 2 : B.maxZ - 0.5 - CAR.length / 2;
-    park(lot, colliders, kind, color, x, z, face < 0 ? Math.PI : 0);
-  }
-  // One left out front, for everyone upstairs to look at.
-  park(lot, colliders, 'lambo', '#00b4d8', 9, 18.2, Math.PI / 2);
-  group.add(mergeByMaterial(lot));
-}
-
-/** Parks a car at (x, z) turned by `rotY` (a multiple of 90°), with colliders you can hop up on. */
-function park(group: THREE.Group, colliders: Collider[], kind: CarKind, color: string, x: number, z: number, rotY: number) {
-  const car = supercar(kind, color);
-  car.position.set(x, G, z);
-  car.rotation.y = rotY;
-  group.add(car);
-  // A rectangle in the car's own frame (x across, z nose-ward), in the world.
-  const c = Math.round(Math.cos(rotY));
-  const sn = Math.round(Math.sin(rotY));
-  const rect = (x0: number, x1: number, z0: number, z1: number, top: number) => {
-    const xs = [x0 * c + z0 * sn, x1 * c + z1 * sn];
-    const zs = [-x0 * sn + z0 * c, -x1 * sn + z1 * c];
-    colliders.push({ minX: x + Math.min(...xs), maxX: x + Math.max(...xs), minZ: z + Math.min(...zs), maxZ: z + Math.max(...zs), bottom: G, top: G + top });
-  };
-  rect(-CAR.width / 2 + 0.08, CAR.width / 2 - 0.08, -CAR.length / 2 + 0.08, CAR.length / 2 - 0.08, CAR.body);
-  rect(-0.6, 0.6, -1.3, 0.1, CAR.roof);
 }
 
 export function tree(scale: number): THREE.Group {
@@ -272,10 +253,28 @@ export function streetLamp(parts: THREE.Group, night: NightParts, glass: THREE.M
 }
 
 /**
- * How far the grass and the road go, end to end: from the top floor the haze is up to HAZE_MAX off
- * (see world/sky.ts), and their ends must be further than that even at the edge of the view.
+ * How far the grass goes, every way from the office: from the top floor the haze is up to HAZE_MAX
+ * off (see world/sky.ts), and out at the far corners of the scenic loop too, so its edges must be
+ * further than that even at the edge of the view. To the west it stops at the beach (world/scenic/).
  */
-const REACH = 1200;
+const REACH = 900;
+/** Where the grass stops to the west, under the beach's sand, whose flat top is everywhere past here. */
+const LAWN_WEST = Math.ceil(Math.max(...Array.from({ length: 1801 }, (_, i) => shoreX(i - 900))) + 4);
+
+/** The street's asphalt: white lines along its edges and a dashed yellow one down the middle, 8 m to a dash and a gap. */
+export function roadTexture(): THREE.CanvasTexture {
+  const road = canvasTexture(256, 128, (g) => {
+    g.fillStyle = '#5b606c';
+    g.fillRect(0, 0, 256, 128);
+    g.fillStyle = '#f1f1f1';
+    g.fillRect(0, 6, 256, 4);
+    g.fillRect(0, 118, 256, 4);
+    g.fillStyle = '#ffd166';
+    g.fillRect(0, 61, 150, 6);
+  });
+  road.wrapS = THREE.RepeatWrapping;
+  return road;
+}
 
 /**
  * The neighbours' buildings: [x, z, width, height, depth, paint], across the street and further out
@@ -310,38 +309,31 @@ export function neighbourBoxes(): { minX: number; maxX: number; minZ: number; ma
  * sidewalks and street lamps, trees and neighbours' buildings, and in `sky` some clouds.
  */
 export function buildStreet(group: THREE.Group, colliders: Collider[], night: NightParts, sky: THREE.Group) {
-  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(REACH, REACH), toon('#a7d98b'));
+  const lawn = new THREE.Mesh(new THREE.PlaneGeometry(REACH - LAWN_WEST, REACH * 2), toon('#a7d98b'));
   lawn.rotation.x = -Math.PI / 2;
-  lawn.position.y = G - 0.03;
+  lawn.position.set((LAWN_WEST + REACH) / 2, G - 0.03, 0);
   lawn.receiveShadow = true;
   group.add(lawn);
-  // What you stand on anywhere out there, the lot and the road and the grass alike.
-  colliders.push({ minX: -200, maxX: 200, minZ: -200, maxZ: 200, bottom: G - 1, top: G });
+  // What you stand on anywhere out there, the lot and the road and the grass alike, and the beach.
+  colliders.push({ minX: -REACH, maxX: REACH, minZ: -REACH, maxZ: REACH, bottom: G - 1, top: G });
 
-  // The lot in front of the garage, out to the sidewalk.
-  const lot = groundPlane(60, 21 - B.maxZ, 0, G - 0.01, (B.maxZ + 21) / 2, null, '#9a9ea8');
-  group.add(lot);
-  const sideways = groundPlane(12, B.maxZ - B.minZ + 6, B.maxX + 6, G - 0.012, (B.minZ + B.maxZ) / 2 + 1, null, '#9a9ea8');
-  group.add(sideways);
+  // The lot in front of the garage, out to the sidewalk, and the one down its east side.
+  for (const [b, y] of [
+    [LOT, G - 0.01],
+    [SIDE_LOT, G - 0.012],
+  ] as const) {
+    group.add(groundPlane(b.maxX - b.minX, b.maxZ - b.minZ, (b.minX + b.maxX) / 2, y, (b.minZ + b.maxZ) / 2, null, '#9a9ea8'));
+  }
 
-  // The road: asphalt, white edge lines and a dashed yellow middle.
-  const road = canvasTexture(256, 128, (g) => {
-    g.fillStyle = '#5b606c';
-    g.fillRect(0, 0, 256, 128);
-    g.fillStyle = '#f1f1f1';
-    g.fillRect(0, 6, 256, 4);
-    g.fillRect(0, 118, 256, 4);
-    g.fillStyle = '#ffd166';
-    g.fillRect(0, 61, 150, 6);
-  });
-  road.wrapS = THREE.RepeatWrapping;
-  road.repeat.set(REACH / 8, 1);
-  group.add(groundPlane(REACH, ROAD.maxZ - ROAD.minZ, 0, G - 0.008, (ROAD.minZ + ROAD.maxZ) / 2, road));
+  // The road, out to either end of the street, where the scenic loop takes over (world/scenic/).
+  const road = roadTexture();
+  road.repeat.set((STREET_END * 2) / 8, 1);
+  group.add(groundPlane(STREET_END * 2, ROAD.maxZ - ROAD.minZ, 0, G - 0.008, (ROAD.minZ + ROAD.maxZ) / 2, road));
   for (const [z0, z1] of [
     [21, ROAD.minZ],
     [ROAD.maxZ, ROAD.maxZ + 2],
   ]) {
-    group.add(mesh(box(REACH, 0.08, z1 - z0), toon('#e3ddd0'), 0, G, (z0 + z1) / 2));
+    group.add(mesh(box(STREET_END * 2 - 4, 0.08, z1 - z0), toon('#e3ddd0'), 0, G, (z0 + z1) / 2));
   }
   const forest = new THREE.Group();
 
@@ -362,12 +354,16 @@ export function buildStreet(group: THREE.Group, colliders: Collider[], night: Ni
     [30, 6, 1.25],
     [-12, -22, 1.2],
     [4, -24, 1],
-    [18, -21, 1.1],
+    // Clear of the back office, when a floor's built out into one (see WING).
+    [23, -19, 1.1],
   ];
   for (const [x, z, s] of trees) {
     const t = tree(s);
     t.position.set(x, G, z);
     forest.add(t);
+    // Its trunk, which you (or a car) can't go through.
+    const r = 0.26 * s;
+    colliders.push({ minX: x - r, maxX: x + r, minZ: z - r, maxZ: z + r, bottom: G, top: G + 2.2 * s });
   }
   group.add(mergeByMaterial(forest));
 
@@ -417,3 +413,10 @@ export function buildStreet(group: THREE.Group, colliders: Collider[], night: Ni
   }
   sky.add(mergeByMaterial(puffs));
 }
+
+/** The street out front, the city along it, and the clouds over it all. */
+export const street: Fixture<never, StreetSite> = (site) => {
+  // The clouds stay up in the sky, however far down the street is.
+  buildStreet(site.ground, site.groundColliders, site.get('night'), site.group);
+  return {};
+};

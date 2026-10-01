@@ -9,6 +9,7 @@ import type { AgentProvider, ServerMsg, WorkerInfo, WorkerStatus } from '../../s
 import { BEANBAGS, DESKS } from '../../shared/layout.js';
 import { toolAction } from '../../shared/actions.js';
 import { parseNexuraScreen, type NexuraScreen } from '../../shared/nexura-screen.js';
+import { watchNexuraDesks } from './workers.js';
 
 /** One run as Nexura sends it (OfficeWorker in Nexura). */
 export interface NexuraWorker {
@@ -35,7 +36,7 @@ export interface NexuraWorker {
 export interface BridgeFloor {
   id: string;
   dir: string;
-  workers: { list(): WorkerInfo[]; nexuraDesk?: (deskId: string) => boolean };
+  workers: { list(): WorkerInfo[] };
 }
 
 export interface BridgeDeps {
@@ -203,7 +204,7 @@ export class NexuraBridge {
       this.expiry.unref();
     }
     const floors = [...this.deps.floors()];
-    for (const floor of floors) floor.workers.nexuraDesk ??= (deskId) => this.deskTaken(floor.id, deskId);
+    for (const floor of floors) watchNexuraDesks(floor.workers, (deskId) => this.deskTaken(floor.id, deskId));
 
     // Where each one sits now: same floor and desk as before when it's still free, else the next free seat.
     const next = new Map<string, Map<string, WorkerInfo>>(floors.map((f) => [f.id, new Map()]));

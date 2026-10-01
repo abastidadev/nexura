@@ -16,7 +16,7 @@ const env = {
 const { result } = concurrently(
   [
     { name: "nexura", command: `node apps/server/src/cli/cli.ts serve --port ${NEXURA_PORT}`, env },
-    { name: "office", command: `node third_party/agent-office/bin/agent-office.js --host 127.0.0.1 --port ${OFFICE_PORT}`, env },
+    { name: "office", command: `node third_party/agent-office/bin/agent-office.js --host 127.0.0.1 --port ${OFFICE_PORT} --no-open`, env },
   ],
   { killOthersOn: ["failure", "success"], prefix: "name" },
 );

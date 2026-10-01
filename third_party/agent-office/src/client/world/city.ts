@@ -1,6 +1,8 @@
 import * as THREE from 'three';
 import { FLOOR, SLAB, STREET_Y, WALL_T, roofDrop } from '../../shared/layout';
+import { mulberry32 } from '../../shared/rng';
 import type { NightParts } from './outside';
+import { tilingCanvasTexture } from './texture';
 import { mergeByMaterial, mesh, toon } from './toon';
 import { buildTower } from './tower';
 
@@ -37,33 +39,9 @@ export interface City {
    * The building has `floors` floors under the roof: the street goes as far down as that is tall,
    * and the buildings nearby come down to stay under the roof.
    */
-  setFloors(floors: number): void;
+  setFloors(floors: number, wings?: readonly number[]): void;
   /** The cars along the streets, the blinking lights on the towers: `night` is how dark it is (0–1). */
   update(t: number, dt: number, night: number): void;
-}
-
-/** The same numbers every time, so everyone sees the same city. */
-function rng(seed: number): () => number {
-  let a = seed >>> 0;
-  return () => {
-    a = (a + 0x6d2b79f5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function canvasTexture(w: number, h: number, draw: (g: CanvasRenderingContext2D) => void): THREE.CanvasTexture {
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  draw(c.getContext('2d')!);
-  const t = new THREE.CanvasTexture(c);
-  t.colorSpace = THREE.SRGBColorSpace;
-  t.wrapS = t.wrapT = THREE.RepeatWrapping;
-  t.anisotropy = 8;
-  return t;
 }
 
 /** How a building's walls look: its paint, and the windows in it (glass towers are nearly all window). */
@@ -92,7 +70,7 @@ const GLASS_TOWERS = [7, 8];
 /** One bay of one storey: the wall with a window in it. */
 function bayTexture(p: Paint): THREE.CanvasTexture {
   const S = 64;
-  return canvasTexture(S, S, (g) => {
+  return tilingCanvasTexture(S, S, (g) => {
     g.fillStyle = p.wall;
     g.fillRect(0, 0, S, S);
     const w = S * p.wide;
@@ -113,8 +91,8 @@ function bayTexture(p: Paint): THREE.CanvasTexture {
 function litTexture(p: Paint, seed: number): THREE.CanvasTexture {
   const N = 16;
   const C = 16;
-  const r = rng(seed);
-  return canvasTexture(N * C, N * C, (g) => {
+  const r = mulberry32(seed);
+  return tilingCanvasTexture(N * C, N * C, (g) => {
     g.fillStyle = '#000000';
     g.fillRect(0, 0, N * C, N * C);
     for (let j = 0; j < N; j++) {
@@ -184,7 +162,7 @@ class Walls {
 function groundTexture(): THREE.CanvasTexture {
   const S = 512;
   const px = S / PERIOD;
-  return canvasTexture(S, S, (g) => {
+  return tilingCanvasTexture(S, S, (g) => {
     g.fillStyle = '#b3aea4';
     g.fillRect(0, 0, S, S);
     const mid = S / 2;
@@ -224,7 +202,7 @@ function tree(r: () => number): THREE.Group {
 
 /** Soft round blob, for lamps seen from far off. */
 function glowTexture(): THREE.CanvasTexture {
-  return canvasTexture(64, 64, (g) => {
+  return tilingCanvasTexture(64, 64, (g) => {
     const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
     grad.addColorStop(0, 'rgba(255,255,255,1)');
     grad.addColorStop(0.25, 'rgba(255,255,255,0.7)');
@@ -281,7 +259,8 @@ export function buildCity(night: NightParts): City {
   /** Everything down on the street, which is as far below the roof as the building is tall. */
   const street = new THREE.Group();
   group.add(street);
-  const r = rng(20260927);
+  // The same numbers every time, so everyone sees the same city.
+  const r = mulberry32(20260927);
 
   // The ground: every block and street, repeated out to the haze.
   const size = PERIOD * 24;
@@ -395,7 +374,8 @@ export function buildCity(night: NightParts): City {
     [6, 18],
     [16, 18],
     [-20, -18],
-    [20, -18],
+    // Clear of the back office, when a floor's built out into one (see WING).
+    [21, -20],
   ]) {
     const t = tree(r);
     t.position.set(x, 0, z);
@@ -587,16 +567,18 @@ export function buildCity(night: NightParts): City {
   group.add(mergeByMaterial(sky));
 
   let floorsNow = 0;
+  let wingsNow = '';
   let riseNow = -1;
   return {
     group,
-    setFloors(floors) {
+    setFloors(floors, wings = []) {
       floors = Math.max(1, floors);
-      if (floors === floorsNow) return;
+      if (floors === floorsNow && wings.join() === wingsNow) return;
       floorsNow = floors;
+      wingsNow = wings.join();
       const drop = roofDrop(floors);
       street.position.y = -drop;
-      building.set(floors, floors);
+      building.set(floors, floors, wings);
       // The buildings only change height up to six floors (see rise).
       const k = Math.min(1, drop / LAID_OUT);
       if (k !== riseNow) {

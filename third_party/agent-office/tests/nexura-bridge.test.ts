@@ -4,6 +4,7 @@ import http from 'node:http';
 import type { AddressInfo } from 'node:net';
 import type { ServerMsg, WorkerInfo } from '../src/shared/protocol.js';
 import { DESKS } from '../src/shared/layout.js';
+import { nexuraDeskTaken } from '../src/server/nexura/workers.js';
 import { floorFor, NexuraBridge, parseWorker, workerInfo, type BridgeFloor, type NexuraWorker } from '../src/server/nexura/bridge.js';
 
 function run(overrides: Partial<NexuraWorker> = {}): NexuraWorker {
@@ -43,8 +44,8 @@ test('nexura: a run sits at the back desk of its own project floor and the offic
   assert.deepEqual(w.external, { source: 'nexura', runId: 'r1', url: 'http://localhost:4310/runs/r1' });
   assert.deepEqual(b.list(other), []);
   assert.deepEqual(sent, [['app', { t: 'worker.update', worker: w }]]);
-  assert.equal(app.workers.nexuraDesk?.(w.deskId), true);
-  assert.equal(app.workers.nexuraDesk?.(DESKS[0].id), false);
+  assert.equal(nexuraDeskTaken(app.workers, w.deskId), true);
+  assert.equal(nexuraDeskTaken(app.workers, DESKS[0].id), false);
   b.stop();
 });
 
