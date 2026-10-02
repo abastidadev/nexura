@@ -60,8 +60,8 @@ npm run nexura -- retry <runId> [--resume --instruction "..."] [--model opus] [-
 npm run nexura -- cleanup <runId> [--delete-branches]
 npm start                                # solo Nexura, UI + API en :4310
 npm run start:all                        # Nexura :4310 + Oficina 3D :4600
-npm run demo                             # lo mismo en modo god para enseñarlo: datos temporales, sin logros,
-                                         # monedero lleno y agentes falsos (--real para los tuyos)
+npm run demo                             # lo mismo en modo god para enseñarlo: datos temporales con flujos, revisiones
+                                         # y terminal de ejemplo, tienda entera comprada y agentes falsos (--empty, --real)
 npm run serve -- --port 4320 --concurrency 3 # solo Nexura, con opciones propias
 npm run serve:office                     # solo Oficina 3D, sin arrancar Nexura
 npm run update:office                    # trae lo último de Agent Office conservando los parches locales

@@ -9,8 +9,10 @@
 //   FAKE_REVIEW_SPLIT     each rejecting codeReview call flags a different file, so blind judges disagree
 //   FAKE_FAIL_MARKER      if the prompt contains it, enrich or plan (the investigating phase) fails (unless resumed/overridden)
 //   FAKE_DELAY_MS         pause between events, to watch a flow live in the UI (default 0)
-import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+//   FAKE_DEMO_EDITS       implement edits the sandbox's real code (DEMO_EDITS, in turns) instead of
+//                         writing impl-<n>.txt, so a flow's diff has something to read (npm run demo)
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 
 export const stateDir = process.env.FAKE_STATE_DIR;
 
@@ -70,20 +72,29 @@ export function stepAnswer({ step, count, prompt, hasSchema }) {
         conventions: ["Usa inject() en vez de constructores"],
       };
       break;
-    case "implement":
-      writeFileSync(join(process.cwd(), `impl-${count}.txt`), `implement ${count}\n`);
+    case "implement": {
+      const demo = process.env.FAKE_DEMO_EDITS === "1" ? DEMO_EDITS[(count - 1) % DEMO_EDITS.length] : undefined;
+      if (demo) {
+        for (const [file, content] of Object.entries(demo.files)) {
+          mkdirSync(dirname(join(process.cwd(), file)), { recursive: true });
+          writeFileSync(join(process.cwd(), file), content);
+        }
+      } else {
+        writeFileSync(join(process.cwd(), `impl-${count}.txt`), `implement ${count}\n`);
+      }
       if (!(process.env.FAKE_QA_FAIL_ONCE === "1" && count === 1)) {
         writeFileSync(join(process.cwd(), "done.txt"), "ok\n");
       }
       output = {
-        summary: `implement ${count}`,
-        commitMessage: `feat(fake): implement ${count}`,
+        summary: demo?.summary ?? `implement ${count}`,
+        commitMessage: demo?.commitMessage ?? `feat(fake): implement ${count}`,
         tasksDone: ["t1"],
-        filesChanged: [`impl-${count}.txt`],
+        filesChanged: demo ? Object.keys(demo.files) : [`impl-${count}.txt`],
         notes: prompt.includes("[major]") ? "arreglado feedback" : "",
-        prDescriptions: [{ repo: "sandbox", description: `Implement change ${count}. Verified with npm run check.` }],
+        prDescriptions: [{ repo: "sandbox", description: demo?.description ?? `Implement change ${count}. Verified with npm run check.` }],
       };
       break;
+    }
     case "codeReview": {
       const rejects = Number(process.env.FAKE_REVIEW_REJECTS ?? 0);
       output =
@@ -179,6 +190,102 @@ export function stepAnswer({ step, count, prompt, hasSchema }) {
   }
   return { output, error, text };
 }
+
+/**
+ * What implement writes under FAKE_DEMO_EDITS, one per call in turns: whole files over the
+ * sandbox's `src/cart.js`, `src/format.js` and README (fixtures/sandbox.mjs), so each diff mixes
+ * changed, added and removed lines.
+ */
+const DEMO_EDITS = [
+  {
+    summary: "Descuento por volumen en el total del carrito, con sus tests.",
+    commitMessage: "feat(cart): volume discount on the cart total",
+    description: "Applies a 10% discount from 10 units on. Adds tests for the total. Verified with npm run check.",
+    files: {
+      "src/cart.js": `/** Units from which the volume discount applies. */
+export const VOLUME_THRESHOLD = 10;
+export const VOLUME_DISCOUNT = 0.1;
+
+export function subtotal(items) {
+  return items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+}
+
+export function total(items) {
+  const units = items.reduce((sum, item) => sum + item.quantity, 0);
+  const amount = subtotal(items);
+  return units >= VOLUME_THRESHOLD ? amount * (1 - VOLUME_DISCOUNT) : amount;
+}
+`,
+      "test/cart.test.js": `import assert from "node:assert/strict";
+import { test } from "node:test";
+import { total } from "../src/cart.js";
+
+test("no discount under the threshold", () => {
+  assert.equal(total([{ price: 10, quantity: 2 }]), 20);
+});
+
+test("10% off from ten units", () => {
+  assert.equal(total([{ price: 10, quantity: 10 }]), 90);
+});
+`,
+    },
+  },
+  {
+    summary: "Importes con Intl.NumberFormat según el idioma.",
+    commitMessage: "feat(format): locale-aware money with Intl.NumberFormat",
+    description: "money() formats with Intl.NumberFormat (es-ES by default) instead of concatenating EUR. README updated.",
+    files: {
+      "src/format.js": `const formatters = new Map();
+
+/** An amount in euros, as the given locale writes it ("1.234,50 €" in es-ES). */
+export function money(amount, locale = "es-ES") {
+  if (!formatters.has(locale)) {
+    formatters.set(locale, new Intl.NumberFormat(locale, { style: "currency", currency: "EUR" }));
+  }
+  return formatters.get(locale).format(amount);
+}
+`,
+      "README.md": `# sandbox
+
+Una tienda de juguete para probar Nexura.
+
+- \`src/cart.js\`: el total del carrito.
+- \`src/format.js\`: importes con \`Intl.NumberFormat\` (\`money(1234.5)\` → \`1.234,50 €\`).
+
+Arranca con \`npm run check\`.
+`,
+    },
+  },
+  {
+    summary: "Cupones de descuento aplicados al total.",
+    commitMessage: "feat(cart): discount coupons",
+    description: "Adds coupons (percentage or fixed) and applies them to the cart total, never below zero.",
+    files: {
+      "src/coupons.js": `const COUPONS = {
+  WELCOME10: { kind: "percent", value: 10 },
+  MINUS5: { kind: "fixed", value: 5 },
+};
+
+/** The amount after the coupon, never below zero. Unknown codes change nothing. */
+export function applyCoupon(amount, code) {
+  const coupon = COUPONS[code?.trim().toUpperCase()];
+  if (!coupon) {
+    return amount;
+  }
+  const discounted = coupon.kind === "percent" ? amount * (1 - coupon.value / 100) : amount - coupon.value;
+  return Math.max(0, discounted);
+}
+`,
+      "src/cart.js": `import { applyCoupon } from "./coupons.js";
+
+export function total(items, coupon) {
+  const amount = items.reduce((sum, item) => sum + item.price * item.quantity, 0);
+  return coupon ? applyCoupon(amount, coupon) : amount;
+}
+`,
+    },
+  },
+];
 
 /**
  * The Tickets assistant: the first turn asks two questions over a half-written bug, an answer

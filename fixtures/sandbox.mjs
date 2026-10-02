@@ -28,6 +28,13 @@ export function makeSandbox(root) {
     JSON.stringify({ name: "sandbox", scripts: { check: "node -e \"process.exit(require('fs').existsSync('done.txt')?0:1)\"" } }, null, 2),
   );
   writeFileSync(join(repoPath, "README.md"), "# sandbox\n");
+  // A bit of real code, for the fakes' demo edits (FAKE_DEMO_EDITS in fixtures/fake-steps.mjs) to change.
+  mkdirSync(join(repoPath, "src"));
+  writeFileSync(
+    join(repoPath, "src", "cart.js"),
+    "export function total(items) {\n  let sum = 0;\n  for (const item of items) {\n    sum += item.price * item.quantity;\n  }\n  return sum;\n}\n",
+  );
+  writeFileSync(join(repoPath, "src", "format.js"), 'export function money(amount) {\n  return amount.toFixed(2) + " EUR";\n}\n');
   git("add", "-A");
   git("commit", "-q", "-m", "init");
 

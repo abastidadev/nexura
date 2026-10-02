@@ -2,18 +2,25 @@
 // their (empty) review threads, creating PRs and posting reviews, and what the Tickets
 // section needs (labels, milestones, assignees, creating issues). What gets posted is
 // appended to <state>/github-posts.jsonl so it can be checked by hand. No network.
+// The PRs the flows open are kept in <state>/created-prs.json, so they outlive a restart; with
+// --merge-created they read as merged (npm run demo: the PR watcher sees them integrated).
 //
-//   node fixtures/fake-github.mjs --port 4321 --prs <prs.json> --state <dir>
+//   node fixtures/fake-github.mjs --port 4321 --prs <prs.json> --state <dir> [--merge-created]
 //
 // Point Nexura at it with NEXURA_GITHUB_API_URL=http://127.0.0.1:<port> (and GH_TOKEN=anything).
-import { appendFileSync, existsSync, readFileSync } from "node:fs";
+import { appendFileSync, existsSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 
-const { values } = parseArgs({ options: { port: { type: "string", default: "4321" }, prs: { type: "string" }, state: { type: "string", default: "." } } });
+const { values } = parseArgs({
+  options: { port: { type: "string", default: "4321" }, prs: { type: "string" }, state: { type: "string", default: "." }, "merge-created": { type: "boolean", default: false } },
+});
 const posts = join(values.state, "github-posts.jsonl");
-let nextPr = 100;
+const createdFile = join(values.state, "created-prs.json");
+/** PRs opened by the flows: `{ number, title, head, base, html_url }`. */
+const createdPrs = existsSync(createdFile) ? JSON.parse(readFileSync(createdFile, "utf8")) : [];
+let nextPr = 100 + createdPrs.length;
 let nextIssue = 200;
 /** Issues created from the Tickets section, kept for the session. */
 const createdIssues = [];
@@ -58,10 +65,17 @@ createServer(async (request, response) => {
   if (match && request.method === "POST") {
     record();
     const number = nextPr++;
-    return send(response, 201, { number, title: body?.title ?? "", html_url: `https://github.com/nexura-fake/sandbox/pull/${number}` });
+    const created = { number, title: body?.title ?? "", head: body?.head, base: body?.base, html_url: `https://github.com/nexura-fake/sandbox/pull/${number}` };
+    createdPrs.push(created);
+    writeFileSync(createdFile, JSON.stringify(createdPrs, null, 2));
+    return send(response, 201, created);
   }
   match = /^\/repos\/[^/]+\/[^/]+\/pulls\/(\d+)$/.exec(path);
   if (match && request.method === "GET") {
+    const created = createdPrs.find((candidate) => candidate.number === Number(match[1]));
+    if (created) {
+      return send(response, 200, { ...created, state: values["merge-created"] ? "closed" : "open", merged: values["merge-created"] });
+    }
     const pr = openPrs().find((candidate) => candidate.number === Number(match[1]));
     const files = pr?.files ?? [];
     const sum = (key) => files.reduce((total, file) => total + (file[key] ?? 0), 0);
