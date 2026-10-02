@@ -5,6 +5,7 @@ import * as THREE from 'three';
 import type { Person } from '../world/character';
 import { disposeSprite, mesh, textSprite, toon } from '../world/toon';
 import { outfitKey, type NexuraOutfit } from '../../shared/nexura-outfit';
+import { bodyFit } from './body';
 
 /** Person keeps its head, body and name tag to itself; the shop's things hang on them. */
 type PersonParts = { head: THREE.Group; body: THREE.Group; label: THREE.Sprite | null; hat: THREE.Object3D[] };
@@ -256,7 +257,9 @@ function undress(person: Person, w: Worn, scene: THREE.Scene) {
 
 /** Puts `outfit` on `person` (or takes off what they had), building only when it changed. */
 export function dress(person: Person, outfit: NexuraOutfit | undefined, scene: THREE.Scene): void {
-  const key = outfitKey(outfit);
+  // A new build refits what hangs on the body, so it counts as a change too.
+  const fit = bodyFit(person);
+  const key = `${outfitKey(outfit)}|${fit.key}`;
   let w = worn.get(person);
   if (w && w.key === key) return;
   if (!w) {
@@ -276,6 +279,7 @@ export function dress(person: Person, outfit: NexuraOutfit | undefined, scene: T
   }
   const acc = outfit.accessory ? ACCESSORIES[outfit.accessory]?.() : undefined;
   if (acc) {
+    if (acc.on === 'body') acc.obj.scale.set(fit.x, 1, fit.z);
     (acc.on === 'head' ? head : body).add(acc.obj);
     w.pieces.push(acc.obj);
   }

@@ -6,6 +6,7 @@ import { AVATAR_COLORS, saveProfile, store, type Profile } from '../state';
 import { Person } from '../world/character';
 import { toonUnique } from '../world/toon';
 import { h, openModal } from './dom';
+import { BODY_TYPES, randomBody } from '../../shared/nexura-body'; // nexura
 
 /** A turntable with your character on it, drawn with its own small renderer. */
 class Preview {
@@ -159,6 +160,7 @@ export function openCharacter(first: boolean, onSave: (p: Profile) => void) {
   const styleRow = h('div.seg', { role: 'radiogroup', 'aria-label': 'Hair style' });
   const hairRow = h('div.swatches', { role: 'radiogroup', 'aria-label': 'Hair color' });
   const shirtRow = h('div.swatches', { role: 'radiogroup', 'aria-label': 'Shirt color' });
+  const bodyRow = h('div.seg', { role: 'radiogroup', 'aria-label': 'Body' }); // nexura
 
   const swatch = (color: string, label: string, on: boolean, choose: () => void) =>
     h('button.swatch', { type: 'button', role: 'radio', 'aria-checked': String(on), style: `background:${color}`, class: on ? 'sel' : '', 'aria-label': label, title: label, onclick: choose });
@@ -182,11 +184,13 @@ export function openCharacter(first: boolean, onSave: (p: Profile) => void) {
     );
     hairRow.replaceChildren(...HAIR_COLORS.map((c, i) => swatch(c, HAIR_COLOR_NAMES[i], i === hair, () => change({ hair: i }))));
     shirtRow.replaceChildren(...AVATAR_COLORS.map((c) => swatch(c, `Shirt ${c}`, c === pick.color, () => change({}, c))));
+    // nexura: the build, a row like the hair styles'.
+    bodyRow.replaceChildren(...BODY_TYPES.map((name, i) => h('button.btn', { type: 'button', role: 'radio', 'aria-checked': String(i === (pick.look.body ?? 0)), class: i === (pick.look.body ?? 0) ? 'on' : '', onclick: () => change({ body: i }) }, name)));
   };
   paint();
 
   const surprise = h('button.btn', { type: 'button', title: 'Random look' }, '🎲 Surprise me');
-  surprise.addEventListener('click', () => change(randomLook(), AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)]));
+  surprise.addEventListener('click', () => change({ ...randomLook(), body: randomBody() }, AVATAR_COLORS[Math.floor(Math.random() * AVATAR_COLORS.length)])); // nexura: was change(randomLook(), …
   const save = h('button.btn.primary', { type: 'submit' }, first ? 'Enter the office 🚪' : 'Save');
   const close = h('button.btn.close', { type: 'button', 'aria-label': 'Close', title: first ? 'Skip: go in with this look (Esc)' : 'Close (Esc)' }, '✕');
 
@@ -206,6 +210,8 @@ export function openCharacter(first: boolean, onSave: (p: Profile) => void) {
         account ? h('p.setting-note', {}, `🔑 Signed in as ${account.name}, so that's your name here.`) : null,
         h('label', {}, 'Skin tone'),
         skinRow,
+        h('label', {}, 'Body'), // nexura
+        bodyRow, // nexura
         h('label', {}, 'Hair'),
         styleRow,
         h('label', {}, 'Hair color'),

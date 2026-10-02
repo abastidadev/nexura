@@ -16,6 +16,7 @@ import { styleHair } from './person-hair';
 import { clubSwing, strike, swingStep, type Golf } from './person-golf';
 import { propPosition, throwStep, type Oche } from './person-throw';
 import { poseEmote, type Emoting } from './person-emote';
+import { shapeBody } from '../../nexura/body'; // nexura
 
 export type Pose = 'stand' | 'walk' | 'sit' | 'type';
 
@@ -213,6 +214,7 @@ export class Person {
     this.root.add(this.mic);
 
     this.rig = { root: this.root, body: this.body, head: this.head, armL: this.armL, armR: this.armR, legL: this.legL, legR: this.legR };
+    shapeBody(this); // nexura: the build (slim, strong, chubby)
     this.setLabel(name, false);
   }
 
@@ -229,6 +231,7 @@ export class Person {
     this.look = { ...look };
     this.hairMat.color.set(HAIR_COLORS[look.hair]);
     if (restyle) this.buildHair();
+    shapeBody(this); // nexura
     this.dress();
   }
 

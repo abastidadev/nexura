@@ -1,5 +1,6 @@
 // What a person looks like in the office, picked on the character select screen.
 // Server and client share these lists so a look is just three small indexes on the wire.
+import { sanitizeBody } from './nexura-body.js'; // nexura
 
 export const SKIN_TONES = ['#ffe3cc', '#ffd7b5', '#f1c27d', '#e0ac69', '#c68642', '#a0663a', '#8d5524', '#5c3a21'];
 export const HAIR_COLORS = ['#2b2d42', '#4a3222', '#6f4e37', '#e9c46a', '#c1440e', '#d9d9d9', '#d62828', '#ff8fab', '#9d4edd', '#264653'];
@@ -10,6 +11,8 @@ export interface Look {
   skin: number;
   hair: number;
   style: number;
+  /** nexura: the build, an index into BODY_TYPES (see nexura-body.ts); none is the average one. */
+  body?: number;
 }
 
 function hash(s: string): number {
@@ -46,9 +49,10 @@ export function sanitizeLook(x: unknown, fallback: Look): Look {
     skin: idx(o.skin, SKIN_TONES.length, fallback.skin),
     hair: idx(o.hair, HAIR_COLORS.length, fallback.hair),
     style: idx(o.style, HAIR_STYLES.length, fallback.style),
+    body: sanitizeBody(o.body, fallback.body), // nexura
   };
 }
 
 export function sameLook(a: Look, b: Look): boolean {
-  return a.skin === b.skin && a.hair === b.hair && a.style === b.style;
+  return a.skin === b.skin && a.hair === b.hair && a.style === b.style && (a.body ?? 0) === (b.body ?? 0); // nexura: was … && a.style === b.style;
 }

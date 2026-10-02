@@ -52,6 +52,10 @@ Desde el refactor de upstream (#215, `main.ts`, `server.ts` y `office.ts` dividi
 | `src/client/world/outside.ts` | los tres árboles junto a la fachada oeste, 10 m más allá | Que no atraviesen el suelo de la planta, ahora más ancha. |
 | `src/client/world/city.ts` | `PERIOD` 66 (antes 56) | Manzanas más anchas en la ciudad de la azotea, para que la calle oeste no atraviese el edificio. |
 | `src/shared/nav.ts` | `rects.push(...nexuraObstacles())` en `obstacles`; `WALK_OFF_X` relativo a la escalera de salida (antes -38) | Trabajadores y perro rodean lo de Nexura, y quien se va a casa se aleja por la acera igual que antes. |
+| `src/shared/avatar.ts` | `Look.body?`, `sanitizeBody(...)` en `sanitizeLook` y `body` en `sameLook` | La complexión del personaje (normal, delgado, fuerte, gordo), validada como el resto del aspecto. |
+| `src/client/net.ts`, `src/server/ws/connection.ts` | `body` en los parámetros de `/ws` | El cuerpo llega con el resto del aspecto al conectar. |
+| `src/client/world/character/person.ts`, `tests/size.test.ts` | `shapeBody(this)` en el constructor y en `setLook`; techo 699 → 702 | Cada persona se construye con su complexión (`nexura/body.ts`). |
+| `src/client/ui/character.ts` | la fila "Body" y `randomBody()` en "Surprise me" | Elegir el cuerpo en la pantalla del personaje. |
 | `package.json`, `bin/test.js` | `"test": "node bin/test.js"` (con `--import=#tests/css` de upstream) | En Windows, `workers.test.ts` se ejecuta aparte. |
 
 ## Archivos propios
@@ -74,6 +78,7 @@ Desde el refactor de upstream (#215, `main.ts`, `server.ts` y `office.ts` dividi
 | `src/client/nexura/fixtures.ts`, `places.ts`, `panel.ts` | La lista de fixtures de Nexura, dónde está cada uno (reexporta `PLACES`) y las pantallas pintadas en canvas. |
 | `src/shared/nexura-places.ts` | Dónde está cada cosa de Nexura en la planta (el ala oeste) y sus huellas para la navegación (`nexuraObstacles`). |
 | `src/client/nexura/wallet.ts`, `shop.ts`, `cosmetics.ts` | Monedero, el puesto y la ventana de la tienda, y la ropa en 3D. |
+| `src/shared/nexura-body.ts`, `src/client/nexura/body.ts` | Las complexiones (`BODY_TYPES`) y cómo cada una estira torso y extremidades, con pectorales, hombros o barriga; `bodyFit` ajusta la ropa de la tienda. |
 | `src/client/nexura/digest.ts`, `control-room.ts`, `boards.ts`, `fame.ts` | El resumen de Nexura y las salas que lo pintan. |
 | `src/client/nexura/desk.ts`, `bets.ts`, `inbox.ts`, `worker-props.ts` | Aprobar desde la mesa, apuestas, el buzón y la gorra y el objeto de cada flujo. |
 | `src/client/nexura/games.ts`, `futbolin.ts`, `ducks.ts` | La sala de juegos, el futbolín y los patitos por temporadas. |

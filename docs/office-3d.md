@@ -87,6 +87,7 @@ Como Nexura es personal, el monedero, la tienda y la ropa solo aparecen en la of
 - **Monedas**: arriba a la izquierda; con un clic, la tienda.
 - **Tienda**: un puesto con toldo contra la pared norte del ala oeste, junto a la galería de la fama (E). La misma ventana que la sección Tienda de Nexura: ofertas del día y tu colección para ponerte y quitarte cosas.
 - **Tu personaje**: lo que llevas puesto lo ve toda la planta (`PeerInfo.nexura`). Los sombreros, complementos, mascotas, estelas y placas se construyen en `src/client/nexura/cosmetics.ts`. Un sombrero tapa el de Halloween o Navidad.
+- **Cuerpo**: en la pantalla del personaje, junto al tono de piel, se elige complexión: normal, delgado, fuerte o gordo (`Look.body`, un índice de `BODY_TYPES` en `src/shared/nexura-body.ts`; sin él, el normal). `src/client/nexura/body.ts` estira el torso, engorda o adelgaza brazos y piernas y añade pectorales y hombros (fuerte) o barriga (gordo); la bufanda, la capa, la pajarita y la mochila propulsora se ajustan al cuerpo (`bodyFit`). Viaja con el resto del aspecto (`?body=` al conectar y el mensaje `profile`), así que toda la planta lo ve. Tests en `tests/nexura-body.test.ts`.
 - **Patitos**: cinco por planta, en 5 de los 12 escondites de `src/client/nexura/ducks.ts` (`DUCK_SPOTS`), que cambian cada semana ISO. Cada uno paga monedas una vez por temporada, y los cinco, un extra. Para los logros siguen contando del 1 al 5.
 
 Las salas y cosas nuevas, y dónde están (`src/shared/nexura-places.ts`):
@@ -118,7 +119,11 @@ La planta de la oficina es 10 m más ancha que la de upstream, hacia el oeste (`
 
 ### Modo god (`npm run demo`)
 
-Para enseñar Nexura: `npm run demo` compila la UI y la oficina y arranca las dos con datos nuevos en una carpeta temporal (ningún logro ni historial), el monedero con 999.999.999 monedas y la contraseña `demo`. Por defecto usa los agentes falsos y un repo de prueba (`fixtures/sandbox.mjs`, el mismo de `/try-fake`) con un `claude` falso delante en el `PATH` de la oficina, así que no gasta cuota. Opciones de `node scripts/demo.mjs`: `--real` (tus agentes y `config/repos.json`, que **sí** gastan cuota), `--coins <n>`, `--port`, `--office-port` y `--delay` (ms de los agentes falsos).
+Para enseñar Nexura: `npm run demo` compila la UI y la oficina y arranca las dos con datos nuevos en una carpeta temporal, el monedero con 999.999.999 monedas, **toda la tienda comprada** (galería de la fama, futbolín, Trivial, Gran Premio y toda la ropa, con corona, capa, robot, arcoíris y placa dorada puestos) y la contraseña `demo`. Por defecto usa los agentes falsos y un repo de prueba (`fixtures/sandbox.mjs`, el mismo de `/try-fake`) con un `claude` falso delante en el `PATH` de la oficina, así que no gasta cuota.
+
+Antes de abrirse, la demo se llena de historia (`scripts/demo-seed.mjs`, por la API de Nexura y sin retardo en los agentes falsos): tres flujos terminados con diffs de código de verdad (el `implement` falso edita `src/cart.js`, `src/format.js` y el README con `FAKE_DEMO_EDITS`), dos de ellos con PR que el GitHub falso da por integrada (`--merge-created`, así que salen en la galería), uno con Copilot y otro con Codex; un flujo fallido (el texto «Exportar pedidos a CSV» hace fallar el plan); las PR #1 y #2 revisadas en Revisiones (la #2, publicada), y dos conversaciones en Terminal, una de ellas traspasada de Claude a Codex. Con eso ya hay logros y monedas ganadas. Al arrancar, deja dos flujos en marcha: uno que pedirá el visto bueno de su PR y otro paso a paso.
+
+Opciones de `node scripts/demo.mjs`: `--empty` (sin esa historia), `--real` (tus agentes y `config/repos.json`, que **sí** gastan cuota; sin historia), `--coins <n>`, `--port`, `--office-port` y `--delay` (ms de los agentes falsos).
 
 ### Probar sin cuota
 
