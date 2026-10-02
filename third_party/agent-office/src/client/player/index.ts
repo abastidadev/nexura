@@ -4,7 +4,7 @@ import type { ViewMode } from '../state';
 import type { Collider } from '../world/types';
 import { HIPS } from '../world/character/rig';
 import { PlayerInput, isTyping } from './pointer';
-import { HEIGHT, STEP, blockerAt, ceilingAt, groundAt, stepTo } from './collide';
+import { HEIGHT, STEP, blockerAt, ceilingAt, groundAt, ledgeSlide, stepTo } from './collide'; // nexura: ledgeSlide
 import { EYE_HEIGHT, aimCamera, shakeCamera, type Room } from './camera';
 import { Effects } from './effects';
 
@@ -15,6 +15,8 @@ const WALK = 4.6;
 const RUN = 7.5;
 const JUMP_V = 6.4;
 const GRAVITY = 18;
+/** nexura: how fast you slide off an edge you're only just on (see slideOffLedge). */
+const SLIDE = 3;
 
 // What the rest of the client takes from here, wherever it lives now: the eye height (camera.ts), the
 // ground under someone (collide.ts) and isTyping (pointer.ts).
@@ -211,6 +213,8 @@ export class PlayerController extends PlayerInput {
       }
     }
 
+    // nexura: on the very edge of something with your middle out over a drop, slide off it (see ledgeSlide).
+    if (this.grounded) this.slideOffLedge(dt);
     // Never below the street: past the edge of the grass there's nothing else to stand on.
     const ground = Math.max(groundAt(this.colliders, this.pos.x, this.pos.z, this.pos.y), this.street);
     const jump = this.enabled && k.has('Space') && this.grounded;
@@ -303,5 +307,15 @@ export class PlayerController extends PlayerInput {
 
   private tryMove(x: number, z: number) {
     stepTo(this, x, z);
+  }
+
+  /** nexura: off an edge you're only just on, at a slide's pace, so you never stand on air. */
+  private slideOffLedge(dt: number) {
+    const s = ledgeSlide(this.colliders, this.pos.x, this.pos.z, this.pos.y, this.street);
+    if (!s) return;
+    const len = Math.hypot(s.dx, s.dz);
+    const k = Math.min(1, (SLIDE * dt) / len);
+    this.tryMove(this.pos.x + s.dx * k, this.pos.z);
+    this.tryMove(this.pos.x, this.pos.z + s.dz * k);
   }
 }

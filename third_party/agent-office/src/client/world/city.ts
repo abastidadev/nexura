@@ -19,7 +19,7 @@ import { buildTower } from './tower';
 /** The building, walls included. */
 const B = { minX: FLOOR.minX - WALL_T, maxX: FLOOR.maxX + WALL_T, minZ: FLOOR.minZ - WALL_T, maxZ: FLOOR.maxZ + WALL_T } as const;
 /** A block and the street beside it; streets run down x = 28 + 56k and z = 27 + 56k. */
-const PERIOD = 56;
+const PERIOD = 66; // nexura: was 56; the office's block is wider, its west street moved out to x = -38 (see FLOOR)
 const STREET_X = 28;
 const STREET_Z = 27;
 /** The road, and a sidewalk either side. */

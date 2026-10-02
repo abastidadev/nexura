@@ -1,6 +1,7 @@
 // nexura: Nexura's mailbox, by the Issues board. Drop an issue card you're carrying in it and Nexura's
 // New flow opens with that issue and this floor's repo filled in; the card goes back on the board.
 import * as THREE from 'three';
+import { boxFootprint } from '../../shared/maps/props';
 import type { CarriedIssue } from '../../shared/protocol';
 import { aside, hintTitle, key } from '../core/hint';
 import { store } from '../state';
@@ -11,6 +12,12 @@ import type { Fixture } from '../world/office/fixture';
 import { canStartFlows, startNexuraFlow } from './external';
 import { PLACES } from './places';
 import { nexuraThing } from './things';
+
+/** The box on its post, turned the way it faces. */
+function footprint(x: number, z: number, rotY: number) {
+  const [minX, maxX, minZ, maxZ] = boxFootprint(x, z, 0.6, 0.8, rotY);
+  return { minX, maxX, minZ, maxZ, top: 1.6 };
+}
 
 export const inboxFixture: Fixture = () => {
   const g = new THREE.Group();
@@ -30,7 +37,7 @@ export const inboxFixture: Fixture = () => {
   g.rotation.y = rotY;
   const it: Interactable = { kind: 'nexura', nexura: 'inbox', x: x + Math.sin(rotY) * 0.9, z: z + Math.cos(rotY) * 0.9, radius: 1.3 };
   g.userData.interact = it;
-  return { group: g, colliders: [{ minX: x - 0.3, maxX: x + 0.3, minZ: z - 0.4, maxZ: z + 0.4, top: 1.6 }], interactables: [it] };
+  return { group: g, colliders: [footprint(x, z, rotY)], interactables: [it] };
 };
 
 /** A card dropped in the mailbox: the issue goes to Nexura's New flow, the card back on the board. */

@@ -101,12 +101,12 @@ test("a floor's dog keeps its name and coat, and gets a breed, from its id", () 
     const d = dogDefaults(`floor-${i}`);
     assert.equal(dogDefaults(`floor-${i}`).breed, d.breed, 'the same breed every time');
     seen.add(d.breed);
-    if (d.name === 'Pancake') pancakes.add(d.breed);
+    if (d.name === 'Nala') pancakes.add(d.breed); // nexura: was 'Pancake'
   }
   assert.equal(seen.size, DOG_BREEDS.length, 'every breed turns up');
   assert.ok(pancakes.size > 1, "a dog's breed doesn't go with its name");
   // What these floors were called and wore before there were breeds.
-  assert.deepEqual({ ...dogDefaults('main'), breed: undefined }, { name: 'Pancake', coat: 5, breed: undefined });
+  assert.deepEqual({ ...dogDefaults('main'), breed: undefined }, { name: 'Nala', coat: 5, breed: undefined }); // nexura: was 'Pancake'
   assert.equal(dogBreed(undefined), 'pup', 'an office that sends no breed has the pup');
   assert.equal(dogBreed('wolf'), 'pup', "a breed this page doesn't know is the pup");
   assert.equal(dogBreed('corgi'), 'corgi');

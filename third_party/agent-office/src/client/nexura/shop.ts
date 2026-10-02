@@ -2,6 +2,7 @@
 // from the coins in the corner, and your collection to put things on and take them off. What's for
 // sale changes at midnight; Nexura keeps the wallet (see wallet.ts).
 import * as THREE from 'three';
+import { boxFootprint } from '../../shared/maps/props';
 import { aside, hintTitle, key } from '../core/hint';
 import { h, openModal } from '../ui/dom';
 import { mesh, roundedBox, textPlane, toon } from '../world/toon';
@@ -140,8 +141,8 @@ function buildStall(): { group: THREE.Group; collider: Collider; interactable: I
   const { x, z, rotY } = PLACES.shop;
   g.position.set(x, 0, z);
   g.rotation.y = rotY;
-  // Turned a quarter: it runs along z.
-  const collider: Collider = { minX: x - 0.4, maxX: x + 0.4, minZ: z - 1, maxZ: z + 1, top: 1.1 };
+  const [minX, maxX, minZ, maxZ] = boxFootprint(x, z, 2, 0.8, rotY);
+  const collider: Collider = { minX, maxX, minZ, maxZ, top: 1.1 };
   const interactable: Interactable = { kind: 'nexura', nexura: 'shop', x: x + Math.sin(rotY) * 1.2, z: z + Math.cos(rotY) * 1.2, radius: 1.5 };
   g.userData.interact = interactable;
   return { group: g, collider, interactable };

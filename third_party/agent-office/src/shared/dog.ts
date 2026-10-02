@@ -67,7 +67,8 @@ export function dogDefaults(floorId: string): { name: string; coat: number; bree
   let h = 0;
   for (const ch of floorId) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
   const stirred = Math.imul(h ^ (h >>> 16), 0x45d9f3b) >>> 0;
-  return { name: DOG_NAMES[h % DOG_NAMES.length], coat: (h >>> 8) % DOG_COATS.length, breed: DOG_BREEDS[(stirred >>> 16) % DOG_BREEDS.length] };
+  // nexura: every floor's dog is Nala until someone names it (was DOG_NAMES[h % DOG_NAMES.length]).
+  return { name: 'Nala', coat: (h >>> 8) % DOG_COATS.length, breed: DOG_BREEDS[(stirred >>> 16) % DOG_BREEDS.length] };
 }
 
 /** Takes control characters out and trims to DOG_NAME_MAX; '' when nothing's left. */

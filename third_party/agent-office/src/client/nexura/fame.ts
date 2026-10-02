@@ -2,6 +2,7 @@
 // of each PR your flows got merged, newest first. Until it's bought from Nexura's shop, a velvet rope
 // keeps you out and the frames stay covered.
 import * as THREE from 'three';
+import { boxFootprint } from '../../shared/maps/props';
 import { aside, hintTitle, key } from '../core/hint';
 import { h, openModal } from '../ui/dom';
 import { mesh, textPlane, toon } from '../world/toon';
@@ -77,6 +78,12 @@ function paint() {
 onDigest(paint);
 onWallet(paint);
 
+/** The gallery wall, `length` along it, turned the way it faces. */
+function footprint(x: number, z: number, length: number, rotY: number) {
+  const [minX, maxX, minZ, maxZ] = boxFootprint(x, z, length, 0.24, rotY);
+  return { minX, maxX, minZ, maxZ };
+}
+
 export const fameFixture: Fixture = () => {
   const { x, z, rotY, length } = PLACES.fame;
   const g = new THREE.Group();
@@ -125,7 +132,7 @@ export const fameFixture: Fixture = () => {
   paint();
   const it: Interactable = { kind: 'nexura', nexura: 'fame', x: x + Math.sin(rotY) * 1.6, z: z + Math.cos(rotY) * 1.6, radius: 2.6 };
   g.userData.interact = it;
-  return { group: g, colliders: [{ minX: x - 0.12, maxX: x + 0.12, minZ: z - length / 2, maxZ: z + length / 2, top: 2.6 }], interactables: [it] };
+  return { group: g, colliders: [{ ...footprint(x, z, length, rotY), top: 2.6 }], interactables: [it] };
 };
 
 function openFame() {

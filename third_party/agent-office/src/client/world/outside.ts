@@ -347,9 +347,10 @@ export function buildStreet(group: THREE.Group, colliders: Collider[], night: Ni
     [-12, 32.5, 1],
     [14, 32.5, 1.15],
     [42, 32.5, 1],
-    [-27, -8, 1.2],
-    [-29, 4, 1],
-    [-26, 14, 0.9],
+    // nexura: 10 m further out (were x -27, -29 and -26), off the wider floor (see FLOOR).
+    [-37, -8, 1.2],
+    [-39, 4, 1],
+    [-36, 14, 0.9],
     [29, -6, 1.1],
     [30, 6, 1.25],
     [-12, -22, 1.2],

@@ -36,7 +36,7 @@ Desde el refactor de upstream (#215, `main.ts`, `server.ts` y `office.ts` dividi
 | `src/server/building.ts` | `withNexuraRepos(...)`, `nexuraCheckout(...)` y el método `addCheckout` | Los repos de Nexura (`nexura/<nombre>`) aparecen en el ascensor y se abren como planta en su carpeta, sin clonar. |
 | `src/server/limits.ts`, `src/server/tasks.ts` | `npmNodeShim`, `cross-spawn` | En Windows, límites y nombres de tareas también funcionan con `claude.cmd`. |
 | `src/client/main.ts` | `installNexura(ctx, parts)` | El interactuable `nexura`, las monedas, la ropa de cada uno, el heraldo, la visita guiada; en plantas de ADO, "GitHub" pasa a "Azure DevOps". |
-| `src/client/world/office/build.ts` | `...nexuraFixtures` en `floorPlan()` | Construye en cada planta lo de Nexura (`nexura/fixtures.ts`, posiciones en `nexura/places.ts`). |
+| `src/client/world/office/build.ts` | `...nexuraFixtures` en `floorPlan()` | Construye en cada planta lo de Nexura (`nexura/fixtures.ts`, posiciones en `src/shared/nexura-places.ts`). |
 | `src/client/features/palette/index.ts` | `nexuraPaletteEntries(...)` | Lo de Nexura en la paleta. |
 | `src/client/ui/elevator.ts` | la nota del pie para repos `nexura/…` | Un repo de Nexura se abre en su carpeta, sin clonar. |
 | `src/client/input/pointer.ts` | `nexuraUse(...)` en `interact` | Lo que usas en la oficina cuenta para los logros. |
@@ -46,6 +46,12 @@ Desde el refactor de upstream (#215, `main.ts`, `server.ts` y `office.ts` dividi
 | `src/client/features/carrying/index.ts` | `nexuraCardRefusal` en `cantTakeCard`; `nexuraDropCard` en `dropCard` | Un flujo de Nexura no acepta tarjetas de issues; soltar una en el buzón abre Nuevo flujo. |
 | `src/client/ui/github/issue-window.ts` | `nexuraIssueButton(...)` | Botón "Resolve with Nexura", que abre Nuevo flujo en Nexura con los datos rellenados. |
 | `tests/size.test.ts` | techo de `workers/manager.ts` (1029 → 1030) | La línea de import de los enganches. |
+| `src/shared/dog.ts`, `tests/dog-model.test.ts` | `name: 'Nala'` en `dogDefaults` (antes, uno de `DOG_NAMES`) | El perro de cada planta se llama Nala mientras nadie lo renombre. |
+| `src/client/player/collide.ts`, `src/client/player/index.ts` | `ledgeSlide` y `slideOffLedge` | Con el centro fuera del borde de lo que pisas (y una caída de más de un escalón), resbalas en vez de quedarte de pie sobre el aire. Tests en `tests/nexura-player.test.ts`. |
+| `src/shared/layout.ts` | `FLOOR.minX` -28 (antes -18); los pufs y las plantas del lado oeste, relativos a `FLOOR.minX`; una ventana sur más (`u` -22) y una oeste menos (`u` -9, donde va la sala de control); `MACHINE_MONITOR.z` -5.75 (antes -6) | Un edificio 10 m más ancho, con un ala oeste para lo de Nexura. |
+| `src/client/world/outside.ts` | los tres árboles junto a la fachada oeste, 10 m más allá | Que no atraviesen el suelo de la planta, ahora más ancha. |
+| `src/client/world/city.ts` | `PERIOD` 66 (antes 56) | Manzanas más anchas en la ciudad de la azotea, para que la calle oeste no atraviese el edificio. |
+| `src/shared/nav.ts` | `rects.push(...nexuraObstacles())` en `obstacles`; `WALK_OFF_X` relativo a la escalera de salida (antes -38) | Trabajadores y perro rodean lo de Nexura, y quien se va a casa se aleja por la acera igual que antes. |
 | `package.json`, `bin/test.js` | `"test": "node bin/test.js"` (con `--import=#tests/css` de upstream) | En Windows, `workers.test.ts` se ejecuta aparte. |
 
 ## Archivos propios
@@ -65,7 +71,8 @@ Desde el refactor de upstream (#215, `main.ts`, `server.ts` y `office.ts` dividi
 | `src/server/windows-command.ts`, `bin/agent-office-cmd.js` | Detectan el formato completo de un shim npm y lanzan wrappers batch personalizados desde un PTY (`windowsSpawn`). Rechazan prompts multilínea en batch para evitar que `cmd.exe` los interprete como comandos. |
 | `src/server/nexura/achievements.ts` | Pasa a Nexura (`NEXURA_URL/api/achievements`) la lista de logros y, validados campo a campo, los eventos de la oficina. |
 | `src/client/nexura/index.ts` | `installNexura(ctx, parts)`: define el interactuable `nexura` (que reparte `things.ts` por prefijo), arranca monedas y resumen, viste a todos y avisa al heraldo. |
-| `src/client/nexura/fixtures.ts`, `places.ts`, `panel.ts` | La lista de fixtures de Nexura, dónde está cada uno y las pantallas pintadas en canvas. |
+| `src/client/nexura/fixtures.ts`, `places.ts`, `panel.ts` | La lista de fixtures de Nexura, dónde está cada uno (reexporta `PLACES`) y las pantallas pintadas en canvas. |
+| `src/shared/nexura-places.ts` | Dónde está cada cosa de Nexura en la planta (el ala oeste) y sus huellas para la navegación (`nexuraObstacles`). |
 | `src/client/nexura/wallet.ts`, `shop.ts`, `cosmetics.ts` | Monedero, el puesto y la ventana de la tienda, y la ropa en 3D. |
 | `src/client/nexura/digest.ts`, `control-room.ts`, `boards.ts`, `fame.ts` | El resumen de Nexura y las salas que lo pintan. |
 | `src/client/nexura/desk.ts`, `bets.ts`, `inbox.ts`, `worker-props.ts` | Aprobar desde la mesa, apuestas, el buzón y la gorra y el objeto de cada flujo. |

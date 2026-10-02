@@ -105,6 +105,39 @@ export function groundAt(colliders: Collider[], x: number, z: number, y: number,
   return g;
 }
 
+/**
+ * nexura: standing on the very edge of something with your middle out over a drop (more than a STEP
+ * down), the way to slide off it: away from what holds you up, as far as it takes to clear it. Null
+ * while your middle is over it (or over something else about as high), or there's nothing under you.
+ * Without it you'd stand on air up to RADIUS past a desk's edge, or on top of a post, then drop.
+ */
+export function ledgeSlide(colliders: Collider[], x: number, z: number, y: number, floor = -Infinity): { dx: number; dz: number } | null {
+  let under = -Infinity;
+  let holder: Collider | null = null;
+  let best = Infinity;
+  for (const c of colliders) {
+    if (c.top > 50 || y < c.top - 0.1 || c.top < y - 0.1) continue;
+    const nx = THREE.MathUtils.clamp(x, c.minX, c.maxX);
+    const nz = THREE.MathUtils.clamp(z, c.minZ, c.maxZ);
+    const d = Math.hypot(x - nx, z - nz);
+    if (d === 0) return null;
+    if (d < RADIUS && d < best) {
+      best = d;
+      holder = c;
+    }
+  }
+  if (!holder) return null;
+  for (const c of colliders) {
+    if (c.top > 50 || y < c.top - 0.1 || c.top <= under) continue;
+    if (x > c.minX && x < c.maxX && z > c.minZ && z < c.maxZ) under = c.top;
+  }
+  if (Math.max(under, floor) >= y - STEP) return null;
+  const nx = THREE.MathUtils.clamp(x, holder.minX, holder.maxX);
+  const nz = THREE.MathUtils.clamp(z, holder.minZ, holder.maxZ);
+  const k = (RADIUS - best + 0.005) / best;
+  return { dx: (x - nx) * k, dz: (z - nz) * k };
+}
+
 /** The underside of whatever is overhead at (x, z) for feet at `y` (the loft, its roof), or Infinity. */
 export function ceilingAt(colliders: Collider[], x: number, z: number, y: number): number {
   let top = Infinity;

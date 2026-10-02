@@ -85,30 +85,40 @@ El monedero y la tienda son de Nexura (`apps/server/src/rewards`, catálogo y so
 Como Nexura es personal, el monedero, la tienda y la ropa solo aparecen en la oficina abierta dentro de Nexura o en la propia máquina (`localhost`). Si comparte la oficina con más gente, ven tu ropa puesta, pero no tus monedas.
 
 - **Monedas**: arriba a la izquierda; con un clic, la tienda.
-- **Tienda**: un puesto con toldo junto al ascensor (E). La misma ventana que la sección Tienda de Nexura: ofertas del día y tu colección para ponerte y quitarte cosas.
+- **Tienda**: un puesto con toldo contra la pared norte del ala oeste, junto a la galería de la fama (E). La misma ventana que la sección Tienda de Nexura: ofertas del día y tu colección para ponerte y quitarte cosas.
 - **Tu personaje**: lo que llevas puesto lo ve toda la planta (`PeerInfo.nexura`). Los sombreros, complementos, mascotas, estelas y placas se construyen en `src/client/nexura/cosmetics.ts`. Un sombrero tapa el de Halloween o Navidad.
 - **Patitos**: cinco por planta, en 5 de los 12 escondites de `src/client/nexura/ducks.ts` (`DUCK_SPOTS`), que cambian cada semana ISO. Cada uno paga monedas una vez por temporada, y los cinco, un extra. Para los logros siguen contando del 1 al 5.
 
-Las salas y cosas nuevas, y dónde están (`src/client/nexura/places.ts`):
+Las salas y cosas nuevas, y dónde están (`src/shared/nexura-places.ts`):
 
 | Qué | Dónde | Qué hace |
 |---|---|---|
-| 🛰️ Sala de control | Pasillo oeste, mirando a las mesas | Un monitor por flujo en marcha, con su pipeline, agente, coste y si te espera (si hay más de tres, se turnan). Con E, la lista: aprobar, apostar o abrir. |
+| 🛰️ Sala de control | Contra la pared oeste, al fondo del edificio, bajo el monitor de la máquina | Un monitor por flujo en marcha, con su pipeline, agente, coste y si te espera (si hay más de tres, se turnan). Con E, la lista: aprobar, apostar o abrir. |
 | ✋ Aprobar desde la mesa | La mesa de cada flujo | Con P, un flujo en pausa sigue tal como lo propone Nexura (el paso, la PR o las respuestas) o se salta el paso (`POST /api/office/runs/:id/continue`). Editarlo sigue siendo cosa de Nexura. |
 | 🎲 Porra | La mesa de cada flujo (C) o la sala de control | Apostar si pasa a la primera. |
-| 📮 Buzón | Pared oeste, bajo la esquina del tablero de Issues | Soltar ahí una tarjeta del tablero de Issues abre Nuevo flujo en Nexura con ella. |
+| 📮 Buzón | Pared norte, junto a la esquina del tablero de Issues | Soltar ahí una tarjeta del tablero de Issues abre Nuevo flujo en Nexura con ella. |
 | 👁️ Por revisar | Junto a la escalera | Las PR de otras personas que esperan tu revisión. Con E, la lista, y cada una abre Revisiones. |
 | 📅 Hoy en Nexura | Junto a la pizarra | Flujos terminados, PR, revisiones, gasto, monedas y logros del día. Con E, Métricas. |
 | 🥤 Máquina de cuota | Al final de la encimera de la cocina | Cuánta cuota de Claude queda (5 h y semana). |
-| 🖼️ Galería de la fama | Entre las islas y el salón | Un cuadro por PR integrada de tus flujos. Se compra en la tienda; hasta entonces, cordón y cuadros tapados. |
-| 🎮 Sala de juegos | Entre las islas y el salón, al sur | Futbolín (contra la máquina o dos en un teclado; ganar paga, con tope diario), Trivial del repo (preguntas sacadas de `git log` de tus repos) y el Gran Premio (un circuito de sobremesa: cada flujo es un coche que avanza según sus pasos). Cada juego se compra en la tienda; hasta entonces, bajo una lona. |
+| 🖼️ Galería de la fama | Ala oeste, contra la pared norte | Un cuadro por PR integrada de tus flujos. Se compra en la tienda; hasta entonces, cordón y cuadros tapados. |
+| 🎮 Sala de juegos | En medio del ala oeste, lejos de las islas (la esquina suroeste es la cancha de la canasta) | Futbolín (contra la máquina o dos en un teclado; ganar paga, con tope diario), Trivial del repo (preguntas sacadas de `git log` de tus repos) y el Gran Premio (un circuito de sobremesa: cada flujo es un coche que avanza según sus pasos). Cada juego se compra en la tienda; hasta entonces, bajo una lona. |
 
 Además:
 
 - Cada flujo lleva una gorra del color de su agente y el objeto de su paso (lupa, teclado, probeta…). Su tarjeta dice cuánto lleva gastado, y el gong suena cuando se integra su PR.
 - En el mapa de castillo, el heraldo pregona los flujos que esperan o terminan.
+- El perro de cada planta se llama **Nala** mientras nadie le cambie el nombre en ⚙️ Settings (`dogDefaults` en `src/shared/dog.ts`).
+- Al subirte a una mesa o a cualquier objeto, si te quedas con el centro del cuerpo fuera del borde resbalas y caes, en vez de quedarte flotando en el aire hasta 0,32 m más allá (`ledgeSlide` en `src/client/player/collide.ts`).
 - La paleta (Ctrl+K) encuentra todo lo anterior y las páginas de Nexura.
 - La primera vez hay una visita guiada, que vuelve desde la paleta («Visita guiada de Nexura»).
+
+### Un edificio más amplio
+
+La planta de la oficina es 10 m más ancha que la de upstream, hacia el oeste (`FLOOR.minX` -28 en vez de -18), para que lo de Nexura no apriete las islas ni el salón. Lo que estaba contra la pared oeste se ha movido con ella (ventanas, puerta y escalera de salida, monitor de la máquina, escalera de mano, pufs junto a las ventanas, plantas de las esquinas, la canasta y su cancha) y también los árboles de la calle de ese lado; hay una ventana más en la pared sur y una menos en la oeste (la más al norte, donde está la sala de control). Las cosas de Nexura ocupan esa ala oeste (`src/shared/nexura-places.ts`), y los trabajadores y el perro las rodean (`nexuraObstacles` en la navegación). La ciudad que se ve desde la azotea tiene las manzanas más anchas (`PERIOD` 66 en vez de 56), para que la calle oeste no atraviese el edificio.
+
+### Modo god (`npm run demo`)
+
+Para enseñar Nexura: `npm run demo` compila la UI y la oficina y arranca las dos con datos nuevos en una carpeta temporal (ningún logro ni historial), el monedero con 999.999.999 monedas y la contraseña `demo`. Por defecto usa los agentes falsos y un repo de prueba (`fixtures/sandbox.mjs`, el mismo de `/try-fake`) con un `claude` falso delante en el `PATH` de la oficina, así que no gasta cuota. Opciones de `node scripts/demo.mjs`: `--real` (tus agentes y `config/repos.json`, que **sí** gastan cuota), `--coins <n>`, `--port`, `--office-port` y `--delay` (ms de los agentes falsos).
 
 ### Probar sin cuota
 

@@ -2,7 +2,10 @@
 // Units are meters; +y is up. The office floor spans FLOOR.minX..maxX / minZ..maxZ at y = 0,
 // upstairs over a garage whose floor is level with the street (STREET_Y).
 
-export const FLOOR = { minX: -18, maxX: 18, minZ: -13, maxZ: 13 } as const;
+// nexura: 10 m wider to the west (was minX: -18), so Nexura's rooms get a wing of their own off the
+// west aisle instead of crowding the pods and the lounge (see client/nexura/places.ts). What stood
+// against the west wall moved with it; the city's blocks are wider to make room (world/city.ts).
+export const FLOOR = { minX: -28, maxX: 18, minZ: -13, maxZ: 13 } as const;
 /** How high the ceiling is: a meter over the loft's roof (LOFT.y + LOFT.height), all the way across the room. */
 export const WALL_HEIGHT = 6.8;
 
@@ -118,13 +121,13 @@ export const BEANBAGS: DeskDef[] = (
     // the gong's front and the elevator doors.
     [15, -9.8, 0],
     [5.4, -9.8, 0],
-    [-16.1, -9, Math.PI / 2],
-    [-16.1, -3, Math.PI / 2],
+    [FLOOR.minX + 3.6, -9.5, Math.PI / 2], // nexura: was [-16.1, -9]: in front of the control room, where the north window was
+    [FLOOR.minX + 1.9, -3, Math.PI / 2], // nexura: was -16.1 (and the one below), by the west windows
     [-8.8, 10.2, Math.PI],
     [0.8, 10.2, Math.PI],
     [12.2, -5.6, -Math.PI / 2],
     [12.2, 5.6, -Math.PI / 2],
-    [-16.1, 3, Math.PI / 2],
+    [FLOOR.minX + 1.9, 3, Math.PI / 2],
     // Clear of the board agents' kiosks, and of the floor in front of them.
     [-13.2, -9.8, 0],
     [-12.6, 9.2, Math.PI / 2],
@@ -254,7 +257,7 @@ export const TV = { x: FLOOR.maxX - 0.1, y: 2.2, z: 0, width: 6.4, height: 3.6 }
  * span between the middle two) and facing the desks: how busy the office's machine is, and how many
  * workers it runs of the most it takes.
  */
-export const MACHINE_MONITOR = { x: FLOOR.minX, y: 2.2, z: -6, width: 2.3, height: 1.3 } as const;
+export const MACHINE_MONITOR = { x: FLOOR.minX, y: 2.2, z: -5.75, width: 2.3, height: 1.3 } as const; // nexura: was z -6, clear of the control room
 /** The lounge jukebox, against the east wall south of the TV, facing into the room. `y` is its speaker. */
 export const JUKEBOX = { x: FLOOR.maxX - 0.42, y: 0.75, z: 5.4, width: 1.3, depth: 0.72, height: 1.85 } as const;
 /** The arcade cabinet, against the east wall between the jukebox and the loft, facing into the room. `width` runs along the wall. */
@@ -274,10 +277,10 @@ export const GONG = { x: 11.8, z: FLOOR.minZ + 0.75, width: 1.9, height: 2.45 } 
 
 /** Potted plants around the room: where each stands, and how big it is. */
 export const PLANTS: readonly (readonly [x: number, z: number, scale: number])[] = [
-  [-17.2, -12.2, 1.4],
+  [FLOOR.minX + 1.7, -12.55, 1.4], // nexura: was [-17.2, -12.2], by the north wall, past the control room
   [17.2, -12.2, 1.5],
   [17.2, 12.2, 1.3],
-  [-17.2, 8.5, 1.2],
+  [FLOOR.minX + 0.8, 8.5, 1.2], // nexura: was -17.2, in the south-west corner
   [14.2, -12.2, 1.1],
   [-6, 0, 1],
   [3.5, 0, 0.9],
@@ -337,8 +340,8 @@ export interface Opening {
 
 /** Windows you can see out of, and the loft's two, which sit higher up. */
 export const WINDOWS: Opening[] = [
-  ...[-14, -9, 1].map((u) => ({ wall: 'south' as const, u, width: 3, y0: 1.1, y1: 3.3 })),
-  ...[-9, -3, 3].map((u) => ({ wall: 'west' as const, u, width: 3, y0: 1.1, y1: 3.3 })),
+  ...[-22, -14, -9, 1].map((u) => ({ wall: 'south' as const, u, width: 3, y0: 1.1, y1: 3.3 })), // nexura: -22 in the new west wing
+  ...[-3, 3].map((u) => ({ wall: 'west' as const, u, width: 3, y0: 1.1, y1: 3.3 })), // nexura: was [-9, -3, 3]; the control room has that wall
   { wall: 'south', u: LOFT.minX + 2, width: 2.8, y0: LOFT.y + 0.9, y1: LOFT.y + 2.5 },
   { wall: 'east', u: (LOFT.minZ + LOFT.maxZ) / 2, width: 2.8, y0: LOFT.y + 0.9, y1: LOFT.y + 2.5 },
 ];

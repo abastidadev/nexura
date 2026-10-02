@@ -2,6 +2,7 @@
 // each one's pipeline step by step, the agent on it, what it has cost and whether it waits for you.
 // More than three take turns. E lists them all, to open one or approve the ones waiting.
 import * as THREE from 'three';
+import { boxFootprint } from '../../shared/maps/props';
 import { aside, hintTitle, key } from '../core/hint';
 import { h, openModal } from '../ui/dom';
 import { mesh, roundedBox, textPlane, toon } from '../world/toon';
@@ -125,10 +126,11 @@ export const controlRoomFixture: Fixture = () => {
   g.position.set(x, 0, z);
   g.rotation.y = rotY;
   paint();
-  // Turned to face east: it runs along z.
   const it: Interactable = { kind: 'nexura', nexura: 'control', x: x + Math.sin(rotY) * 1.6, z: z + Math.cos(rotY) * 1.6, radius: 2.4 };
   g.userData.interact = it;
-  return { group: g, colliders: [{ minX: x - 0.15, maxX: x + 1.15, minZ: z - width / 2, maxZ: z + width / 2, top: 2.4 }], interactables: [it] };
+  // The screens' stand and the desk in front of them, turned the way it faces.
+  const [minX, maxX, minZ, maxZ] = boxFootprint(x + Math.sin(rotY) * 0.5, z + Math.cos(rotY) * 0.5, width, 1.3, rotY);
+  return { group: g, colliders: [{ minX, maxX, minZ, maxZ, top: 2.4 }], interactables: [it] };
 };
 
 function openControl() {

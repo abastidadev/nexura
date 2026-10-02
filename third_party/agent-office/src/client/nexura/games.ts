@@ -243,12 +243,13 @@ for (const game of Object.keys(GAMES) as Game[]) {
 /** The game room's rug and its sign, under the three games. */
 export const gameRoomFixture: Fixture = () => {
   const g = new THREE.Group();
-  const rug = mesh(new THREE.PlaneGeometry(6.2, 5.4).rotateX(-Math.PI / 2), toon('#5a189a', { opacity: 0.35 }), 5.4, 0.012, 6.6, false);
+  const room = PLACES.gameRoom;
+  const rug = mesh(new THREE.PlaneGeometry(room.width, room.depth).rotateX(-Math.PI / 2), toon('#5a189a', { opacity: 0.35 }), room.x, 0.012, room.z, false);
   rug.receiveShadow = true;
   g.add(rug);
   const sign = textPlane('🎮 Sala de juegos', { size: 40, bg: '#fffaf3' });
   sign.scale.multiplyScalar(0.6);
-  sign.position.set(5.4, 2.7, 3.95);
+  sign.position.set(room.x, 2.7, room.z - room.depth / 2 - 0.05);
   g.add(sign);
   return { group: g };
 };
