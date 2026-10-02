@@ -381,7 +381,7 @@ export function createApiServer(
         throw new HttpError(404, `La PR #${prId} no está abierta en ${repo.name}`);
       }
       const { provider } = await requireRemote(location);
-      const diff = await pullRequestDiff({ name: repo.name, path: repo.path }, { id: pr.id, provider, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch }, {
+      const diff = await pullRequestDiff({ name: repo.name, path: repo.path }, { id: pr.id, provider, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch, headSha: pr.headSha }, {
         ignoreWhitespace: url.searchParams.get("ignoreWhitespace") === "true",
       });
       return { repos: [diff] } satisfies RunDiff;

@@ -184,6 +184,11 @@ describe("pullRequestDiff", () => {
     expect(diff.files.map((file) => file.path)).toEqual(["a.txt", "gone.txt", "img.bin", "new name.txt"]);
     expect(execFileSync("git", ["for-each-ref", "refs/nexura"], { cwd: clone, encoding: "utf8" })).toBe("");
 
+    const stale = await pullRequestDiff({ name: "demo", path: clone }, { id: 7, provider: "azure", sourceBranch: "feat/x", targetBranch: "main", headSha: "0".repeat(40) });
+    expect(stale.error).toMatch(/no es el último commit de la PR/);
+    const current = execFileSync("git", ["rev-parse", "feat/x"], { cwd: repo, encoding: "utf8" }).trim();
+    expect((await pullRequestDiff({ name: "demo", path: clone }, { id: 7, provider: "azure", sourceBranch: "feat/x", targetBranch: "main", headSha: current })).error).toBeUndefined();
+
     const missing = await pullRequestDiff({ name: "demo", path: clone }, { id: 8, provider: "azure", sourceBranch: "nope", targetBranch: "main" });
     expect(missing.error).toMatch(/No se pudo leer el diff/);
   });
@@ -232,6 +237,26 @@ describe("workingTreeDiff", () => {
       expect((await workingTreeDiff(outside, "x")).error).toMatch(/No se pudo leer el diff/);
     } finally {
       rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+describe("someone else's PR checkout", () => {
+  it("reads .gitattributes from the base: the PR cannot hide its changes as binary", async () => {
+    git("checkout", "-q", "-b", "hide", "main");
+    writeFileSync(join(repo, ".gitattributes"), "*.txt -diff\n");
+    writeFileSync(join(repo, "a.txt"), "uno\noculto\ntres\n");
+    git("add", "-A");
+    git("commit", "-qm", "hide");
+    try {
+      const own = await worktreeDiff({ ...worktree, branch: "hide" }, { uncommitted: false });
+      expect(own.files.find((file) => file.path === "a.txt")!.binary).toBe(true);
+      const pr = await worktreeDiff({ ...worktree, branch: "hide", detached: true }, { uncommitted: false });
+      const a = pr.files.find((file) => file.path === "a.txt")!;
+      expect(a.binary).toBeUndefined();
+      expect(a.hunks[0]!.lines).toContainEqual({ kind: "add", text: "oculto", new: 2 });
+    } finally {
+      git("checkout", "-q", "feat/x");
     }
   });
 });

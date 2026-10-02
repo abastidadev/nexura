@@ -813,10 +813,22 @@ describe("Changes requested on the diff", () => {
     const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
     const started = orchestrator.start(request({ profile: "minimal", ticketText: "Con PR abierta", release: "pr" }));
     let replies: Run["pendingStep"];
+    let stillPaused = false;
+    let refused = "";
     orchestrator.on("message", (message) => {
       if (message.type === "run" && message.run.id === started.id && message.run.status === "paused") {
         if (message.run.pendingStep?.replies) {
           replies = message.run.pendingStep;
+          // Diff comments never answer the approval of the replies (no push, no posting).
+          setImmediate(async () => {
+            refused = await orchestrator.requestChanges(started.id, { comments: [comment] }).then(() => "", (error: Error) => error.message);
+            orchestrator.continue(started.id, { changes: "ignorado" });
+            setImmediate(() => {
+              stillPaused = store.getRun(started.id)!.status === "paused" && pushed.length === 0;
+              orchestrator.continue(started.id);
+            });
+          });
+          return;
         }
         setImmediate(() => orchestrator.continue(started.id));
       }
@@ -828,12 +840,15 @@ describe("Changes requested on the diff", () => {
     await orchestrator.requestChanges(started.id, { comments: [comment] });
     const run = await addressed;
 
+    expect(run.error).toBeUndefined();
     expect(run.status).toBe("done");
     const step = run.steps.at(-1)!;
     expect(step.step).toBe("addressReview");
     expect(step.prompt).toContain("Renombra esta línea");
     expect(step.prompt).toMatch(/## Hilos activos\nNinguno\./);
     expect(replies!.replies).toEqual([]);
+    expect(stillPaused).toBe(true);
+    expect(refused).toContain("aprobar las respuestas");
     expect(replies!.commits).toHaveLength(1);
     expect(pushed).toEqual([run.worktrees[0]!.branch]);
     expect(run.requestedChanges).toBeUndefined();

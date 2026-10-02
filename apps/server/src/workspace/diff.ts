@@ -1,4 +1,5 @@
-import { existsSync, lstatSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { randomUUID } from "node:crypto";
+import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import type { DiffComment, DiffHunk, DiffLine, FileDiff, PrFileStatus, RepoDiff, Run, RunDiff, Worktree } from "@nexura/shared";
 import { azureGitEnv } from "../azure/azure-client.ts";
@@ -18,7 +19,7 @@ const MAX_UNCOMMITTED = 200;
  * pick a diff driver or textconv program of the user's, and the prefixes are fixed whatever
  * the user's diff config says.
  */
-const DIFF_ARGS = ["-c", "core.quotepath=false", "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/"];
+const DIFF_ARGS = ["-c", "core.quotepath=false", "-c", "core.fsmonitor=false", "diff", "--no-ext-diff", "--no-textconv", "--no-color", "-M", "--src-prefix=a/", "--dst-prefix=b/"];
 
 export type NameEntry = { path: string; oldPath?: string; status: PrFileStatus };
 
@@ -188,10 +189,15 @@ export type DiffOptions = {
   ignoreWhitespace?: boolean;
 };
 
-/** `git diff <range>` in `cwd`, parsed. Throws on git errors. */
-async function readDiff(cwd: string, range: string, options: DiffOptions = {}): Promise<{ files: FileDiff[]; truncated: boolean }> {
+/**
+ * `git diff <range>` in `cwd`, parsed. Throws on git errors. `attrSource`: the tree whose
+ * .gitattributes count (GIT_ATTR_SOURCE, git >= 2.42; older ones ignore it), so that the
+ * checkout of someone else's PR cannot mark its own changes as binary to hide them.
+ */
+async function readDiff(cwd: string, range: string, options: DiffOptions = {}, attrSource?: string): Promise<{ files: FileDiff[]; truncated: boolean }> {
   const args = options.ignoreWhitespace ? [...DIFF_ARGS, "-w"] : DIFF_ARGS;
-  const [names, text] = await Promise.all([gitRaw(cwd, [...args, "--name-status", "-z", range, "--"]), gitRaw(cwd, [...args, range, "--"])]);
+  const env = attrSource ? { GIT_ATTR_SOURCE: attrSource } : undefined;
+  const [names, text] = await Promise.all([gitRaw(cwd, [...args, "--name-status", "-z", range, "--"], env), gitRaw(cwd, [...args, range, "--"], env)]);
   return parseUnifiedDiff(text, parseNameStatus(names));
 }
 
@@ -205,8 +211,8 @@ export async function worktreeDiff(worktree: Worktree, options: DiffOptions = {}
   const base = { repo: worktree.repo, branch: worktree.branch, baseRef: worktree.baseRef, source: "worktree" as const };
   try {
     const [{ files, truncated }, status] = await Promise.all([
-      readDiff(worktree.path, `${worktree.baseRef}...HEAD`, options),
-      options.uncommitted === false ? "" : gitRaw(worktree.path, ["--no-optional-locks", "status", "--porcelain=v1", "-z"]),
+      readDiff(worktree.path, `${worktree.baseRef}...HEAD`, options, worktree.detached ? worktree.baseRef : undefined),
+      options.uncommitted === false ? "" : gitRaw(worktree.path, ["--no-optional-locks", "-c", "core.fsmonitor=false", "status", "--porcelain=v1", "-z"]),
     ]);
     return { ...base, files, uncommitted: parseStatus(status).slice(0, MAX_UNCOMMITTED), ...(truncated ? { truncated } : {}) };
   } catch (error) {
@@ -221,15 +227,21 @@ export async function worktreeDiff(worktree: Worktree, options: DiffOptions = {}
  */
 export async function pullRequestDiff(
   repo: { name: string; path: string },
-  pr: { id: number; provider: "azure" | "github"; sourceBranch: string; targetBranch: string },
+  pr: { id: number; provider: "azure" | "github"; sourceBranch: string; targetBranch: string; headSha?: string },
   options: DiffOptions = {},
 ): Promise<RepoDiff> {
-  const head = `refs/nexura/pr-diff/${pr.id}`;
+  // One ref per request: two at once for the same PR must not delete each other's.
+  const head = `refs/nexura/pr-diff/${pr.id}-${randomUUID().slice(0, 8)}`;
   const baseRef = `origin/${pr.targetBranch}`;
   const base = { repo: repo.name, branch: pr.sourceBranch, baseRef, source: "pr" as const, uncommitted: [] };
   try {
     const source = pr.provider === "github" ? `refs/pull/${pr.id}/head` : `refs/heads/${pr.sourceBranch}`;
     await gitRaw(repo.path, ["fetch", "--quiet", "--no-tags", "origin", `+${source}:${head}`, `+refs/heads/${pr.targetBranch}:refs/remotes/${baseRef}`], azureGitEnv());
+    // What was fetched must be the PR's head: a branch of origin with the name of a fork's, or a push in between, is not.
+    const fetched = (await gitRaw(repo.path, ["rev-parse", head])).trim();
+    if (pr.headSha && fetched !== pr.headSha) {
+      return { ...base, files: [], error: `La rama traída (${fetched.slice(0, 8)}) no es el último commit de la PR (${pr.headSha.slice(0, 8)}): actualiza la lista; si la PR viene de un fork, ábrela en el proveedor.` };
+    }
     const { files, truncated } = await readDiff(repo.path, `${baseRef}...${head}`, options);
     return { ...base, files, ...(truncated ? { truncated } : {}) };
   } catch (error) {
@@ -314,6 +326,11 @@ export function checkDiffComments(input: unknown, diff: RunDiff): DiffComment[] 
   });
 }
 
+/** A path in inline code; one with backticks or control characters goes quoted as JSON, so it cannot break out of it. */
+function inlinePath(text: string): string {
+  return /[`\x00-\x1f\x7f]/.test(text) ? JSON.stringify(text) : `\`${text}\``;
+}
+
 /** A fence longer than any backtick run in the code, so quoted code cannot close it. */
 function fence(text: string): string {
   const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((match) => match[0].length));
@@ -340,7 +357,7 @@ export function formatChangeRequest(comments: DiffComment[], diff: RunDiff, note
     const marks = fence(code);
     parts.push(
       [
-        `${index + 1}. \`${comment.file}:${range}\`${where ? ` (${where})` : ""}`,
+        `${index + 1}. ${inlinePath(`${comment.file}:${range}`)}${where ? ` (${where})` : ""}`,
         code ? `${marks}diff\n${code}\n${marks}` : "",
         comment.body,
       ]
@@ -363,12 +380,30 @@ const EMPTY_TREE = "4b825dc642cb6eb9a060e54bf8d69288fbee4904";
 /** A new file as an all-added diff: regular files only (a symlink may point outside the repo), text ones shown. */
 function untrackedFile(root: string, path: string, budget: { lines: number }): FileDiff {
   const file: FileDiff = { path, status: "added", additions: 0, deletions: 0, hunks: [] };
-  const full = join(root, path);
-  const stat = lstatSync(full, { throwIfNoEntry: false });
-  if (!stat?.isFile() || stat.size > MAX_UNTRACKED_BYTES) {
+  let content: Buffer;
+  let fd: number | undefined;
+  try {
+    // Opened without following a symlink and checked on the descriptor: the path cannot be
+    // swapped for a link or a bigger file between the check and the read.
+    const full = join(root, path);
+    // Windows has no O_NOFOLLOW: there the link is at least refused before opening.
+    if (lstatSync(full).isSymbolicLink()) {
+      return { ...file, binary: true };
+    }
+    fd = openSync(full, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0));
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.size > MAX_UNTRACKED_BYTES) {
+      return { ...file, binary: true };
+    }
+    content = Buffer.alloc(stat.size);
+    content = content.subarray(0, readSync(fd, content, 0, stat.size, 0));
+  } catch {
     return { ...file, binary: true };
+  } finally {
+    if (fd !== undefined) {
+      closeSync(fd);
+    }
   }
-  const content = readFileSync(full);
   if (content.includes(0)) {
     return { ...file, binary: true };
   }
@@ -385,6 +420,9 @@ function untrackedFile(root: string, path: string, budget: { lines: number }): F
   return kept < lines.length ? { ...file, truncated: true } : file;
 }
 
+/** Any folder can be a conversation's: its git config must not start a program (core.fsmonitor) on every poll. */
+const SAFE = ["-c", "core.fsmonitor=false"];
+
 /**
  * Everything not committed in the repo a folder belongs to (the Terminal's conversations):
  * `git diff HEAD` plus the untracked files as added ones. Errors come back in `error`.
@@ -392,12 +430,12 @@ function untrackedFile(root: string, path: string, budget: { lines: number }): F
 export async function workingTreeDiff(cwd: string, name: string | undefined, options: Pick<DiffOptions, "ignoreWhitespace"> = {}): Promise<RepoDiff> {
   const base = { repo: name ?? basename(cwd), branch: "", baseRef: "HEAD", source: "worktree" as const, uncommitted: [] };
   try {
-    const root = (await gitRaw(cwd, ["rev-parse", "--show-toplevel"])).trim();
-    const hasHead = await gitRaw(root, ["rev-parse", "--verify", "--quiet", "HEAD"]).then(() => true, () => false);
+    const root = (await gitRaw(cwd, [...SAFE, "rev-parse", "--show-toplevel"])).trim();
+    const hasHead = await gitRaw(root, [...SAFE, "rev-parse", "--verify", "--quiet", "HEAD"]).then(() => true, () => false);
     const [branch, { files, truncated }, others] = await Promise.all([
-      gitRaw(root, ["rev-parse", "--abbrev-ref", "HEAD"]).then((out) => out.trim(), () => ""),
+      gitRaw(root, [...SAFE, "rev-parse", "--abbrev-ref", "HEAD"]).then((out) => out.trim(), () => ""),
       readDiff(root, hasHead ? "HEAD" : EMPTY_TREE, options),
-      gitRaw(root, ["-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard", "-z"]),
+      gitRaw(root, [...SAFE, "-c", "core.quotepath=false", "ls-files", "--others", "--exclude-standard", "-z"]),
     ]);
     const untracked = others.split("\0").filter(Boolean);
     const budget = { lines: DIFF_LIMITS.totalLines - files.reduce((sum, file) => sum + file.hunks.reduce((lines, hunk) => lines + hunk.lines.length, 0), 0) };

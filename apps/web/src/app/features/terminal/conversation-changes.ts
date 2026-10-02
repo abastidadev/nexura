@@ -1,6 +1,7 @@
 import { Component, computed, effect, inject, input, linkedSignal, output, signal } from "@angular/core";
 import type { Conversation, DiffComment } from "@nexura/shared";
 import { Api } from "../../core/api";
+import { commentsMessage } from "../../core/diff-comments";
 import { readStorage, removeStorage, writeStorage } from "../../core/storage";
 import { DiffPanel, type DiffLoader } from "../../shared/diff-panel";
 import type { NewDiffComment, ShownComment } from "../../shared/diff-view";
@@ -9,22 +10,6 @@ import type { NewDiffComment, ShownComment } from "../../shared/diff-view";
 const POLL_MS = 5000;
 
 const draftsKey = (id: string): string => `nexura.terminalComments.${id}`;
-
-/** The comments as one message for the CLI: where (file and lines) and what to change. */
-export function commentsMessage(comments: DiffComment[], note: string): string {
-  const lines = comments.map((comment, index) => {
-    const range = comment.endLine > comment.startLine ? `${comment.startLine}-${comment.endLine}` : `${comment.startLine}`;
-    const where = `${comment.file}:${range}${comment.side === "old" ? " (líneas borradas, numeración de HEAD)" : ""}`;
-    return `${index + 1}. ${where}: ${comment.body}`;
-  });
-  return [
-    comments.length ? "Revisa estos puntos de los cambios sin commit:" : "",
-    ...lines,
-    note.trim() ? `${comments.length ? "Además: " : ""}${note.trim()}` : "",
-  ]
-    .filter(Boolean)
-    .join("\n");
-}
 
 /**
  * What is not committed in the conversation's repo, refreshed while the CLI runs. In an agent

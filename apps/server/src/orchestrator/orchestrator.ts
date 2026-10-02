@@ -599,7 +599,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       throw new Error("Escribe al menos un comentario");
     }
     const changes = formatChangeRequest(comments, diff, note);
-    // Checked again after reading the diff: the run may have moved on meanwhile.
+    // Checked again after reading the diff: the run may have moved on meanwhile. Above all it
+    // may now wait for the approval of the PR replies, which must never be resolved from here.
+    if (this.requireRun(runId).pendingStep?.replies) {
+      throw new Error("El flujo acaba de pausarse para aprobar las respuestas a la revisión de la PR: apruébalas o descártalas primero");
+    }
     const current = this.contexts.get(runId);
     if (current?.release) {
       current.release({ changes });
@@ -1693,7 +1697,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     run.status = "paused";
     run.pendingStep = { step: "addressReview", replies, commits };
     this.persist(run);
-    const options = await new Promise<RetryOptions | undefined>((resolve) => (context.release = resolve));
+    let options: RetryOptions | undefined;
+    do {
+      // Diff comments are no answer to this pause: it keeps waiting for an approval or a discard.
+      options = await new Promise<RetryOptions | undefined>((resolve) => (context.release = resolve));
+    } while (options?.changes && !context.cancelled);
     context.release = undefined;
     if (context.cancelled) {
       throw new CancelledError();
@@ -1756,14 +1764,16 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       const range = `${worktree.baseRef}...HEAD`;
       // The PR's .gitattributes must not pick a diff driver or textconv program of the user's.
       const diffArgs = ["-c", "core.quotepath=false", "diff", "--no-ext-diff", "--no-textconv", "-M"];
-      const nameStatus = await git(worktree.path, [...diffArgs, "--name-status", range]);
+      // Nor may it mark its changes as binary (`*.js -diff`) to hide them: attributes come from the base.
+      const baseAttributes = { GIT_ATTR_SOURCE: worktree.baseRef };
+      const nameStatus = await git(worktree.path, [...diffArgs, "--name-status", range], baseAttributes);
       const changedFiles = new Set(
         nameStatus
           .split(/\r?\n/)
           .filter(Boolean)
           .flatMap((line) => line.split("\t").slice(1)),
       );
-      const diff = await gitRaw(worktree.path, [...diffArgs, "--no-color", range]);
+      const diff = await gitRaw(worktree.path, [...diffArgs, "--no-color", range], baseAttributes);
       const hunks = parseDiffHunks(diff);
       // The reviewer has no shell (git's options can write files or run programs): it reads the diff here.
       const reviewDir = join(worktree.path, PR_REVIEW_DIR);
