@@ -211,7 +211,13 @@ describe("workingTreeDiff", () => {
     writeFileSync(join(repo, "a.txt"), "uno\nDOS\ntres\ncuatro\ncinco");
     mkdirSync(join(repo, "sub"), { recursive: true });
     writeFileSync(join(repo, "sub", "bin.dat"), Buffer.from([1, 0, 2]));
-    symlinkSync("/etc/hostname", join(repo, "sub", "link"));
+    // Windows only creates file symlinks with admin rights or developer mode: then that part is skipped.
+    let linked = true;
+    try {
+      symlinkSync(join(tmpdir(), "outside.txt"), join(repo, "sub", "link"));
+    } catch {
+      linked = false;
+    }
     try {
       const diff = await workingTreeDiff(join(repo, "sub"), undefined);
       expect(diff).toMatchObject({ branch: "feat/x", baseRef: "HEAD", source: "worktree" });
@@ -222,7 +228,7 @@ describe("workingTreeDiff", () => {
         ["draft.txt", "added", false],
         ["sub/bin.dat", "added", true],
         // Never followed: it could point outside the repo.
-        ["sub/link", "added", true],
+        ...(linked ? [["sub/link", "added", true]] : []),
       ]);
       expect(diff.files.find((file) => file.path === "draft.txt")!.hunks[0]!.lines).toEqual([{ kind: "add", text: "sin commit", new: 1 }]);
     } finally {
