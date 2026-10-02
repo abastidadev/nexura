@@ -14,6 +14,10 @@ Reglas:
 ## Hilos activos
 {{threads}}
 
+## Comentarios del usuario sobre el diff
+Los ha escrito el usuario en Nexura, no están en la PR: aplícalos como el resto, pero no van en `replies` (no tienen hilo).
+{{userComments}}
+
 ## Ticket
 {{ticket}}
 

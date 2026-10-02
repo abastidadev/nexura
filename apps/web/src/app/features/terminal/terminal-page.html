@@ -186,6 +186,16 @@
           <button
             type="button"
             class="nx-btn nx-btn-sm"
+            [class]="showChanges() ? 'border-accent! bg-accent-soft!' : ''"
+            [attr.aria-pressed]="showChanges()"
+            title="Lo que aún no tiene commit en el repo de la conversación"
+            (click)="showChanges.set(!showChanges())"
+          >
+            <nx-icon name="fork" [size]="14" />Cambios
+          </button>
+          <button
+            type="button"
+            class="nx-btn nx-btn-sm"
             [disabled]="busy()"
             title="Abre PowerShell en el mismo proyecto"
             (click)="openShell(conversation)"
@@ -290,6 +300,14 @@
           </p>
         }
       </div>
+      @if (showChanges()) {
+        <nx-conversation-changes
+          class="w-[min(640px,55%)] shrink-0 border-l border-border"
+          [conversation]="conversation"
+          (closed)="showChanges.set(false)"
+          (paste)="pasteInto(conversation.id, $event)"
+        />
+      }
       @if (showHistory() && conversation.kind === "agent") {
         <nx-conversation-history class="w-[380px] shrink-0 border-l border-border" [conversation]="conversation" (closed)="showHistory.set(false)" />
       }

@@ -572,8 +572,10 @@ export type Run = {
   reviewWatch?: ReviewWatch;
   /** `prReview` runs: the proposed comments, once the review finished. */
   prReview?: PrReviewResult;
-  /** Corrections the user asked for on the diff, until implement applies them. */
+  /** Corrections the user asked for on the diff, until implement (or addressReview, with a PR) applies them. */
   requestedChanges?: string;
+  /** A copy of the diff was kept when the worktrees went away (see GET /api/runs/:id/diff). */
+  diffSaved?: boolean;
 };
 
 export type ReviewWatch = {

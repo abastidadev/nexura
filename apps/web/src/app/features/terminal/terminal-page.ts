@@ -10,6 +10,7 @@ import {
 import { Api, apiError } from "../../core/api";
 import { NexuraStore, readStorage, writeStorage } from "../../core/nexura-store";
 import { AgentControls, type AgentSettings } from "./agent-controls";
+import { ConversationChanges } from "./conversation-changes";
 import { ConversationHistory } from "./conversation-history";
 import { ConversationTerminal } from "./conversation-terminal";
 import { NewConversation } from "./new-conversation";
@@ -18,6 +19,7 @@ import { Icon } from "../../shared/icon";
 
 const SELECTED_KEY = "nexura.terminal.selected";
 const HISTORY_KEY = "nexura.terminal.history";
+const CHANGES_KEY = "nexura.terminal.changes";
 
 type Settings = AgentSettings & { id: string };
 
@@ -36,7 +38,7 @@ function projectOf(conversation: Conversation): string {
  */
 @Component({
   selector: "nx-terminal-page",
-  imports: [AgentControls, ConversationHistory, ConversationTerminal, NewConversation, Icon],
+  imports: [AgentControls, ConversationChanges, ConversationHistory, ConversationTerminal, NewConversation, Icon],
   templateUrl: "./terminal-page.html",
   host: { class: "flex h-full min-h-0 flex-col lg:flex-row" },
 })
@@ -57,6 +59,7 @@ export class TerminalPage {
   protected readonly selectedId = signal<string | null>(readStorage<string | null>(SELECTED_KEY, null));
   protected readonly creating = signal(false);
   protected readonly showHistory = signal<boolean>(readStorage<boolean>(HISTORY_KEY, false));
+  protected readonly showChanges = signal<boolean>(readStorage<boolean>(CHANGES_KEY, false));
   protected readonly query = signal("");
   protected readonly projectFilter = signal("");
   protected readonly renaming = signal<string | null>(null);
@@ -114,6 +117,7 @@ export class TerminalPage {
       .catch(() => this.agents.set(null));
     effect(() => writeStorage(SELECTED_KEY, this.selectedId()));
     effect(() => writeStorage(HISTORY_KEY, this.showHistory()));
+    effect(() => writeStorage(CHANGES_KEY, this.showChanges()));
     // The URL names the shown conversation, so its header tab (opened here) is highlighted.
     effect(() => {
       const linked = this.c();
@@ -232,6 +236,12 @@ export class TerminalPage {
   }
 
   /** PowerShell in the same project. */
+  /** Types the diff comments into the CLI and gives it the focus: the user reads them and presses Enter. */
+  protected pasteInto(id: string, text: string): void {
+    this.sessions.paste(id, text);
+    this.sessions.focus(id);
+  }
+
   protected openShell(conversation: Conversation): Promise<void> {
     const place = conversation.repo ? { repo: conversation.repo } : { cwd: conversation.cwd };
     return this.run(conversation.id, () => this.api.createConversation({ kind: "shell", ...place }));

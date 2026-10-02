@@ -7,6 +7,7 @@ import {
   TICKET_SOURCES,
   type AgentInfo,
   type ChangeRequest,
+  type RunDiff,
   type OwnReviewComment,
   type ConversationChange,
   type ConversationImage,
@@ -53,7 +54,7 @@ import { RewardStore } from "../rewards/reward-store.ts";
 import { AzureError } from "../azure/azure-client.ts";
 import { ConversationManager } from "../conversations/conversation-manager.ts";
 import { ConversationStore } from "../conversations/conversation-store.ts";
-import { getPullRequestDetail, listPullRequests } from "../forge/forge.ts";
+import { getPullRequestDetail, listPullRequests, requireRemote } from "../forge/forge.ts";
 import { loadInbox } from "../forge/inbox.ts";
 import { repoRemoteOf } from "../forge/remote.ts";
 import { listTickets, loadTicket, ticketOptions, ticketTarget, ticketToText, type TicketTarget } from "../forge/tickets.ts";
@@ -79,7 +80,7 @@ import { registerOfficeRoutes } from "../office/office-api.ts";
 import { openTarget } from "../office/office-open.ts";
 import { officeContinue, officeDigest } from "../office/office-digest.ts";
 import { readRepoNotes, saveRepoNotes } from "../workspace/repo-context.ts";
-import { RUN_DIFF_FILE, runDiff } from "../workspace/diff.ts";
+import { pullRequestDiff, RUN_DIFF_FILE, runDiff, workingTreeDiff } from "../workspace/diff.ts";
 
 const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
 const AGENTS_TTL_MS = 60_000;
@@ -184,7 +185,9 @@ export function createApiServer(
     store.getEvents(stepRunId!, Number(url.searchParams.get("after") ?? -1)),
   );
   /** What the run's branches change against their base (read-only git, zero tokens). */
-  route("GET", "/api/runs/:id/diff", ([id]) => runDiff(requireRun(id!), store.runFile(id!, RUN_DIFF_FILE)));
+  route("GET", "/api/runs/:id/diff", ([id], _body, url) =>
+    runDiff(requireRun(id!), store.runFile(id!, RUN_DIFF_FILE), { ignoreWhitespace: url.searchParams.get("ignoreWhitespace") === "true" }),
+  );
   route("GET", "/api/runs/:id/ledger", ([id]) => ({ markdown: new Ledger(requireRun(id!).id).read() }));
   route("GET", "/api/runs/:id/steps/:stepRunId/raw", ([id, stepRunId]) => {
     const stepRun = requireRun(id!).steps.find((step) => step.id === stepRunId);
@@ -234,6 +237,11 @@ export function createApiServer(
   route("POST", "/api/conversations/:id/start", ([id], body) => conversations.start(requireConversation(id!), body as ConversationChange));
   route("POST", "/api/conversations/:id/stop", ([id]) => conversations.stop(requireConversation(id!)));
   route("POST", "/api/conversations/:id/images", ([id], body) => conversations.saveImage(requireConversation(id!), body as ConversationImage));
+  /** What is not committed in the conversation's repo (Terminal > Cambios). Read-only git, zero tokens. */
+  route("GET", "/api/conversations/:id/diff", async ([id], _body, url) => {
+    const conversation = conversations.find(requireConversation(id!))!;
+    return { repos: [await workingTreeDiff(conversation.cwd, conversation.repo, { ignoreWhitespace: url.searchParams.get("ignoreWhitespace") === "true" })] } satisfies RunDiff;
+  });
   route("GET", "/api/conversations/:id/history", ([id]) => conversations.history(requireConversation(id!)));
 
   route("GET", "/api/config", () => {
@@ -354,6 +362,31 @@ export function createApiServer(
       return await getPullRequestDetail({ repo: repo.name, repoPath: repo.path }, prId);
     } catch (error) {
       throw upstreamError(error);
+    }
+  });
+  /** The diff of an open PR, fetched into the repo without a checkout (Revisiones, before reviewing). Zero tokens. */
+  route("GET", "/api/repos/:name/pull-requests/:id/diff", async ([name, id], _body, url) => {
+    const repo = loadConfig().repos.find((candidate) => candidate.name === name);
+    if (!repo) {
+      throw new HttpError(404, `Repo desconocido: ${name}`);
+    }
+    const prId = Number(id);
+    if (!Number.isInteger(prId) || prId <= 0) {
+      throw new HttpError(400, `Número de PR no válido: ${id}`);
+    }
+    try {
+      const location = { repo: repo.name, repoPath: repo.path };
+      const pr = (await listPullRequests(location)).find((candidate) => candidate.id === prId);
+      if (!pr) {
+        throw new HttpError(404, `La PR #${prId} no está abierta en ${repo.name}`);
+      }
+      const { provider } = await requireRemote(location);
+      const diff = await pullRequestDiff({ name: repo.name, path: repo.path }, { id: pr.id, provider, sourceBranch: pr.sourceBranch, targetBranch: pr.targetBranch }, {
+        ignoreWhitespace: url.searchParams.get("ignoreWhitespace") === "true",
+      });
+      return { repos: [diff] } satisfies RunDiff;
+    } catch (error) {
+      throw error instanceof HttpError ? error : upstreamError(error);
     }
   });
   /** Queues the review of one PR; nothing is posted until publish-review. */

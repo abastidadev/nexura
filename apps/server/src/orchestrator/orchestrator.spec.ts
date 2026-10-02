@@ -17,6 +17,7 @@ import {
   type Worktree,
 } from "@nexura/shared";
 import type { RepoRemote } from "../forge/remote.ts";
+import { runDiff } from "../workspace/diff.ts";
 import type { ReviewPost } from "../forge/review-post.ts";
 
 // Never push or call Azure DevOps / GitHub from tests: record what would have been created.
@@ -769,7 +770,7 @@ describe("Changes requested on the diff", () => {
 
     const again = waitFor(orchestrator, started.id);
     await orchestrator.requestChanges(started.id, { comments: [comment] });
-    await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("está trabajando");
+    await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("no hay ningún paso con Claude trabajando");
     const run = await again;
 
     expect(run.status).toBe("done");
@@ -778,6 +779,65 @@ describe("Changes requested on the diff", () => {
     expect(run.requestedChanges).toBeUndefined();
     await orchestrator.cleanup(run.id, true);
     await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("worktrees");
+    // The diff outlives the worktrees: a copy was kept at cleanup.
+    expect(store.getRun(run.id)!.diffSaved).toBe(true);
+    const kept = await runDiff(store.getRun(run.id)!, store.runFile(run.id, "diff.json"));
+    expect(kept.repos[0]).toMatchObject({ repo: "sandbox", source: "saved" });
+    expect(kept.repos[0]!.files.map((file) => file.path)).toContain("impl-2.txt");
+  });
+
+  it("joins the comments to the turn of a claude step at work", async () => {
+    process.env.FAKE_WAIT_MESSAGE = "1";
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Comentado en marcha" }));
+    orchestrator.on("message", (message) => {
+      if (message.type === "event" && message.event.kind === "text" && message.event.text === "esperando mensaje") {
+        void orchestrator.requestChanges(started.id, { comments: [], note: "usa signals" });
+      }
+    });
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.status).toBe("done");
+    // One implement: the comments went into the running turn, not into a new loop.
+    expect(run.steps.filter((step) => step.step === "implement")).toHaveLength(1);
+    expect((run.steps[0]!.structuredOutput as { summary: string }).summary).toContain("Indicación general: usa signals");
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("with the PR open, applies them through addressReview and its approval, without threads", async () => {
+    createdPrs.length = 0;
+    pushed.length = 0;
+    activeThreads.splice(0, activeThreads.length);
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Con PR abierta", release: "pr" }));
+    let replies: Run["pendingStep"];
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.status === "paused") {
+        if (message.run.pendingStep?.replies) {
+          replies = message.run.pendingStep;
+        }
+        setImmediate(() => orchestrator.continue(started.id));
+      }
+    });
+    const released = await waitFor(orchestrator, started.id);
+    expect(released.pullRequests).toHaveLength(1);
+
+    const addressed = waitFor(orchestrator, started.id);
+    await orchestrator.requestChanges(started.id, { comments: [comment] });
+    const run = await addressed;
+
+    expect(run.status).toBe("done");
+    const step = run.steps.at(-1)!;
+    expect(step.step).toBe("addressReview");
+    expect(step.prompt).toContain("Renombra esta línea");
+    expect(step.prompt).toMatch(/## Hilos activos\nNinguno\./);
+    expect(replies!.replies).toEqual([]);
+    expect(replies!.commits).toHaveLength(1);
+    expect(pushed).toEqual([run.worktrees[0]!.branch]);
+    expect(run.requestedChanges).toBeUndefined();
+    await orchestrator.cleanup(run.id, true);
   });
 });
 
