@@ -39,6 +39,7 @@ import { asJsonBlock, continuationTemplate, renderTemplate } from "../prompt/ren
 import { AgentProcess } from "../runner/agent-process.ts";
 import { maxUsage, parseLine, StreamUsage, usageBeyond } from "../runner/stream-parser.ts";
 import type { RunStore } from "../store/run-store.ts";
+import { RUN_DIFF_FILE, saveRunDiff, worktreeDiff } from "../workspace/diff.ts";
 import { commitAll, createPrWorktree, createWorktree, git, gitRaw, removeWorktree, slugify } from "../workspace/git.ts";
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
 import { isMemoryWrite, MEMORY_SERVER, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
@@ -1616,6 +1617,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       mkdirSync(reviewDir);
       writeFileSync(join(reviewDir, "pr.diff"), diff);
       writeFileSync(join(reviewDir, "commits.txt"), await gitRaw(worktree.path, ["log", "--no-color", "--format=%h %an: %s", `${worktree.baseRef}..HEAD`]));
+      // The checkout goes away after the review: the UI shows the copy kept with the run.
+      saveRunDiff(this.store.runFile(run.id, RUN_DIFF_FILE), { repos: [await worktreeDiff(worktree, { uncommitted: false })] });
       ledger.append(
         "prReview",
         [

@@ -104,6 +104,11 @@ export class RunStore {
     return join(this.runsDir, runId, "steps", `${String(stepRun.seq).padStart(2, "0")}-${stepRun.step}.jsonl`);
   }
 
+  /** A file of the run's own folder (removed with the run). */
+  public runFile(runId: string, name: string): string {
+    return join(this.runsDir, runId, name);
+  }
+
   public appendRaw(runId: string, stepRun: StepRun, rawLine: string): void {
     const file = this.rawLogFile(runId, stepRun);
     mkdirSync(dirname(file), { recursive: true });

@@ -6,3 +6,4 @@ export * from "./ai-setup.ts";
 export * from "./agent-activity.ts";
 export * from "./achievements.ts";
 export * from "./rewards.ts";
+export * from "./diff.ts";

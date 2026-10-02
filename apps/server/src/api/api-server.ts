@@ -77,6 +77,7 @@ import { registerOfficeRoutes } from "../office/office-api.ts";
 import { openTarget } from "../office/office-open.ts";
 import { officeContinue, officeDigest } from "../office/office-digest.ts";
 import { readRepoNotes, saveRepoNotes } from "../workspace/repo-context.ts";
+import { RUN_DIFF_FILE, runDiff } from "../workspace/diff.ts";
 
 const WEB_DIST = join(NEXURA_HOME, "apps", "web", "dist", "web", "browser");
 const AGENTS_TTL_MS = 60_000;
@@ -180,6 +181,8 @@ export function createApiServer(
   route("GET", "/api/runs/:id/steps/:stepRunId/events", ([, stepRunId], _body, url) =>
     store.getEvents(stepRunId!, Number(url.searchParams.get("after") ?? -1)),
   );
+  /** What the run's branches change against their base (read-only git, zero tokens). */
+  route("GET", "/api/runs/:id/diff", ([id]) => runDiff(requireRun(id!), store.runFile(id!, RUN_DIFF_FILE)));
   route("GET", "/api/runs/:id/ledger", ([id]) => ({ markdown: new Ledger(requireRun(id!).id).read() }));
   route("GET", "/api/runs/:id/steps/:stepRunId/raw", ([id, stepRunId]) => {
     const stepRun = requireRun(id!).steps.find((step) => step.id === stepRunId);

@@ -16,6 +16,16 @@
 
       <div class="flex shrink-0 flex-wrap items-center gap-2">
         @if (run.worktrees.length) {
+          <button
+            type="button"
+            class="nx-btn"
+            [class.nx-btn-primary]="showChanges()"
+            [attr.aria-pressed]="showChanges()"
+            title="Diff de la rama del flujo contra su base"
+            (click)="showChanges.set(!showChanges())"
+          >
+            <nx-icon name="fork" [size]="16" />Cambios
+          </button>
           <button type="button" class="nx-btn" (click)="openShell()"><nx-icon name="terminal" [size]="16" />Terminal</button>
         }
         @if (isActive()) {
@@ -119,9 +129,10 @@
       [busy]="busy()"
       (approve)="approveReplies($event)"
       (keepLocal)="keepLocal()"
+      (viewChanges)="showChanges.set(true)"
     />
   } @else if (run.status === "paused" && run.pendingStep?.prDrafts; as drafts) {
-    <nx-pr-approval [drafts]="drafts" [busy]="busy()" (approve)="approvePrs($event)" (keepLocal)="keepLocal()" />
+    <nx-pr-approval [drafts]="drafts" [busy]="busy()" (approve)="approvePrs($event)" (keepLocal)="keepLocal()" (viewChanges)="showChanges.set(true)" />
   } @else if (run.status === "paused" && run.pendingStep; as pending) {
     <section class="border-b border-warn bg-warn-soft px-4 py-3" aria-labelledby="pause-title">
       <div class="flex items-center gap-3">
@@ -148,10 +159,13 @@
     </section>
   }
 
+  @if (showChanges() && !(terminal() && terminalMaximized())) {
+    <nx-run-changes class="min-h-0 flex-1" [runId]="run.id" [version]="changesVersion()" (closed)="showChanges.set(false)" />
+  }
   <div
     class="relative grid min-h-0 flex-1"
     [style.grid-template-columns]="pipelineWidth() + 'px minmax(0, 1fr) 300px'"
-    [class.hidden]="terminal() && terminalMaximized()"
+    [class.hidden]="(terminal() && terminalMaximized()) || showChanges()"
   >
     <div
       class="absolute inset-y-0 z-10 w-1.5 cursor-col-resize touch-none hover:bg-accent/40 focus-visible:bg-accent/60 focus-visible:outline-none"

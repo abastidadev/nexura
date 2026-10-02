@@ -33,6 +33,7 @@ import type {
   RetryOptions,
   ReviewThread,
   Run,
+  RunDiff,
   SavedConversationImage,
   RunRequest,
   StepDefinition,
@@ -105,6 +106,11 @@ export class Api {
     return firstValueFrom(this.http.get<{ markdown: string }>(`/api/runs/${runId}/ledger`)).then(
       (response) => response.markdown,
     );
+  }
+
+  /** What the run's branches change against their base (live worktrees or the copy kept). */
+  public getRunDiff(runId: string): Promise<RunDiff> {
+    return firstValueFrom(this.http.get<RunDiff>(`/api/runs/${runId}/diff`));
   }
 
   public startRun(request: RunRequest): Promise<Run> {

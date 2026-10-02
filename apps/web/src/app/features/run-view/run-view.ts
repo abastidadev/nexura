@@ -14,6 +14,7 @@ import { StepInspector } from "./step-inspector";
 import { StepPipeline } from "./step-pipeline";
 import { PrApproval } from "./pr-approval";
 import { ReviewApproval } from "./review-approval";
+import { RunChanges } from "./run-changes";
 import { TerminalPanel, type TerminalRequest } from "./terminal-panel";
 
 const PIPELINE_MODE_KEY = "nexura.pipelineMode";
@@ -28,7 +29,7 @@ type PipelineMode = "steps" | "office";
 
 @Component({
   selector: "nx-run-view",
-  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval, ReviewApproval, PixelOffice, Icon],
+  imports: [RouterLink, StatusPill, StepPipeline, StepInspector, TerminalPanel, PrApproval, ReviewApproval, RunChanges, PixelOffice, Icon],
   templateUrl: "./run-view.html",
   host: { class: "flex h-full flex-col" },
 })
@@ -51,6 +52,14 @@ export class RunView {
     const steps = this.run()?.steps ?? [];
     const pinned = this.pinnedStepId();
     return (pinned ? steps.find((step) => step.id === pinned) : undefined) ?? steps.at(-1);
+  });
+
+  /** The diff of the run's branches over the pipeline / inspector / aside grid. */
+  protected readonly showChanges = linkedSignal<string, boolean>({ source: this.id, computation: () => false });
+  /** Read the diff again whenever a step ends or the run pauses / finishes. */
+  protected readonly changesVersion = computed(() => {
+    const run = this.run();
+    return run ? `${run.steps.length}:${run.steps.at(-1)?.status ?? ""}:${run.status}` : "";
   });
 
   protected readonly planned = computed(() => {
