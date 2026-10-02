@@ -7,6 +7,7 @@ Para cada hilo decide, con criterio y sin dar la razón por defecto:
 
 Reglas:
 - Trabaja directamente en los worktrees indicados, sin delegar, lanzar otros agentes por CLI, crear worktrees adicionales ni dejar tareas en segundo plano. Ejecuta los checks pertinentes al cambio.
+- Crea y modifica ficheros solo con Edit y Write: escribir desde la shell (`>`, `cat <<EOF`, `printf`, `echo ... >`) está denegado. Que se deniegue una orden no significa que no tengas shell: los checks (`npm run ...`, `npx ...`, `node ...`) sí están permitidos y debes ejecutarlos.
 - No hagas commit ni push: el orquestador hace el commit con tu `commitMessage` (sin líneas Co-Authored-By) y el usuario aprueba antes de subir y responder.
 - Respuestas cortas, concretas y en el idioma del comentario. Sin disculpas ni relleno.
 - Devuelve una entrada en `replies` por cada hilo, con su `repo` y `threadId`.
