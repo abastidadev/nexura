@@ -768,6 +768,8 @@ describe("Changes requested on the diff", () => {
     await expect(orchestrator.requestChanges(started.id, { comments: [{ ...comment, file: "nope.txt" }] })).rejects.toThrow("no está en el diff");
     await expect(orchestrator.requestChanges(started.id, { comments: [{ ...comment, startLine: 9, endLine: 9 }] })).rejects.toThrow("no están en el diff");
 
+    // The flow's model no longer is the one implement worked with (e.g. a retry picked another).
+    store.saveRun({ ...finished, request: { ...finished.request, modelConfig: { agent: "claude", model: "haiku", effort: "low" } } });
     const again = waitFor(orchestrator, started.id);
     await orchestrator.requestChanges(started.id, { comments: [comment] });
     await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("no hay ningún paso con Claude trabajando");
@@ -776,6 +778,9 @@ describe("Changes requested on the diff", () => {
     expect(run.status).toBe("done");
     expect(run.steps.map((s) => `${s.step}#${s.attempt}`)).toEqual(["implement#1", "qaCode#1", "release#1", "implement#2", "qaCode#2", "release#2"]);
     expect(run.steps[3]!.prompt).toContain("Renombra esta línea");
+    // Same agent, model and effort as the implement that did the work, resuming its session.
+    expect(run.steps[3]).toMatchObject({ agent: run.steps[0]!.agent, model: run.steps[0]!.model, effort: run.steps[0]!.effort });
+    expect(run.steps[3]!.args).toEqual(expect.arrayContaining(["--resume", run.steps[0]!.sessionId!]));
     expect(run.requestedChanges).toBeUndefined();
     await orchestrator.cleanup(run.id, true);
     await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("worktrees");

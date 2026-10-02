@@ -10,6 +10,12 @@ if (args.includes("--version")) {
   console.log("codex-cli 0.0.0-fake");
   process.exit(0);
 }
+if (args[0] === "debug" && args[1] === "models") {
+  // The account's model catalog, as the real CLI renders it (Nexura lists the visible ones).
+  const models = ["gpt-5.3-codex", "gpt-5.5", "gpt-5.4", "gpt-5.4-mini"].map((slug) => ({ slug, visibility: "list" }));
+  console.log(JSON.stringify({ models: [...models, { slug: "codex-auto-review", visibility: "hide" }] }));
+  process.exit(0);
+}
 if (args[0] !== "exec") {
   // Interactive TUI (terminal conversations): see fake-interactive.mjs.
   const { interactive } = await import("./fake-interactive.mjs");

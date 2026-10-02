@@ -227,6 +227,22 @@ export function codexNormalizer(options: { jsonSchema?: object; model?: string; 
  * stdout, `--output-schema` for the structured answer (strict mode, see toStrictSchema).
  * No USD cost is reported (the plan has none); tokens are.
  */
+/**
+ * `codex debug models`: the catalog of the logged-in account (free, no model call). Only the
+ * models it lists for picking; the hidden ones are internal. An account on a ChatGPT plan
+ * rejects models outside it, so the built-in suggestions may not work there.
+ */
+export function parseCodexModels(output: string): string[] {
+  try {
+    const catalog = JSON.parse(output) as { models?: { slug?: unknown; visibility?: unknown }[] };
+    return (catalog.models ?? [])
+      .filter((model) => typeof model.slug === "string" && model.visibility !== "hide")
+      .map((model) => model.slug as string);
+  } catch {
+    return [];
+  }
+}
+
 export const codexAdapter: AgentAdapter = {
   agent: "codex",
   command() {
@@ -258,4 +274,5 @@ export const codexAdapter: AgentAdapter = {
     };
   },
   resumeArgs: (sessionId) => ["resume", sessionId],
+  models: { args: ["debug", "models"], parse: parseCodexModels },
 };

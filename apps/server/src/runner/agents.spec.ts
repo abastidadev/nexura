@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import type { NexuraEvent } from "@nexura/shared";
 import type { AgentRunOptions } from "./agent-adapter.ts";
-import { buildCodexArgs, codexAdapter, codexNormalizer, codexSandbox } from "./codex-adapter.ts";
+import { buildCodexArgs, codexAdapter, codexNormalizer, codexSandbox, parseCodexModels } from "./codex-adapter.ts";
 import { copilotAdapter, copilotNormalizer, copilotPermissions, MAX_INLINE_PROMPT, parseCopilotModels } from "./copilot-adapter.ts";
 import { checkJson, extractJson } from "./json-check.ts";
 import { fromStrictOutput, toStrictSchema } from "./strict-schema.ts";
@@ -159,6 +159,12 @@ describe("copilot adapter (checked against the real Copilot CLI 1.0.88)", () => 
     const lines = readFileSync(join(STREAM, name), "utf8").split(/\r?\n/).filter(Boolean);
     return [...lines.flatMap((line) => normalize(JSON.parse(line))), ...finish!(exitCode, "")];
   };
+
+  it("lists the Codex account's models from `codex debug models`, without the hidden ones", () => {
+    const catalog = { models: [{ slug: "gpt-6-sol", visibility: "list" }, { slug: "gpt-reserve", visibility: "hide" }, { slug: "gpt-5.5", visibility: "list" }, { visibility: "list" }] };
+    expect(parseCodexModels(JSON.stringify(catalog))).toEqual(["gpt-6-sol", "gpt-5.5"]);
+    expect(parseCodexModels("not json")).toEqual([]);
+  });
 
   it("lists the installed CLI's models from `copilot help config`, plus auto", () => {
     const models = parseCopilotModels(readFileSync(join(STREAM, "10-copilot-help-config.txt"), "utf8"));

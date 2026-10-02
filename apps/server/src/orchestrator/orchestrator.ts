@@ -636,8 +636,14 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     run.pendingStep = undefined;
     this.persist(run);
     this.contexts.set(runId, { cancelled: false });
-    void this.schedule(runId, () => this.execute(run, { step: "implement", options: {} }));
+    void this.schedule(runId, () => this.execute(run, { step: "implement", options: this.lastImplement(run) ?? {} }));
     return run;
+  }
+
+  /** Agent, model and effort of the last implement that succeeded: diff comments go back to it, not to the profile's defaults. */
+  private lastImplement(run: Run): RetryOptions | undefined {
+    const last = run.steps.findLast((step) => step.step === "implement" && step.status === "succeeded");
+    return last ? { agent: agentOf(last), model: last.model, effort: last.effort } : undefined;
   }
 
   /** A message typed by the user while a claude step runs: it joins the current turn. */
@@ -839,6 +845,8 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
           return false;
         }
         stepContext.feedback = run.requestedChanges;
+        // Same agent, model and effort as the implement that did the work (maybe picked on a retry): its session goes on.
+        pending = this.lastImplement(run);
         // Not the comments themselves: they reach implement as its corrections, the ledger would repeat them.
         ledger.append("usuario", "Pide cambios sobre el diff: vuelve a implement con sus comentarios.");
         // Paused before implement (step by step): the corrections wait for it; later on, it runs again.
