@@ -17,6 +17,7 @@ import {
   type Worktree,
 } from "@nexura/shared";
 import type { RepoRemote } from "../forge/remote.ts";
+import { runDiff } from "../workspace/diff.ts";
 import type { ReviewPost } from "../forge/review-post.ts";
 
 // Never push or call Azure DevOps / GitHub from tests: record what would have been created.
@@ -720,6 +721,137 @@ describe("Release with a PR (push and PR mocked)", () => {
     expect(run.status).toBe("done");
     expect(createdPrs).toHaveLength(0);
     expect(run.pullRequests).toBeUndefined();
+    await orchestrator.cleanup(run.id, true);
+  });
+});
+
+describe("Changes requested on the diff", () => {
+  const comment = { repo: "sandbox", file: "impl-1.txt", side: "new" as const, startLine: 1, endLine: 1, body: "Renombra esta línea" };
+
+  it("at the PR approval goes back to implement with the comments, then pauses again", async () => {
+    createdPrs.length = 0;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Con cambios pedidos", release: "pr" }));
+    let pauses = 0;
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.status === "paused" && message.run.pendingStep?.prDrafts) {
+        pauses++;
+        const first = pauses === 1;
+        setImmediate(() => (first ? void orchestrator.requestChanges(started.id, { comments: [comment], note: "Y nada más" }) : orchestrator.continue(started.id)));
+      }
+    });
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.status).toBe("done");
+    expect(pauses).toBe(2);
+    expect(run.steps.map((s) => `${s.step}#${s.attempt}`)).toEqual(["implement#1", "qaCode#1", "release#1", "implement#2", "qaCode#2", "release#2"]);
+    const correction = run.steps[3]!.prompt!;
+    expect(correction).toContain("`impl-1.txt:1`");
+    expect(correction).toContain("+implement 1");
+    expect(correction).toContain("Renombra esta línea");
+    expect(correction).toContain("Indicación general: Y nada más");
+    expect(run.requestedChanges).toBeUndefined();
+    // Only the second approval pushed.
+    expect(createdPrs).toHaveLength(1);
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("relaunches a finished flow from implement, and refuses what it cannot correct", async () => {
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Terminado y corregido" }));
+    const finished = await waitFor(orchestrator, started.id);
+    expect(finished.status).toBe("done");
+
+    await expect(orchestrator.requestChanges(started.id, { comments: [] })).rejects.toThrow("al menos un comentario");
+    await expect(orchestrator.requestChanges(started.id, { comments: [{ ...comment, file: "nope.txt" }] })).rejects.toThrow("no está en el diff");
+    await expect(orchestrator.requestChanges(started.id, { comments: [{ ...comment, startLine: 9, endLine: 9 }] })).rejects.toThrow("no están en el diff");
+
+    const again = waitFor(orchestrator, started.id);
+    await orchestrator.requestChanges(started.id, { comments: [comment] });
+    await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("no hay ningún paso con Claude trabajando");
+    const run = await again;
+
+    expect(run.status).toBe("done");
+    expect(run.steps.map((s) => `${s.step}#${s.attempt}`)).toEqual(["implement#1", "qaCode#1", "release#1", "implement#2", "qaCode#2", "release#2"]);
+    expect(run.steps[3]!.prompt).toContain("Renombra esta línea");
+    expect(run.requestedChanges).toBeUndefined();
+    await orchestrator.cleanup(run.id, true);
+    await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("worktrees");
+    // The diff outlives the worktrees: a copy was kept at cleanup.
+    expect(store.getRun(run.id)!.diffSaved).toBe(true);
+    const kept = await runDiff(store.getRun(run.id)!, store.runFile(run.id, "diff.json"));
+    expect(kept.repos[0]).toMatchObject({ repo: "sandbox", source: "saved" });
+    expect(kept.repos[0]!.files.map((file) => file.path)).toContain("impl-2.txt");
+  });
+
+  it("joins the comments to the turn of a claude step at work", async () => {
+    process.env.FAKE_WAIT_MESSAGE = "1";
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Comentado en marcha" }));
+    orchestrator.on("message", (message) => {
+      if (message.type === "event" && message.event.kind === "text" && message.event.text === "esperando mensaje") {
+        void orchestrator.requestChanges(started.id, { comments: [], note: "usa signals" });
+      }
+    });
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.status).toBe("done");
+    // One implement: the comments went into the running turn, not into a new loop.
+    expect(run.steps.filter((step) => step.step === "implement")).toHaveLength(1);
+    expect((run.steps[0]!.structuredOutput as { summary: string }).summary).toContain("Indicación general: usa signals");
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("with the PR open, applies them through addressReview and its approval, without threads", async () => {
+    createdPrs.length = 0;
+    pushed.length = 0;
+    activeThreads.splice(0, activeThreads.length);
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Con PR abierta", release: "pr" }));
+    let replies: Run["pendingStep"];
+    let stillPaused = false;
+    let refused = "";
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.status === "paused") {
+        if (message.run.pendingStep?.replies) {
+          replies = message.run.pendingStep;
+          // Diff comments never answer the approval of the replies (no push, no posting).
+          setImmediate(async () => {
+            refused = await orchestrator.requestChanges(started.id, { comments: [comment] }).then(() => "", (error: Error) => error.message);
+            orchestrator.continue(started.id, { changes: "ignorado" });
+            setImmediate(() => {
+              stillPaused = store.getRun(started.id)!.status === "paused" && pushed.length === 0;
+              orchestrator.continue(started.id);
+            });
+          });
+          return;
+        }
+        setImmediate(() => orchestrator.continue(started.id));
+      }
+    });
+    const released = await waitFor(orchestrator, started.id);
+    expect(released.pullRequests).toHaveLength(1);
+
+    const addressed = waitFor(orchestrator, started.id);
+    await orchestrator.requestChanges(started.id, { comments: [comment] });
+    const run = await addressed;
+
+    expect(run.error).toBeUndefined();
+    expect(run.status).toBe("done");
+    const step = run.steps.at(-1)!;
+    expect(step.step).toBe("addressReview");
+    expect(step.prompt).toContain("Renombra esta línea");
+    expect(step.prompt).toMatch(/## Hilos activos\nNinguno\./);
+    expect(replies!.replies).toEqual([]);
+    expect(stillPaused).toBe(true);
+    expect(refused).toContain("aprobar las respuestas");
+    expect(replies!.commits).toHaveLength(1);
+    expect(pushed).toEqual([run.worktrees[0]!.branch]);
+    expect(run.requestedChanges).toBeUndefined();
     await orchestrator.cleanup(run.id, true);
   });
 });

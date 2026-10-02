@@ -17,6 +17,9 @@ export const VOTES: Record<PrVote, { label: string; tone: Tone }> = {
 
 type Draft = { selected: boolean; post: string };
 
+/** Reviews whose diff is open (this view is re-created when the PR list reloads). */
+const OPEN_CHANGES = new Set<string>();
+
 /** One PR review: live while it runs; then the proposed comments to pick, edit and publish with a vote. */
 @Component({
   selector: "nx-pr-review-view",
@@ -50,7 +53,7 @@ type Draft = { selected: boolean; post: string };
             [class.nx-btn-primary]="showChanges()"
             [attr.aria-pressed]="showChanges()"
             title="Diff de la PR revisada"
-            (click)="showChanges.set(!showChanges())"
+            (click)="toggleChanges(!showChanges())"
           >
             <nx-icon name="fork" [size]="14" />Cambios
           </button>
@@ -87,7 +90,7 @@ type Draft = { selected: boolean; post: string };
     }
 
     @if (showChanges()) {
-      <nx-run-changes class="min-h-0 flex-1" [runId]="run().id" [version]="run().status" (closed)="showChanges.set(false)" />
+      <nx-run-changes class="min-h-0 flex-1" [run]="run()" (closed)="toggleChanges(false)" />
     } @else if (!review()) {
       @if (run().error) {
         <p class="mx-5 mt-3 rounded-md border border-err/40 bg-err-soft px-3 py-2 whitespace-pre-wrap text-err" role="alert">{{ run().error }}</p>
@@ -235,10 +238,19 @@ export class PrReviewView {
   public readonly rereview = output<void>();
   public readonly deleted = output<void>();
 
-  /** The PR's diff in place of the comments (same run: kept while it changes status). */
-  protected readonly showChanges = linkedSignal<string, boolean>({ source: () => this.run().id, computation: () => false });
+  /** The PR's diff in place of the comments; stays open when the list above re-creates this view. */
+  protected readonly showChanges = linkedSignal<string, boolean>({ source: () => this.run().id, computation: (id) => OPEN_CHANGES.has(id) });
 
   protected readonly Boolean = Boolean;
+
+  protected toggleChanges(open: boolean): void {
+    if (open) {
+      OPEN_CHANGES.add(this.run().id);
+    } else {
+      OPEN_CHANGES.delete(this.run().id);
+    }
+    this.showChanges.set(open);
+  }
   protected readonly timeOfDay = timeOfDay;
   protected readonly votes = VOTES;
   protected readonly voteOptions = Object.keys(VOTES) as PrVote[];
@@ -275,13 +287,24 @@ export class PrReviewView {
   /** Stable per review: the drafts survive the run updates the WebSocket keeps sending. */
   private readonly reviewKey = computed(() => {
     const review = this.review();
-    return review ? `${this.run().id}@${review.headSha}:${review.comments.length}` : "";
+    return review ? `${this.run().id}@${review.headSha}` : "";
   });
-  /** Everything but the nits goes by default; edits stay until the review changes. */
-  protected readonly drafts = linkedSignal<string, Partial<Record<number, Draft>>>({
-    source: this.reviewKey,
-    computation: () =>
-      Object.fromEntries((untracked(this.review)?.comments ?? []).map((comment) => [comment.id, { selected: comment.severity !== "nit", post: comment.post }])),
+  private readonly commentIds = computed(() => (this.review()?.comments ?? []).map((comment) => comment.id).join(","));
+  /**
+   * Everything but the nits goes by default (the user's own comments always); edits stay until
+   * the review changes, also when the user adds a comment from the diff.
+   */
+  protected readonly drafts = linkedSignal<{ key: string; ids: string }, Partial<Record<number, Draft>>>({
+    source: () => ({ key: this.reviewKey(), ids: this.commentIds() }),
+    computation: (source, previous) => {
+      const kept = previous && previous.source.key === source.key ? previous.value : {};
+      return Object.fromEntries(
+        (untracked(this.review)?.comments ?? []).map((comment) => [
+          comment.id,
+          kept[comment.id] ?? { selected: Boolean(comment.own) || comment.severity !== "nit", post: comment.post },
+        ]),
+      );
+    },
   });
   protected readonly vote = linkedSignal<string, PrVote | "">({ source: this.reviewKey, computation: () => untracked(this.review)?.verdict ?? "" });
 

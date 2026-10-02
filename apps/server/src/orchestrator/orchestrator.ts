@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import { EventEmitter } from "node:events";
-import { mkdirSync, rmSync, writeFileSync } from "node:fs";
+import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import {
   AGENT_KINDS,
@@ -12,6 +12,8 @@ import {
   orderSteps,
   quotaPauseUntil,
   type AgentAccountUsage,
+  type ChangeRequest,
+  type OwnReviewComment,
   type AgentKind,
   type CreatedPr,
   type FlowProfile,
@@ -39,7 +41,7 @@ import { asJsonBlock, continuationTemplate, renderTemplate } from "../prompt/ren
 import { AgentProcess } from "../runner/agent-process.ts";
 import { maxUsage, parseLine, StreamUsage, usageBeyond } from "../runner/stream-parser.ts";
 import type { RunStore } from "../store/run-store.ts";
-import { RUN_DIFF_FILE, saveRunDiff, worktreeDiff } from "../workspace/diff.ts";
+import { checkDiffComments, formatChangeRequest, RUN_DIFF_FILE, runDiff, saveRunDiff, worktreeDiff } from "../workspace/diff.ts";
 import { commitAll, createPrWorktree, createWorktree, git, gitRaw, removeWorktree, slugify } from "../workspace/git.ts";
 import { learnRepoNotes, readRepoNotes, repoMap } from "../workspace/repo-context.ts";
 import { isMemoryWrite, MEMORY_SERVER, memoryRunOptions, memoryStore, readMemory } from "../memory/memory.ts";
@@ -55,7 +57,7 @@ import {
   requireRemote,
   threadsToText,
 } from "../forge/forge.ts";
-import { normalizePrReview, normalizeReviewPath, parseDiffHunks, reviewPosts, type PrReviewOutput } from "./pr-review.ts";
+import { normalizePrReview, normalizeReviewPath, ownReviewComment, parseDiffHunks, reviewPosts, type PrReviewOutput } from "./pr-review.ts";
 import { mergeJudgments, type CodeReviewOutput, type ReviewIssue } from "./blind-review.ts";
 import { runQaCode, runReleaseLocal, type QaOutput } from "./builtin-steps.ts";
 import {
@@ -510,6 +512,30 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     return run;
   }
 
+  /** Adds a comment of the user to a finished, unpublished review, on lines of the PR's diff (the copy kept with the run). */
+  public async addOwnReviewComment(runId: string, input: OwnReviewComment): Promise<Run> {
+    const run = this.requireRun(runId);
+    const review = run.prReview;
+    if (run.request.kind !== "prReview" || !review) {
+      throw new Error("Este flujo no es una revisión de PR terminada");
+    }
+    if (this.contexts.has(runId) || this.publishing.has(runId)) {
+      throw new Error("La revisión está en marcha o publicándose");
+    }
+    if (review.published) {
+      throw new Error("Esta revisión ya se publicó en la PR");
+    }
+    const diff = await runDiff(run, this.store.runFile(run.id, RUN_DIFF_FILE));
+    const file = diff.repos[0]?.files.find((candidate) => candidate.path === input?.file);
+    if (!file) {
+      throw new Error(`${String(input?.file)} no está en el diff de la PR`);
+    }
+    const id = Math.max(0, ...review.comments.map((comment) => comment.id)) + 1;
+    review.comments.push(ownReviewComment(file, input, id));
+    this.persist(run);
+    return run;
+  }
+
   /**
    * Adds the conventions a review found to the repo notes, which later steps (with write
    * access) read. Only on the user's word: they come from reading a PR anyone may open.
@@ -540,6 +566,78 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       checkOverrides(options, agentOf(run.pendingStep ? profile?.steps[run.pendingStep.step] : undefined));
     }
     context.release(options);
+  }
+
+  /**
+   * The user's comments on the diff of a flow, sent back to implement as corrections. At a
+   * pause (step by step, or the PR approval: nothing is pushed) the flow goes back from there;
+   * a stopped flow without a PR is relaunched from implement. Then the rest of the profile runs
+   * again (QA, review, release and its approval).
+   */
+  public async requestChanges(runId: string, request: ChangeRequest): Promise<Run> {
+    const run = this.requireRun(runId);
+    if (run.request.kind === "prReview") {
+      throw new Error("En una revisión de PR los comentarios se añaden a la revisión, no se mandan a un agente");
+    }
+    const context = this.contexts.get(runId);
+    if (run.pendingStep?.replies) {
+      throw new Error("Esta pausa es para aprobar las respuestas a la revisión de la PR: apruébalas o descártalas primero");
+    }
+    if (run.worktrees.length === 0) {
+      throw new Error("Los worktrees de este flujo se borraron: no hay código que corregir");
+    }
+    const working = Boolean(context && !context.release);
+    const withPr = !context && Boolean(run.pullRequests?.length);
+    const profile = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile) : undefined;
+    if (!working && !withPr && !profile?.steps["implement"]?.enabled) {
+      throw new Error("El perfil de este flujo no tiene paso implement");
+    }
+    const diff = await runDiff(run, this.store.runFile(run.id, RUN_DIFF_FILE), { ignoreWhitespace: request?.ignoreWhitespace === true });
+    const comments = checkDiffComments(request?.comments ?? [], diff);
+    const note = typeof request?.note === "string" ? request.note.trim() : "";
+    if (comments.length === 0 && !note) {
+      throw new Error("Escribe al menos un comentario");
+    }
+    const changes = formatChangeRequest(comments, diff, note);
+    // Checked again after reading the diff: the run may have moved on meanwhile. Above all it
+    // may now wait for the approval of the PR replies, which must never be resolved from here.
+    if (this.requireRun(runId).pendingStep?.replies) {
+      throw new Error("El flujo acaba de pausarse para aprobar las respuestas a la revisión de la PR: apruébalas o descártalas primero");
+    }
+    const current = this.contexts.get(runId);
+    if (current?.release) {
+      current.release({ changes });
+      return run;
+    }
+    if (current) {
+      // A step at work: the comments join its current turn, as a message typed in its chat.
+      if (!current.send?.(`${changes}\n\n(Son comentarios del usuario sobre el diff mientras trabajas: tenlos en cuenta en lo que queda de este paso.)`)) {
+        throw new Error(
+          current.process && !current.process.interactive
+            ? "El paso en curso lo ejecuta un agente que no admite mensajes a mitad de paso (solo Claude): espera a que pare para pedir cambios"
+            : "Ahora mismo no hay ningún paso con Claude trabajando: espera a que el flujo pare para pedir cambios",
+        );
+      }
+      return run;
+    }
+    if (run.pullRequests?.length) {
+      // The PR is open: addressReview applies them with the PR's threads, then the usual approval to push.
+      run.requestedChanges = changes;
+      run.status = "queued";
+      run.error = undefined;
+      this.persist(run);
+      this.contexts.set(runId, { cancelled: false });
+      void this.schedule(runId, () => this.executeAddressReview(run));
+      return run;
+    }
+    run.requestedChanges = changes;
+    run.status = "queued";
+    run.error = undefined;
+    run.pendingStep = undefined;
+    this.persist(run);
+    this.contexts.set(runId, { cancelled: false });
+    void this.schedule(runId, () => this.execute(run, { step: "implement", options: {} }));
+    return run;
   }
 
   /** A message typed by the user while a claude step runs: it joins the current turn. */
@@ -579,6 +677,12 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     const run = this.requireRun(runId);
     if (this.contexts.has(runId)) {
       throw new Error("No se puede limpiar un run activo");
+    }
+    if (run.request.kind !== "prReview" && run.worktrees.some((worktree) => existsSync(worktree.path))) {
+      // The changes stay visible once the worktrees are gone (a PR review kept its copy already).
+      const live = run.worktrees.filter((worktree) => existsSync(worktree.path));
+      saveRunDiff(this.store.runFile(run.id, RUN_DIFF_FILE), { repos: await Promise.all(live.map((worktree) => worktreeDiff(worktree, { uncommitted: false }))) });
+      run.diffSaved = true;
     }
     await this.removeWorktrees(run, deleteBranches);
   }
@@ -690,6 +794,9 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       if (lastCorrection && !run.steps.some((step) => step.step === "implement" && step.status === "succeeded" && step.seq > lastCorrection.seq)) {
         stepContext.feedback = this.reworkNeeded(lastCorrection.step, lastCorrection.structuredOutput);
       }
+      if (run.requestedChanges) {
+        stepContext.feedback = [stepContext.feedback, run.requestedChanges].filter(Boolean).join("\n\n");
+      }
       let pending = startAt?.options;
 
       if (!run.resolvedProfile) {
@@ -721,6 +828,23 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         pending = undefined;
         index++;
       }
+      /**
+       * The user asked for changes on the diff (run.requestedChanges): implement runs again with
+       * them, then the rest of the profile. They do not count against maxLoops.
+       */
+      const backToImplement = (): boolean => {
+        const implementIndex = sequence.indexOf("implement");
+        if (implementIndex < 0) {
+          this.fail(run, "Has pedido cambios pero el perfil de este flujo no tiene paso implement");
+          return false;
+        }
+        stepContext.feedback = run.requestedChanges;
+        // Not the comments themselves: they reach implement as its corrections, the ledger would repeat them.
+        ledger.append("usuario", "Pide cambios sobre el diff: vuelve a implement con sus comentarios.");
+        // Paused before implement (step by step): the corrections wait for it; later on, it runs again.
+        index = Math.min(index, implementIndex);
+        return true;
+      };
       /** Where a one-off qaCode was inserted after a late custom writer; it leaves the sequence once it ran or was skipped. */
       let lateQa: number | undefined;
       const dropLateQa = (): boolean => {
@@ -746,6 +870,15 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
 
         if (run.request.stepByStep) {
           pending = (await this.breakpoint(run, context, stepName, stepContext, pending)) ?? pending;
+          if (pending?.changes) {
+            run.requestedChanges = pending.changes;
+            pending = undefined;
+            this.persist(run);
+            if (!backToImplement()) {
+              return;
+            }
+            continue;
+          }
           if (pending?.skip) {
             this.recordSkipped(run, stepName, profile);
             pending = undefined;
@@ -769,6 +902,17 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
         if (stepName === "implement") {
           await this.afterImplement(run, stepRun, ledger);
           stepContext.feedback = undefined;
+          if (run.requestedChanges) {
+            run.requestedChanges = undefined;
+            this.persist(run);
+          }
+        }
+        if (stepName === "release" && run.requestedChanges) {
+          // Changes asked for at the PR approval: nothing was pushed.
+          if (!backToImplement()) {
+            return;
+          }
+          continue;
         }
         if (stepName === "enrich" || stepName === "plan") {
           await this.learnConventions(run, stepRun);
@@ -1466,18 +1610,33 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     this.persist(run);
     try {
       const threads = await this.reviewThreads(run.id);
-      if (threads.length === 0) {
+      if (threads.length === 0 && !run.requestedChanges) {
         ledger.append("addressReview", "Sin hilos activos en la PR: nada que atender.");
         this.finishRun(run, context);
         return;
       }
+      if (run.requestedChanges) {
+        ledger.append("usuario", "Pide cambios sobre el diff con la PR abierta: van a addressReview.");
+      }
 
       const profile = run.resolvedProfile ? this.config.profiles.get(run.resolvedProfile) : undefined;
       const stepConfig = { ...(profile?.steps.addressReview ?? DEFAULT_ADDRESS_REVIEW), ...run.request.modelConfig };
-      const stepContext: StepContext = { outputs: new Map(), ledger, extraVars: { threads: threadsToText(threads), memory: await this.memoryVar(run) } };
+      const stepContext: StepContext = {
+        outputs: new Map(),
+        ledger,
+        extraVars: {
+          threads: threads.length ? threadsToText(threads) : "Ninguno.",
+          userComments: run.requestedChanges ?? "Ninguno.",
+          memory: await this.memoryVar(run),
+        },
+      };
       const stepRun = await this.runWithRateLimit(run, context, "addressReview", stepConfig, stepContext, options);
       if (!stepRun) {
         return;
+      }
+      if (run.requestedChanges) {
+        run.requestedChanges = undefined;
+        this.persist(run);
       }
       const output = stepRun.structuredOutput as { summary: string; commitMessage: string; replies: ReviewReply[] };
 
@@ -1538,7 +1697,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     run.status = "paused";
     run.pendingStep = { step: "addressReview", replies, commits };
     this.persist(run);
-    const options = await new Promise<RetryOptions | undefined>((resolve) => (context.release = resolve));
+    let options: RetryOptions | undefined;
+    do {
+      // Diff comments are no answer to this pause: it keeps waiting for an approval or a discard.
+      options = await new Promise<RetryOptions | undefined>((resolve) => (context.release = resolve));
+    } while (options?.changes && !context.cancelled);
     context.release = undefined;
     if (context.cancelled) {
       throw new CancelledError();
@@ -1601,14 +1764,16 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       const range = `${worktree.baseRef}...HEAD`;
       // The PR's .gitattributes must not pick a diff driver or textconv program of the user's.
       const diffArgs = ["-c", "core.quotepath=false", "diff", "--no-ext-diff", "--no-textconv", "-M"];
-      const nameStatus = await git(worktree.path, [...diffArgs, "--name-status", range]);
+      // Nor may it mark its changes as binary (`*.js -diff`) to hide them: attributes come from the base.
+      const baseAttributes = { GIT_ATTR_SOURCE: worktree.baseRef };
+      const nameStatus = await git(worktree.path, [...diffArgs, "--name-status", range], baseAttributes);
       const changedFiles = new Set(
         nameStatus
           .split(/\r?\n/)
           .filter(Boolean)
           .flatMap((line) => line.split("\t").slice(1)),
       );
-      const diff = await gitRaw(worktree.path, [...diffArgs, "--no-color", range]);
+      const diff = await gitRaw(worktree.path, [...diffArgs, "--no-color", range], baseAttributes);
       const hunks = parseDiffHunks(diff);
       // The reviewer has no shell (git's options can write files or run programs): it reads the diff here.
       const reviewDir = join(worktree.path, PR_REVIEW_DIR);
@@ -1619,6 +1784,7 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
       writeFileSync(join(reviewDir, "commits.txt"), await gitRaw(worktree.path, ["log", "--no-color", "--format=%h %an: %s", `${worktree.baseRef}..HEAD`]));
       // The checkout goes away after the review: the UI shows the copy kept with the run.
       saveRunDiff(this.store.runFile(run.id, RUN_DIFF_FILE), { repos: [await worktreeDiff(worktree, { uncommitted: false })] });
+      run.diffSaved = true;
       ledger.append(
         "prReview",
         [
@@ -1728,6 +1894,10 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
 
     emit({ kind: "text", text: `Esperando tu aprobación para hacer push y abrir ${drafts.length} PR(s).` });
     const approved = await this.awaitPrApproval(run, drafts);
+    if (!approved && run.requestedChanges) {
+      emit({ kind: "text", text: "Has pedido cambios sobre el diff: no se hace push; vuelve a implement." });
+      return [];
+    }
     if (!approved) {
       emit({ kind: "text", text: "PR descartada: las ramas se quedan en local." });
       stepContext.ledger.append("release", "PR no creada por decisión del usuario; ramas en local.");
@@ -1768,6 +1938,11 @@ export class Orchestrator extends EventEmitter<{ message: [ServerMessage]; setti
     }
     run.status = "running";
     run.pendingStep = undefined;
+    if (options?.changes?.trim()) {
+      run.requestedChanges = options.changes.trim();
+      this.persist(run);
+      return undefined;
+    }
     this.persist(run);
     if (options?.skip) {
       return undefined;

@@ -355,6 +355,8 @@ export type PrReviewComment = {
   snippet?: { startLine: number; lines: string[]; added: number[] };
   /** Inline comments: 1-based columns where the anchor starts and ends (Azure DevOps needs them). */
   anchor?: { startOffset: number; endOffset: number };
+  /** Written by the user on the diff, not proposed by the reviewer. */
+  own?: boolean;
 };
 
 export type PrReviewResult = {
@@ -570,6 +572,10 @@ export type Run = {
   reviewWatch?: ReviewWatch;
   /** `prReview` runs: the proposed comments, once the review finished. */
   prReview?: PrReviewResult;
+  /** Corrections the user asked for on the diff, until implement (or addressReview, with a PR) applies them. */
+  requestedChanges?: string;
+  /** A copy of the diff was kept when the worktrees went away (see GET /api/runs/:id/diff). */
+  diffSaved?: boolean;
 };
 
 export type ReviewWatch = {
@@ -715,6 +721,8 @@ export type RetryOptions = {
   prDrafts?: PrDraft[];
   /** Approved (possibly edited) replies to the PR threads. */
   replies?: ReviewReply[];
+  /** At a pause: the user's corrections (diff comments, already formatted); the flow goes back to implement with them. */
+  changes?: string;
 };
 
 /** Messages pushed to the UI over WebSocket. */

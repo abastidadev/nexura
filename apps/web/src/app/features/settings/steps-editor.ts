@@ -20,6 +20,7 @@ export const TEMPLATE_VARIABLES: { name: string; help: string }[] = [
   { name: "repoNotes", help: "convenciones aprendidas en tickets anteriores" },
   { name: "memory", help: "memoria compartida del ticket y del repo; vacía si el paso no tiene memoria" },
   { name: "threads", help: "hilos activos de la PR (solo addressReview y prReview)" },
+  { name: "userComments", help: "comentarios del usuario sobre el diff (solo addressReview)" },
   { name: "pr", help: "la PR revisada: número, autor, ramas y commit (solo prReview)" },
   { name: "changedFiles", help: "ficheros que cambia la PR, con git diff --name-status (solo prReview)" },
   { name: "baseRef", help: "rama destino de la PR, para git diff <baseRef>...HEAD (solo prReview)" },

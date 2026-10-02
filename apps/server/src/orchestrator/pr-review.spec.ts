@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { isAgentConfigPath } from "../workspace/git.ts";
-import { cleanPost, normalizePrReview, normalizeReviewPath, parseDiffHunks, reviewPosts, type PrReviewOutput } from "./pr-review.ts";
+import { parseUnifiedDiff } from "../workspace/diff.ts";
+import { cleanPost, normalizePrReview, normalizeReviewPath, ownReviewComment, parseDiffHunks, reviewPosts, type PrReviewOutput } from "./pr-review.ts";
 
 const DIFF = `diff --git a/src/greet.js b/src/greet.js
 index 1111111..2222222 100644
@@ -149,5 +150,34 @@ describe("isAgentConfigPath", () => {
     for (const file of ["src/claude.ts", "docs/CLAUDE.md.bak", ".github/workflows/ci.yml", "README.md"]) {
       expect(isAgentConfigPath(file), file).toBe(false);
     }
+  });
+});
+
+describe("ownReviewComment", () => {
+  const text = ["diff --git a/a.js b/a.js", "@@ -1,2 +1,3 @@", " one", "+  two", " three", "@@ -10,1 +11,2 @@", " ten", "+eleven", ""].join("\n");
+  const file = parseUnifiedDiff(text, [{ path: "a.js", status: "modified" }]).files[0]!;
+
+  it("anchors the user's comment on its hunk, with the hunk's lines around it", () => {
+    expect(ownReviewComment(file, { file: "a.js", startLine: 2, endLine: 2, post: " Use a const here \n please " }, 7)).toEqual({
+      id: 7,
+      severity: "minor",
+      file: "a.js",
+      startLine: 2,
+      endLine: 2,
+      title: "Use a const here",
+      post: "Use a const here \n please",
+      why: "",
+      inline: true,
+      own: true,
+      snippet: { startLine: 1, lines: ["one", "  two", "three"], added: [2] },
+      anchor: { startOffset: 3, endOffset: 6 },
+    });
+    expect(ownReviewComment(file, { file: "a.js", startLine: 12, endLine: 12, post: "x", severity: "blocker" }, 1).severity).toBe("blocker");
+  });
+
+  it("refuses lines across hunks or outside the diff, and empty text", () => {
+    expect(() => ownReviewComment(file, { file: "a.js", startLine: 2, endLine: 11, post: "x" }, 1)).toThrow("mismo bloque");
+    expect(() => ownReviewComment(file, { file: "a.js", startLine: 5, endLine: 5, post: "x" }, 1)).toThrow("mismo bloque");
+    expect(() => ownReviewComment(file, { file: "a.js", startLine: 2, endLine: 2, post: "  " }, 1)).toThrow("vacío");
   });
 });

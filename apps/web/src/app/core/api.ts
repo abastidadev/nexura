@@ -34,6 +34,8 @@ import type {
   ReviewThread,
   Run,
   RunDiff,
+  ChangeRequest,
+  OwnReviewComment,
   SavedConversationImage,
   RunRequest,
   StepDefinition,
@@ -109,8 +111,28 @@ export class Api {
   }
 
   /** What the run's branches change against their base (live worktrees or the copy kept). */
-  public getRunDiff(runId: string): Promise<RunDiff> {
-    return firstValueFrom(this.http.get<RunDiff>(`/api/runs/${runId}/diff`));
+  public getRunDiff(runId: string, ignoreWhitespace = false): Promise<RunDiff> {
+    return firstValueFrom(this.http.get<RunDiff>(`/api/runs/${runId}/diff`, { params: { ignoreWhitespace } }));
+  }
+
+  /** The diff of an open PR before any review (fetched into the repo, no checkout). */
+  public getPullRequestDiff(repo: string, prId: number, ignoreWhitespace = false): Promise<RunDiff> {
+    return firstValueFrom(this.http.get<RunDiff>(`/api/repos/${encodeURIComponent(repo)}/pull-requests/${prId}/diff`, { params: { ignoreWhitespace } }));
+  }
+
+  /** What is not committed in a Terminal conversation's repo. */
+  public getConversationDiff(id: string, ignoreWhitespace = false): Promise<RunDiff> {
+    return firstValueFrom(this.http.get<RunDiff>(`/api/conversations/${id}/diff`, { params: { ignoreWhitespace } }));
+  }
+
+  /** The user's diff comments back to implement (at a pause, or relaunching a stopped flow). */
+  public requestChanges(runId: string, request: ChangeRequest): Promise<Run> {
+    return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/request-changes`, request));
+  }
+
+  /** A comment of the user added to an unpublished PR review. */
+  public addReviewComment(runId: string, comment: OwnReviewComment): Promise<Run> {
+    return firstValueFrom(this.http.post<Run>(`/api/runs/${runId}/review-comments`, comment));
   }
 
   public startRun(request: RunRequest): Promise<Run> {

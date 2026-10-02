@@ -670,3 +670,40 @@
     border-color: CanvasText;
   }
 }
+
+/* Syntax colors of the diffs (highlight.js classes), from the semantic tokens of each theme. */
+.nx-code .hljs-keyword,
+.nx-code .hljs-selector-tag,
+.nx-code .hljs-meta .hljs-keyword {
+  color: var(--nx-accent);
+}
+.nx-code .hljs-string,
+.nx-code .hljs-regexp,
+.nx-code .hljs-template-tag,
+.nx-code .hljs-addition {
+  color: var(--nx-ok);
+}
+.nx-code .hljs-number,
+.nx-code .hljs-literal,
+.nx-code .hljs-symbol,
+.nx-code .hljs-attr,
+.nx-code .hljs-attribute {
+  color: var(--nx-warn);
+}
+.nx-code .hljs-title,
+.nx-code .hljs-type,
+.nx-code .hljs-built_in,
+.nx-code .hljs-name,
+.nx-code .hljs-selector-class,
+.nx-code .hljs-selector-id {
+  color: var(--nx-info);
+}
+.nx-code .hljs-comment,
+.nx-code .hljs-quote,
+.nx-code .hljs-meta {
+  color: var(--nx-muted);
+  font-style: italic;
+}
+.nx-code .hljs-deletion {
+  color: var(--nx-err);
+}

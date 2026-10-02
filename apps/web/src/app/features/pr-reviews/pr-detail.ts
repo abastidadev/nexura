@@ -1,4 +1,4 @@
-import { Component, computed, effect, inject, input, output, resource, signal } from "@angular/core";
+import { Component, computed, effect, inject, input, linkedSignal, output, resource, signal } from "@angular/core";
 import {
   AGENT_KINDS,
   AGENT_LABELS,
@@ -14,6 +14,7 @@ import { Api, apiError } from "../../core/api";
 import { modelDetail, RUN_STATUS, timeOfDay, type Tone } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { readStorage, writeStorage } from "../../core/storage";
+import { DiffPanel, type DiffLoader } from "../../shared/diff-panel";
 import { FILE_STATUS } from "../../shared/diff-view";
 import { Icon } from "../../shared/icon";
 import { ModelPicker } from "../../shared/model-picker";
@@ -41,7 +42,7 @@ const REVIEWER_STATE: Record<PrReviewerState, { label: string; tone: Tone }> = {
  */
 @Component({
   selector: "nx-pr-detail",
-  imports: [ModelPicker, StatusPill, Icon],
+  imports: [ModelPicker, StatusPill, Icon, DiffPanel],
   template: `
     <div class="min-h-0 flex-1 overflow-y-auto">
       <div class="mx-auto flex max-w-5xl flex-col gap-4 px-5 py-4">
@@ -146,8 +147,24 @@ const REVIEWER_STATE: Record<PrReviewerState, { label: string; tone: Tone }> = {
             @if (detail.hasValue()) {
               @let info = detail.value();
               <section class="nx-card p-4" aria-labelledby="pr-files">
-                <h3 id="pr-files" class="nx-panel-title">Ficheros cambiados ({{ info.changedFiles }})</h3>
-                @if (info.files.length === 0) {
+                <div class="flex items-center gap-2">
+                  <h3 id="pr-files" class="nx-panel-title">Ficheros cambiados ({{ info.changedFiles }})</h3>
+                  @if (info.files.length) {
+                    <button
+                      type="button"
+                      class="nx-btn nx-btn-sm ml-auto"
+                      [class.nx-btn-primary]="showDiff()"
+                      [attr.aria-pressed]="showDiff()"
+                      title="El diff completo de la PR, sin revisarla (git, sin tokens)"
+                      (click)="showDiff.set(!showDiff())"
+                    >
+                      <nx-icon name="fork" [size]="14" />Ver diff
+                    </button>
+                  }
+                </div>
+                @if (showDiff()) {
+                  <p class="mt-2 text-sm text-muted">El diff completo está debajo.</p>
+                } @else if (info.files.length === 0) {
                   <p class="mt-2 text-sm text-muted">No hay ficheros cambiados.</p>
                 } @else {
                   <ul class="mt-2 max-h-96 divide-y divide-border overflow-y-auto">
@@ -246,6 +263,17 @@ const REVIEWER_STATE: Record<PrReviewerState, { label: string; tone: Tone }> = {
             }
           </aside>
         </div>
+        @if (showDiff()) {
+          <nx-diff-panel
+            class="h-[80vh] overflow-hidden rounded-lg border border-border"
+            heading="Diff de la PR"
+            [load]="diffLoad()"
+            [version]="pr().headSha"
+            [emptyText]="'No se pudo leer el diff de la PR.'"
+            [noChangesText]="'La PR no cambia ningún fichero respecto a su rama destino.'"
+            (closed)="showDiff.set(false)"
+          />
+        }
       </div>
     </div>
   `,
@@ -276,6 +304,16 @@ export class PrDetail {
     loader: ({ params }) => this.api.getPullRequestDetail(params.repo, params.id),
   });
   protected readonly detailError = computed(() => apiError(this.detail.error(), "No se pudieron cargar los detalles de la PR"));
+
+  /** The PR's diff in place of the file list (fetched into the repo, no checkout, zero tokens). */
+  protected readonly showDiff = linkedSignal<number, boolean>({ source: () => this.pr().id, computation: () => false });
+  private readonly prId = computed(() => this.pr().id);
+  /** Stable per PR: the list reloading must not read the diff again (a new head does, through `version`). */
+  protected readonly diffLoad = computed<DiffLoader>(() => {
+    const repo = this.repo();
+    const id = this.prId();
+    return (ignoreWhitespace) => this.api.getPullRequestDiff(repo, id, ignoreWhitespace);
+  });
 
   protected readonly running = computed(() => this.reviews().find((run) => ACTIVE.has(run.status)));
   protected readonly outdated = computed(() => {

@@ -29,6 +29,9 @@ export const SEVERITY: Record<PrReviewSeverity, { label: string; tone: Tone }> =
           <span class="text-ok" title="Publicado en la PR" aria-label="Publicado">✔</span>
         }
         <span class="rounded px-1.5 py-0.5 text-xs font-semibold" [class]="tone().bg + ' ' + tone().text">{{ severity().label }}</span>
+        @if (comment().own) {
+          <span class="rounded bg-accent-soft px-1.5 py-0.5 text-xs font-semibold text-accent" title="Lo escribiste tú en el diff">Tuyo</span>
+        }
         <h3 class="min-w-0 flex-1 font-medium">{{ comment().title }}</h3>
         <span class="text-xs text-muted" [attr.title]="comment().inline ? 'Se ancla en esas líneas de la PR' : 'Va como comentario general de la PR, citando el sitio'">
           {{ comment().inline ? "en línea" : "general" }}
