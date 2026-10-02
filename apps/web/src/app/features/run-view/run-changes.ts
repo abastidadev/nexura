@@ -1,9 +1,9 @@
 import { Component, computed, effect, inject, input, linkedSignal, output, signal } from "@angular/core";
-import type { DiffComment, Run } from "@nexura/shared";
+import type { Run } from "@nexura/shared";
 import { Api, apiError } from "../../core/api";
 import { readStorage, removeStorage, writeStorage } from "../../core/storage";
 import { DiffPanel, type DiffLoader } from "../../shared/diff-panel";
-import type { Commentable, NewDiffComment, ShownComment } from "../../shared/diff-view";
+import type { Commentable, DraftComment, NewDiffComment, ShownComment } from "../../shared/diff-view";
 
 /**
  * What the user's comments do with this run, by its state (the server has the same rules):
@@ -143,9 +143,9 @@ export class RunChanges {
   protected readonly commentable = computed<Commentable>(() => (this.mode() === "review" ? "new" : this.mode() === "none" ? "none" : "any"));
   protected readonly sendLabel = computed(() => SEND_LABELS[this.mode()]);
 
-  protected readonly drafts = linkedSignal<string, DiffComment[]>({
+  protected readonly drafts = linkedSignal<string, DraftComment[]>({
     source: this.runId,
-    computation: (id) => readStorage<DiffComment[]>(draftsKey(id), []),
+    computation: (id) => readStorage<DraftComment[]>(draftsKey(id), []),
   });
   protected readonly note = signal("");
   protected readonly busy = signal(false);
@@ -167,6 +167,9 @@ export class RunChanges {
         side: "new" as const,
         startLine: comment.startLine!,
         endLine: comment.endLine ?? comment.startLine!,
+        // The text the thread is anchored on, marked in the code as Azure DevOps does.
+        startOffset: comment.anchor?.startOffset,
+        endOffset: comment.anchor?.endOffset,
         body: comment.post,
         label: `${comment.own ? "Tu comentario" : "Revisor"} · ${SEVERITY_LABELS[comment.severity] ?? comment.severity}`,
       }));
@@ -199,6 +202,8 @@ export class RunChanges {
         file: comment.file,
         startLine: comment.startLine,
         endLine: comment.endLine,
+        startOffset: comment.startOffset,
+        endOffset: comment.endOffset,
         post: comment.body,
         severity: comment.severity,
       });

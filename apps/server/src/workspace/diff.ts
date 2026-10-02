@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { closeSync, constants, existsSync, fstatSync, lstatSync, mkdirSync, openSync, readFileSync, readSync, writeFileSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
-import type { DiffComment, DiffHunk, DiffLine, FileDiff, PrFileStatus, RepoDiff, Run, RunDiff, Worktree } from "@nexura/shared";
+import { commentedLines, selectedText, type DiffComment, type DiffHunk, type DiffLine, type FileDiff, type PrFileStatus, type RepoDiff, type Run, type RunDiff, type Worktree } from "@nexura/shared";
 import { azureGitEnv } from "../azure/azure-client.ts";
 import { gitRaw, LOCAL_CLAUDE_FILES } from "./git.ts";
 
@@ -278,14 +278,30 @@ const MAX_COMMENT_LENGTH = 4000;
 /** Lines of code quoted under each comment, at most. */
 const QUOTE_LINES = 12;
 
-/** The diff lines a comment covers, on its side (a removed line has no new number, an added one no old number). */
-export function commentedLines(file: FileDiff, comment: Pick<DiffComment, "side" | "startLine" | "endLine">): DiffLine[] {
-  return file.hunks.flatMap((hunk) =>
-    hunk.lines.filter((line) => {
-      const number = comment.side === "new" ? line.new : line.old;
-      return number !== undefined && number >= comment.startLine && number <= comment.endLine;
-    }),
-  );
+/**
+ * The columns of a selection, kept only when they fit its lines (1-based; `endOffset` right
+ * after the last character) and select something. Otherwise undefined: the whole lines.
+ */
+export function checkSelection(
+  file: FileDiff,
+  comment: Pick<DiffComment, "side" | "startLine" | "endLine">,
+  raw: { startOffset?: unknown; endOffset?: unknown },
+): { startOffset: number; endOffset: number } | undefined {
+  const startOffset = Number(raw.startOffset);
+  const endOffset = Number(raw.endOffset);
+  if (raw.startOffset === undefined || raw.endOffset === undefined || !Number.isInteger(startOffset) || !Number.isInteger(endOffset)) {
+    return undefined;
+  }
+  const lines = commentedLines(file, comment);
+  const first = lines[0]?.text;
+  const last = lines.at(-1)?.text;
+  if (first === undefined || last === undefined || startOffset < 1 || endOffset < 1 || startOffset > first.length + 1 || endOffset > last.length + 1) {
+    return undefined;
+  }
+  if (lines.length === 1 && endOffset <= startOffset) {
+    return undefined;
+  }
+  return { startOffset, endOffset };
 }
 
 /**
@@ -318,11 +334,11 @@ export function checkDiffComments(input: unknown, diff: RunDiff): DiffComment[] 
     if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine) {
       throw new Error(`${label}: líneas no válidas`);
     }
-    const comment = { repo: raw.repo!, file: file.path, side, startLine, endLine, body } satisfies DiffComment;
+    const comment: DiffComment = { repo: raw.repo!, file: file.path, side, startLine, endLine, body };
     if (commentedLines(file, comment).length === 0) {
       throw new Error(`${label}: las líneas ${startLine}-${endLine} de ${file.path} no están en el diff (actualízalo y vuelve a comentar)`);
     }
-    return comment;
+    return { ...comment, ...checkSelection(file, comment, raw) };
   });
 }
 
@@ -355,10 +371,14 @@ export function formatChangeRequest(comments: DiffComment[], diff: RunDiff, note
       .concat(lines.length > QUOTE_LINES ? ["…"] : [])
       .join("\n");
     const marks = fence(code);
+    // A selection says exactly what the comment is about, inside those lines.
+    const selection = file ? selectedText(file, comment) : undefined;
+    const selectionMarks = selection ? fence(selection) : "";
     parts.push(
       [
         `${index + 1}. ${inlinePath(`${comment.file}:${range}`)}${where ? ` (${where})` : ""}`,
         code ? `${marks}diff\n${code}\n${marks}` : "",
+        selection ? `Texto señalado:\n${selectionMarks}\n${selection}\n${selectionMarks}` : "",
         comment.body,
       ]
         .filter(Boolean)

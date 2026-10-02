@@ -1,11 +1,16 @@
 import type { DiffComment } from "@nexura/shared";
 
-/** The comments as one message for the CLI: where (file and lines) and what to change. */
-export function commentsMessage(comments: DiffComment[], note: string): string {
+/** Longest quote of a selection in the message (the CLI has the file: the quote only points at it). */
+const MAX_QUOTE = 120;
+
+/** The comments as one message for the CLI: where (file, lines and the text selected) and what to change. */
+export function commentsMessage(comments: (DiffComment & { quote?: string })[], note: string): string {
   const lines = comments.map((comment, index) => {
     const range = comment.endLine > comment.startLine ? `${comment.startLine}-${comment.endLine}` : `${comment.startLine}`;
     const where = `${comment.file}:${range}${comment.side === "old" ? " (líneas borradas, numeración de HEAD)" : ""}`;
-    return `${index + 1}. ${where}: ${comment.body}`;
+    const quote = comment.quote?.replace(/\s+/g, " ").trim();
+    const selected = quote ? ` («${quote.length > MAX_QUOTE ? quote.slice(0, MAX_QUOTE - 1) + "…" : quote}»)` : "";
+    return `${index + 1}. ${where}${selected}: ${comment.body}`;
   });
   const text = [
     comments.length ? "Revisa estos puntos de los cambios sin commit:" : "",

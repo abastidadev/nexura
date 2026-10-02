@@ -48,6 +48,13 @@ export type DiffComment = {
   side: "old" | "new";
   startLine: number;
   endLine: number;
+  /**
+   * The exact text selected, when the comment came from a selection (as Azure DevOps anchors
+   * its threads): 1-based column of its first character on startLine, and the column right
+   * after its last character on endLine. Missing = the whole lines.
+   */
+  startOffset?: number;
+  endOffset?: number;
   body: string;
 };
 
@@ -55,4 +62,38 @@ export type DiffComment = {
 export type ChangeRequest = { comments: DiffComment[]; note?: string; /** The comments were written on the diff without whitespace changes. */ ignoreWhitespace?: boolean };
 
 /** A comment of the user added to a PR review, on new-side lines of the PR's diff. */
-export type OwnReviewComment = { file: string; startLine: number; endLine: number; post: string; severity?: PrReviewSeverity };
+export type OwnReviewComment = {
+  file: string;
+  startLine: number;
+  endLine: number;
+  /** The selected text, as in DiffComment. */
+  startOffset?: number;
+  endOffset?: number;
+  post: string;
+  severity?: PrReviewSeverity;
+};
+
+/** The lines of a file's diff that hold a comment's lines on its side, in order. */
+export function commentedLines(file: FileDiff, comment: Pick<DiffComment, "side" | "startLine" | "endLine">): DiffLine[] {
+  return file.hunks.flatMap((hunk) =>
+    hunk.lines.filter((line) => {
+      const number = comment.side === "new" ? line.new : line.old;
+      return number !== undefined && number >= comment.startLine && number <= comment.endLine;
+    }),
+  );
+}
+
+/** The text a comment selected, cut from its lines by its columns; undefined when it covers whole lines. */
+export function selectedText(file: FileDiff, comment: Pick<DiffComment, "side" | "startLine" | "endLine" | "startOffset" | "endOffset">): string | undefined {
+  if (!comment.startOffset || !comment.endOffset) {
+    return undefined;
+  }
+  const lines = commentedLines(file, comment).map((line) => line.text);
+  if (lines.length === 0) {
+    return undefined;
+  }
+  if (lines.length === 1) {
+    return lines[0]!.slice(comment.startOffset - 1, comment.endOffset - 1);
+  }
+  return [lines[0]!.slice(comment.startOffset - 1), ...lines.slice(1, -1), lines.at(-1)!.slice(0, comment.endOffset - 1)].join("\n");
+}

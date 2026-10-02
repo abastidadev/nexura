@@ -707,3 +707,10 @@
 .nx-code .hljs-deletion {
   color: var(--nx-err);
 }
+
+/* The text a diff comment selected, marked in the code as Azure DevOps does (CSS custom highlight). */
+::highlight(nx-diff-comment) {
+  background-color: color-mix(in srgb, var(--nx-accent) 38%, transparent);
+  text-decoration: underline;
+  text-decoration-color: var(--nx-accent);
+}

@@ -1,6 +1,6 @@
 import { NgTemplateOutlet } from "@angular/common";
-import { Component, computed, effect, type ElementRef, input, linkedSignal, model, output, signal, viewChild } from "@angular/core";
-import { PR_REVIEW_SEVERITIES, type DiffComment, type DiffLine, type FileDiff, type PrFileStatus, type PrReviewSeverity, type RepoDiff } from "@nexura/shared";
+import { afterRenderEffect, Component, computed, DestroyRef, effect, inject, type ElementRef, input, linkedSignal, model, output, signal, viewChild } from "@angular/core";
+import { commentedLines, PR_REVIEW_SEVERITIES, selectedText, type DiffComment, type DiffLine, type FileDiff, type PrFileStatus, type PrReviewSeverity, type RepoDiff } from "@nexura/shared";
 import { readStorage, writeStorage } from "../core/storage";
 import { Icon } from "./icon";
 import { escapeHtml, highlightLine, languageOf, syntaxHighlighter } from "./syntax";
@@ -25,11 +25,17 @@ const LAYOUT_KEY = "nexura.diff.layout";
 const FIRST_LINES = 600;
 const MORE_LINES = 2000;
 
-/** A comment drawn under its last line. `label` names who wrote it; `removable` shows a remove button. */
-export type ShownComment = DiffComment & { label?: string; removable?: boolean };
+/**
+ * A comment drawn under its last line. `label` names who wrote it; `removable` shows a remove
+ * button; `quote` is the text it selected (else it is cut from the diff by its columns).
+ */
+export type ShownComment = DiffComment & { label?: string; removable?: boolean; quote?: string };
 
-/** What the comment box sends; `severity` only when the box asks for it (a PR review). */
-export type NewDiffComment = DiffComment & { severity?: PrReviewSeverity };
+/** What the comment box sends: `quote` = the text selected, if any; `severity` only when the box asks for it (a PR review). */
+export type NewDiffComment = DiffComment & { quote?: string; severity?: PrReviewSeverity };
+
+/** A comment kept until it is sent (in the browser): the box's comment without the severity. */
+export type DraftComment = Omit<NewDiffComment, "severity">;
 
 /**
  * Which lines can be commented: none, any (old numbers for removed lines), or only new-side
@@ -40,14 +46,19 @@ export type Commentable = "none" | "any" | "new";
 type Layout = "unified" | "split";
 type Side = DiffComment["side"];
 type Entry = { key: string; repo: string; file: FileDiff };
-type Selection = { key: string; side: Side; hunk: number; anchor: number; start: number; end: number };
+/** Lines (and, from a text selection, the exact columns) the comment box is open on. */
+type Selection = { key: string; side: Side; hunk: number; anchor: number; start: number; end: number; startOffset?: number; endOffset?: number };
+/** A text selection waiting for its comment icon to be clicked, and where to draw the icon. */
+type Bubble = Selection & { x: number; y: number };
 /** A table row: a hunk header, or a line (unified) / the two sides of a line (split; a context line is on both). */
 type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
 
 /**
  * The files of a diff on the left and the selected one on the right, unified or side by side,
- * with the old and new line numbers and the syntax colored. When `commentable`, a click on a
- * line number (shift+click for a range) opens a comment box.
+ * with the old and new line numbers and the syntax colored. When `commentable`, comments are
+ * written as in Azure DevOps: select some code and click the comment icon that appears at the
+ * end of the selection (the comment is anchored on that exact text), or hover a line and click
+ * its icon; a click on a line number (shift+click for a range) works too.
  */
 @Component({
   selector: "nx-diff-view",
@@ -94,7 +105,7 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
         }
       </nav>
 
-      <section class="min-w-0 flex-1 overflow-auto bg-bg" aria-label="Diff del fichero">
+      <section #scroller class="relative min-w-0 flex-1 overflow-auto bg-bg" aria-label="Diff del fichero">
         <div class="sticky top-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-1 border-b border-border bg-surface px-3 py-1.5">
           @if (selected(); as entry) {
             <span class="min-w-0 font-mono text-sm break-all">
@@ -137,10 +148,16 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
           } @else {
             @if (commentable() !== "none") {
               <p class="border-b border-border px-3 py-1 text-xs text-muted">
-                Pulsa el número de una línea para comentarla; con Mayús, un rango.{{ commentable() === "new" ? " Solo líneas de la versión nueva." : "" }}
+                Selecciona código y pulsa el icono de comentario que aparece, o el de una línea al pasar el ratón por ella.{{
+                  commentable() === "new" ? " Solo la versión nueva, dentro de un mismo bloque." : ""
+                }}
               </p>
             }
-            <table class="w-full table-fixed border-collapse font-mono text-xs leading-5">
+            <table
+              class="w-full table-fixed border-collapse font-mono text-xs leading-5"
+              (mousedown)="bubble.set(undefined)"
+              (mouseup)="onMouseUp(entry)"
+            >
               <colgroup>
                 @if (layout() === "split") {
                   <col class="w-12" /><col /><col class="w-12" /><col />
@@ -159,7 +176,12 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
                       <td class="border-r border-border px-2 text-right align-top text-muted select-none" [class]="cellClass(entry, row.left, 'old')">
                         <ng-container *ngTemplateOutlet="number; context: { entry, hunk: row.hunk, side: 'old', line: row.left }" />
                       </td>
-                      <td class="nx-code overflow-hidden border-r border-border px-2 align-top whitespace-pre" [class]="cellClass(entry, row.left, 'old')">
+                      <td
+                        class="nx-code overflow-hidden border-r border-border px-2 align-top whitespace-pre"
+                        [class]="cellClass(entry, row.left, 'old')"
+                        [attr.data-hunk]="row.hunk"
+                        [attr.data-old]="row.left?.old ?? null"
+                      >
                         @if (row.left) {
                           <span [innerHTML]="code(row.left)"></span>
                         }
@@ -167,7 +189,12 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
                       <td class="border-r border-border px-2 text-right align-top text-muted select-none" [class]="cellClass(entry, row.right, 'new')">
                         <ng-container *ngTemplateOutlet="number; context: { entry, hunk: row.hunk, side: 'new', line: row.right }" />
                       </td>
-                      <td class="nx-code overflow-hidden px-2 align-top whitespace-pre" [class]="cellClass(entry, row.right, 'new')">
+                      <td
+                        class="nx-code overflow-hidden px-2 align-top whitespace-pre"
+                        [class]="cellClass(entry, row.right, 'new')"
+                        [attr.data-hunk]="row.hunk"
+                        [attr.data-new]="row.right?.new ?? null"
+                      >
                         @if (row.right) {
                           <span [innerHTML]="code(row.right)"></span>
                         }
@@ -175,17 +202,36 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
                     </tr>
                   } @else {
                     @let line = row.left!;
-                    <tr [class]="isSelected(entry, line) ? 'bg-accent-soft' : rowStyle[line.kind].classes">
+                    @let lineSide = sideOf(line);
+                    <tr class="group" [class]="isSelected(entry, line) ? 'bg-accent-soft' : rowStyle[line.kind].classes">
                       <td class="border-r border-border px-2 text-right align-top text-muted select-none">
                         <ng-container *ngTemplateOutlet="number; context: { entry, hunk: row.hunk, side: 'old', line }" />
                       </td>
                       <td class="border-r border-border px-2 text-right align-top text-muted select-none">
                         <ng-container *ngTemplateOutlet="number; context: { entry, hunk: row.hunk, side: 'new', line }" />
                       </td>
-                      <td class="pl-1 align-top select-none" [class.text-ok]="line.kind === 'add'" [class.text-err]="line.kind === 'del'" aria-hidden="true">
-                        {{ rowStyle[line.kind].sign }}
+                      <td class="relative pl-1 align-top select-none" [class.text-ok]="line.kind === 'add'" [class.text-err]="line.kind === 'del'">
+                        <span aria-hidden="true">{{ rowStyle[line.kind].sign }}</span>
+                        @if (lineSide) {
+                          <!-- As in Azure DevOps: hovering a line shows the icon to comment on it. -->
+                          <button
+                            type="button"
+                            class="absolute inset-y-0 left-0 hidden w-5 place-items-center rounded-sm bg-accent text-on-accent group-hover:grid focus-visible:grid"
+                            title="Comentar esta línea"
+                            [attr.aria-label]="'Comentar esta línea (' + (lineSide === 'new' ? line.new : line.old) + ')'"
+                            (click)="pick(entry, row.hunk, lineSide, lineSide === 'new' ? line.new! : line.old!, $event)"
+                          >
+                            <nx-icon name="comment" [size]="13" />
+                          </button>
+                        }
                       </td>
-                      <td class="nx-code overflow-hidden pr-3 whitespace-pre" [innerHTML]="code(line)"></td>
+                      <td
+                        class="nx-code overflow-hidden pr-3 whitespace-pre"
+                        [attr.data-hunk]="row.hunk"
+                        [attr.data-old]="line.old ?? null"
+                        [attr.data-new]="line.new ?? null"
+                        [innerHTML]="code(line)"
+                      ></td>
                     </tr>
                   }
                   @if (row.header === undefined) {
@@ -195,6 +241,9 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
                           <div class="flex items-start gap-2">
                             <div class="min-w-0 flex-1">
                               <p class="text-xs text-muted">{{ comment.label ?? "Tu comentario" }} · {{ place(comment) }}</p>
+                              @if (quoteOf(entry, comment); as quote) {
+                                <pre class="my-1 max-h-24 overflow-auto rounded border-l-2 border-accent bg-accent-soft px-2 py-0.5 font-mono text-xs whitespace-pre-wrap">{{ quote }}</pre>
+                              }
                               <p class="whitespace-pre-wrap">{{ comment.body }}</p>
                             </div>
                             @if (comment.removable) {
@@ -212,6 +261,9 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
                           <label class="mb-1 block text-xs text-muted" for="nx-diff-comment">
                             Comentario en {{ place({ file: file.path, side: current.side, startLine: current.start, endLine: current.end }) }}
                           </label>
+                          @if (selectionQuote(entry, current); as quote) {
+                            <pre class="mb-1.5 max-h-24 overflow-auto rounded border-l-2 border-accent bg-accent-soft px-2 py-0.5 font-mono text-xs whitespace-pre-wrap">{{ quote }}</pre>
+                          }
                           <textarea
                             #box
                             id="nx-diff-comment"
@@ -245,6 +297,23 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
                 }
               </tbody>
             </table>
+            @if (bubble(); as pending) {
+              @if (pending.key === entry.key) {
+                <!-- As in Azure DevOps: the icon at the end of a selection opens its comment. -->
+                <button
+                  type="button"
+                  class="absolute z-30 grid size-7 place-items-center rounded-md bg-accent text-on-accent shadow-lg hover:bg-accent-strong"
+                  title="Comentar la selección"
+                  aria-label="Comentar la selección"
+                  [style.left.px]="pending.x"
+                  [style.top.px]="pending.y"
+                  (mousedown)="$event.preventDefault()"
+                  (click)="openBubble()"
+                >
+                  <nx-icon name="comment" [size]="15" />
+                </button>
+              }
+            }
             @if (hiddenLines() > 0) {
               <div class="flex items-center gap-3 border-t border-border px-3 py-2 text-sm">
                 <span class="text-muted">Faltan {{ hiddenLines() }} línea(s) por mostrar.</span>
@@ -276,7 +345,7 @@ type Row = { hunk: number; header?: string; left?: DiffLine; right?: DiffLine };
       }
     </ng-template>
   `,
-  host: { class: "@container block min-h-0" },
+  host: { class: "@container block min-h-0", "(keydown.escape)": "bubble.set(undefined)" },
 })
 export class DiffView {
   public readonly repos = input.required<RepoDiff[]>();
@@ -369,9 +438,12 @@ export class DiffView {
   private highlightedFor?: string;
 
   protected readonly selection = signal<Selection | undefined>(undefined);
+  /** A text selection with its comment icon showing, not opened yet. */
+  protected readonly bubble = signal<Bubble | undefined>(undefined);
   protected readonly draft = signal("");
   protected readonly severity = signal<PrReviewSeverity>("minor");
   private readonly box = viewChild<ElementRef<HTMLTextAreaElement>>("box");
+  private readonly scroller = viewChild<ElementRef<HTMLElement>>("scroller");
 
   protected readonly commentCounts = computed(() => {
     const counts = new Map<string, number>();
@@ -398,6 +470,25 @@ export class DiffView {
   public constructor() {
     // The box appears with the selection: focus it to type right away.
     effect(() => this.box()?.nativeElement.focus());
+    // As Azure DevOps does, the text a comment selected stays marked in the code. A CSS custom
+    // highlight marks text ranges without touching the colored HTML of the lines.
+    afterRenderEffect(() => {
+      const entry = this.selected();
+      const scroller = this.scroller()?.nativeElement;
+      const open = this.selection();
+      const marked: Pick<DiffComment, "side" | "startLine" | "endLine" | "startOffset" | "endOffset">[] = this.comments().filter(
+        (comment) => entry && comment.repo === entry.repo && comment.file === entry.file.path,
+      );
+      if (open && entry && open.key === entry.key) {
+        marked.push({ side: open.side, startLine: open.start, endLine: open.end, startOffset: open.startOffset, endOffset: open.endOffset });
+      }
+      // Again whenever the lines are drawn anew: highlight.js arriving replaces their HTML, and the old ranges go empty.
+      this.rows();
+      this.layout();
+      this.language();
+      markSelections(scroller, marked);
+    });
+    inject(DestroyRef).onDestroy(() => markSelections(undefined, []));
   }
 
   protected setLayout(layout: Layout): void {
@@ -421,12 +512,94 @@ export class DiffView {
     return html || " ";
   }
 
+  /** Which side a line is commented on: its new number when it has one, else its old one (removed lines). */
+  protected sideOf(line: DiffLine): Side | undefined {
+    if (line.new !== undefined && this.commentable() !== "none") {
+      return "new";
+    }
+    return line.old !== undefined && this.commentable() === "any" ? "old" : undefined;
+  }
+
+  /**
+   * After a mouse selection inside the code: where it starts and ends (line, side and column)
+   * and the comment icon next to its end, as Azure DevOps does. Nothing for a selection that
+   * mixes sides (a removed and an added line), leaves the code or, for a PR, spans two hunks.
+   */
+  protected onMouseUp(entry: Entry): void {
+    const selection = document.getSelection();
+    const scroller = this.scroller()?.nativeElement;
+    if (!selection || selection.isCollapsed || selection.rangeCount === 0 || !scroller || this.commentable() === "none") {
+      this.bubble.set(undefined);
+      return;
+    }
+    const range = selection.getRangeAt(0);
+    const first = codeCell(range.startContainer, scroller);
+    const last = codeCell(range.endContainer, scroller);
+    const sides: Side[] = this.commentable() === "new" ? ["new"] : ["new", "old"];
+    const side = first && last ? sides.find((candidate) => first.dataset[candidate] !== undefined && last.dataset[candidate] !== undefined) : undefined;
+    if (!first || !last || !side || (this.commentable() === "new" && first.dataset["hunk"] !== last.dataset["hunk"])) {
+      this.bubble.set(undefined);
+      return;
+    }
+    const start = Number(first.dataset[side]);
+    let end = Number(last.dataset[side]);
+    const startOffset = columnOf(first, range.startContainer, range.startOffset);
+    let endOffset = columnOf(last, range.endContainer, range.endOffset);
+    // A selection ending at the very start of a line (a triple click) ends with the line before.
+    const previous = endOffset === 1 && end > start ? lineOn(entry.file, side, end - 1) : undefined;
+    if (previous) {
+      end -= 1;
+      endOffset = previous.text.length + 1;
+    }
+    if (start === end && endOffset <= startOffset) {
+      this.bubble.set(undefined);
+      return;
+    }
+    const rects = range.getClientRects();
+    const corner = rects.item(rects.length - 1) ?? range.getBoundingClientRect();
+    const box = scroller.getBoundingClientRect();
+    this.bubble.set({
+      key: entry.key,
+      side,
+      hunk: Number(first.dataset["hunk"]),
+      anchor: start,
+      start,
+      end,
+      startOffset,
+      endOffset,
+      x: Math.min(corner.right - box.left + scroller.scrollLeft + 6, scroller.scrollWidth - 34),
+      y: Math.max(0, corner.top - box.top + scroller.scrollTop - 4),
+    });
+  }
+
+  /** The comment icon of a selection was clicked: the box opens on that exact text. */
+  protected openBubble(): void {
+    const pending = this.bubble();
+    if (!pending) {
+      return;
+    }
+    const { x: _x, y: _y, ...selection } = pending;
+    this.selection.set(selection);
+    this.bubble.set(undefined);
+    document.getSelection()?.removeAllRanges();
+  }
+
+  /** The text a comment is about: what it says it quoted, else what its columns select. */
+  protected quoteOf(entry: Entry, comment: ShownComment): string | undefined {
+    return comment.quote ?? selectedText(entry.file, comment);
+  }
+
+  protected selectionQuote(entry: Entry, current: Selection): string | undefined {
+    return selectedText(entry.file, { side: current.side, startLine: current.start, endLine: current.end, startOffset: current.startOffset, endOffset: current.endOffset });
+  }
+
   protected pick(entry: Entry, hunk: number, side: Side, line: number, event: MouseEvent): void {
+    this.bubble.set(undefined);
     const current = this.selection();
     // A PR comment is anchored inside one hunk: a range across hunks starts over.
     const extend = event.shiftKey && current?.key === entry.key && current.side === side && (this.commentable() !== "new" || current.hunk === hunk);
     if (extend) {
-      this.selection.set({ ...current, start: Math.min(current.anchor, line), end: Math.max(current.anchor, line) });
+      this.selection.set({ ...current, start: Math.min(current.anchor, line), end: Math.max(current.anchor, line), startOffset: undefined, endOffset: undefined });
     } else {
       this.selection.set({ key: entry.key, side, hunk, anchor: line, start: line, end: line });
     }
@@ -481,12 +654,14 @@ export class DiffView {
     if (!current || current.key !== entry.key || !body) {
       return;
     }
+    const quote = this.selectionQuote(entry, current);
     this.comment.emit({
       repo: entry.repo,
       file: entry.file.path,
       side: current.side,
       startLine: current.start,
       endLine: current.end,
+      ...(quote ? { startOffset: current.startOffset, endOffset: current.endOffset, quote } : {}),
       body,
       ...(this.askSeverity() ? { severity: this.severity() } : {}),
     });
@@ -510,5 +685,73 @@ export class DiffView {
   protected dirName(path: string): string {
     const slash = path.lastIndexOf("/");
     return slash > 0 ? path.slice(0, slash) : "";
+  }
+}
+
+/** The code cell (with its line numbers in data-*) a node of a selection sits in, inside this diff. */
+function codeCell(node: Node, scroller: HTMLElement): HTMLElement | undefined {
+  const element = node instanceof HTMLElement ? node : node.parentElement;
+  const cell = element?.closest<HTMLElement>("td[data-hunk]");
+  return cell && scroller.contains(cell) ? cell : undefined;
+}
+
+/** 1-based column of a point of a selection inside a code cell (its text is the line's). */
+function columnOf(cell: HTMLElement, node: Node, offset: number): number {
+  const before = document.createRange();
+  before.selectNodeContents(cell);
+  before.setEnd(node, offset);
+  return before.toString().length + 1;
+}
+
+function lineOn(file: FileDiff, side: Side, number: number): DiffLine | undefined {
+  return commentedLines(file, { side, startLine: number, endLine: number })[0];
+}
+
+const HIGHLIGHT = "nx-diff-comment";
+
+/** The text node and offset at a 0-based character position of a code cell. */
+function pointIn(cell: HTMLElement, position: number): [Node, number] | undefined {
+  const walker = document.createTreeWalker(cell, NodeFilter.SHOW_TEXT);
+  let seen = 0;
+  for (let node = walker.nextNode(); node; node = walker.nextNode()) {
+    const length = node.textContent?.length ?? 0;
+    if (seen + length >= position) {
+      return [node, position - seen];
+    }
+    seen += length;
+  }
+  return undefined;
+}
+
+/** Marks the selected text of each comment in the code cells shown (browsers without the Highlight API just skip it). */
+function markSelections(scroller: HTMLElement | undefined, comments: Pick<DiffComment, "side" | "startLine" | "endLine" | "startOffset" | "endOffset">[]): void {
+  const registry = typeof CSS === "undefined" ? undefined : (CSS as unknown as { highlights?: Map<string, unknown> }).highlights;
+  const Highlight = (globalThis as unknown as { Highlight?: new (...ranges: Range[]) => unknown }).Highlight;
+  if (!registry || !Highlight) {
+    return;
+  }
+  const ranges: Range[] = [];
+  for (const comment of scroller && comments.length ? comments : []) {
+    if (!comment.startOffset || !comment.endOffset) {
+      continue;
+    }
+    // One range per line: a range across rows would also mark the numbers and the other side between them.
+    for (let line = comment.startLine; line <= comment.endLine; line++) {
+      const cell = scroller!.querySelector<HTMLElement>(`td[data-${comment.side}="${line}"]`);
+      const length = cell?.textContent?.length ?? 0;
+      const start = cell && pointIn(cell, line === comment.startLine ? comment.startOffset - 1 : 0);
+      const end = cell && pointIn(cell, line === comment.endLine ? comment.endOffset - 1 : length);
+      if (start && end) {
+        const range = document.createRange();
+        range.setStart(...start);
+        range.setEnd(...end);
+        ranges.push(range);
+      }
+    }
+  }
+  if (ranges.length) {
+    registry.set(HIGHLIGHT, new Highlight(...ranges));
+  } else {
+    registry.delete(HIGHLIGHT);
   }
 }

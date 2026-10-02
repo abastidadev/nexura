@@ -168,6 +168,25 @@ describe("change requests", () => {
     expect(formatted).toContain("1. `f:2` (líneas borradas, numeración de la base)\n````diff\n-dos ```\n````\nRecupera esto");
     expect(formatted).toContain("Indicación general: revisa también los tests");
   });
+
+  it("keep the selected text of a comment (Azure-like) and quote it apart; bad columns fall back to the lines", () => {
+    const [selected, across, outside, empty] = checkDiffComments(
+      [
+        { repo: "demo", file: "f", side: "new", startLine: 2, endLine: 2, startOffset: 1, endOffset: 4, body: "minúsculas" },
+        { repo: "demo", file: "f", side: "new", startLine: 2, endLine: 3, startOffset: 5, endOffset: 3, body: "dos líneas" },
+        { repo: "demo", file: "f", side: "new", startLine: 2, endLine: 2, startOffset: 1, endOffset: 99, body: "fuera" },
+        { repo: "demo", file: "f", side: "new", startLine: 2, endLine: 2, startOffset: 3, endOffset: 3, body: "vacía" },
+      ],
+      diff,
+    );
+    expect(selected).toMatchObject({ startOffset: 1, endOffset: 4 });
+    expect(across).toMatchObject({ startOffset: 5, endOffset: 3 });
+    expect(outside!.startOffset).toBeUndefined();
+    expect(empty!.startOffset).toBeUndefined();
+    const formatted = formatChangeRequest([selected!, across!], diff);
+    expect(formatted).toContain("Texto señalado:\n```\nDOS\n```\nminúsculas");
+    expect(formatted).toContain("Texto señalado:\n````\n```\ntr\n````\ndos líneas");
+  });
 });
 
 describe("pullRequestDiff", () => {

@@ -12,6 +12,7 @@ import {
 } from "@nexura/shared";
 import type { ReviewPost } from "../forge/review-post.ts";
 import { stripAttribution } from "../workspace/git.ts";
+import { checkSelection } from "../workspace/diff.ts";
 
 /** What the prReview step answers (schema.json): empty strings and 0 stand for "none" (codex strict mode). */
 export type PrReviewOutput = {
@@ -276,6 +277,10 @@ export function ownReviewComment(file: FileDiff, input: OwnReviewComment, id: nu
     inline: true,
     own: true,
     snippet: { startLine: from, lines: shown.map((line) => line.text), added: shown.filter((line) => line.kind === "add").map((line) => line.new) },
-    anchor: { startOffset: first.length - first.trimStart().length + 1, endOffset: final.length + 1 },
+    // A selection anchors on its exact columns (Azure DevOps marks that text); else the lines' code, without indentation.
+    anchor: checkSelection(file, { side: "new", startLine, endLine }, input) ?? {
+      startOffset: first.length - first.trimStart().length + 1,
+      endOffset: final.length + 1,
+    },
   };
 }

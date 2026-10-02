@@ -175,6 +175,12 @@ describe("ownReviewComment", () => {
     expect(ownReviewComment(file, { file: "a.js", startLine: 12, endLine: 12, post: "x", severity: "blocker" }, 1).severity).toBe("blocker");
   });
 
+  it("anchors a selection on its exact columns, as Azure DevOps marks it", () => {
+    expect(ownReviewComment(file, { file: "a.js", startLine: 1, endLine: 2, startOffset: 2, endOffset: 4, post: "x" }, 1).anchor).toEqual({ startOffset: 2, endOffset: 4 });
+    // Columns that do not fit the line fall back to its code.
+    expect(ownReviewComment(file, { file: "a.js", startLine: 2, endLine: 2, startOffset: 1, endOffset: 40, post: "x" }, 1).anchor).toEqual({ startOffset: 3, endOffset: 6 });
+  });
+
   it("refuses lines across hunks or outside the diff, and empty text", () => {
     expect(() => ownReviewComment(file, { file: "a.js", startLine: 2, endLine: 11, post: "x" }, 1)).toThrow("mismo bloque");
     expect(() => ownReviewComment(file, { file: "a.js", startLine: 5, endLine: 5, post: "x" }, 1)).toThrow("mismo bloque");

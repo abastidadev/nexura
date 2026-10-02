@@ -1,10 +1,10 @@
 import { Component, computed, effect, inject, input, linkedSignal, output, signal } from "@angular/core";
-import type { Conversation, DiffComment } from "@nexura/shared";
+import type { Conversation } from "@nexura/shared";
 import { Api } from "../../core/api";
 import { commentsMessage } from "../../core/diff-comments";
 import { readStorage, removeStorage, writeStorage } from "../../core/storage";
 import { DiffPanel, type DiffLoader } from "../../shared/diff-panel";
-import type { NewDiffComment, ShownComment } from "../../shared/diff-view";
+import type { DraftComment, NewDiffComment, ShownComment } from "../../shared/diff-view";
 
 /** While the CLI works the files change under the panel: read them again this often. */
 const POLL_MS = 5000;
@@ -82,9 +82,9 @@ export class ConversationChanges {
     return (ignoreWhitespace) => this.api.getConversationDiff(id, ignoreWhitespace);
   });
 
-  protected readonly drafts = linkedSignal<string, DiffComment[]>({
+  protected readonly drafts = linkedSignal<string, DraftComment[]>({
     source: this.id,
-    computation: (id) => readStorage<DiffComment[]>(draftsKey(id), []),
+    computation: (id) => readStorage<DraftComment[]>(draftsKey(id), []),
   });
   protected readonly note = signal("");
   protected readonly shownComments = computed<ShownComment[]>(() => this.drafts().map((comment) => ({ ...comment, removable: true })));
