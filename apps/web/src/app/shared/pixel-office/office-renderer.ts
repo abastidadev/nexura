@@ -21,7 +21,7 @@ export function readTheme(element: Element): OfficeTheme {
 }
 
 /** What the pointer is over. */
-export type Hit = { kind: "agent"; member: Member; x: number; y: number } | { kind: "team"; teamId: string };
+export type Hit = { kind: "agent"; member: Member; x: number; y: number } | { kind: "team"; teamId: string } | { kind: "trophies" | "shop" };
 
 type Drawable = { z: number; order: number; draw: () => void };
 
@@ -146,7 +146,11 @@ export class OfficeRenderer {
       return { kind: "agent", member: actor.member, x: actor.x, y: actor.y - 24 };
     }
     const pod = this.plan?.pods.find((candidate) => x >= candidate.x && x < candidate.x + candidate.w && y >= candidate.y && y < candidate.y + TILE);
-    return pod ? { kind: "team", teamId: pod.teamId } : undefined;
+    if (pod) {
+      return { kind: "team", teamId: pod.teamId };
+    }
+    const link = this.plan?.decor.find((d) => (d.kind === "trophies" || d.kind === "shop") && x >= d.x && x < d.x + d.w && y >= d.y && y < d.y + d.h);
+    return link ? { kind: link.kind as "trophies" | "shop" } : undefined;
   }
 
   private tick(time: number): void {

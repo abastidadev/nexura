@@ -2,9 +2,13 @@
 // Opening one opens the run in Nexura: the page around the office when it's embedded there, else a tab.
 import type { WorkerInfo } from '../../shared/protocol';
 import { h, toast } from '../ui/dom';
+import { approveLabel, openApprove } from './desk';
+import { openPorra } from './bets';
+import { flowOf } from './digest';
 
 /** Messages Nexura's Oficina 3D page listens for (apps/web/src/app/features/office-3d). */
-export type NexuraMessage = { type: 'nexura:open-run'; runId: string } | { type: 'nexura:new-run'; repoDir?: string; ticketId: string; source: 'azure' | 'github'; project?: string };
+export type NexuraPage = 'reviews' | 'shop' | 'achievements' | 'metrics' | 'runs';
+export type NexuraMessage = { type: 'nexura:open-run'; runId: string } | { type: 'nexura:new-run'; repoDir?: string; ticketId: string; source: 'azure' | 'github'; project?: string } | { type: 'nexura:open-page'; page: NexuraPage; repo?: string };
 
 /**
  * Sends a message to Nexura when the office is framed by it; false when it isn't. It carries only
@@ -45,7 +49,7 @@ if (window.parent === window) {
  * Shows something in the Nexura window you already have open (on your other screen, say), which
  * navigates there without stealing the focus from the office. With no Nexura window, a new tab.
  */
-function openInNexura(request: { kind: 'run'; runId: string } | { kind: 'new-run'; ticketId: string; source: 'azure' | 'github'; repoDir?: string }, fallbackUrl: string) {
+function openInNexura(request: { kind: 'run'; runId: string } | { kind: 'new-run'; ticketId: string; source: 'azure' | 'github'; repoDir?: string } | { kind: 'page'; page: NexuraPage; repo?: string }, fallbackUrl: string) {
   if (nexuraWindows.count > 0) {
     void fetch('/api/nexura/open', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(request) })
       .then((r) => {
@@ -60,6 +64,21 @@ function openInNexura(request: { kind: 'run'; runId: string } | { kind: 'new-run
     return;
   }
   window.open(fallbackUrl, '_blank', 'noopener');
+}
+
+/** Opens a page of Nexura (Revisiones, the shop…): around the office when Nexura frames it, else in its window. */
+export function openNexuraPage(page: NexuraPage, repo?: string): void {
+  if (toNexura({ type: 'nexura:open-page', page, ...(repo ? { repo } : {}) })) return;
+  if (!nexuraWindows.url && !nexuraWindows.count) {
+    toast('Abre Nexura (npm run start:all) para ver esto');
+    return;
+  }
+  openInNexura({ kind: 'page', page, ...(repo ? { repo } : {}) }, `${nexuraWindows.url}/${page}${repo ? `?repo=${encodeURIComponent(repo)}` : ''}`);
+}
+
+/** Opens a run of Nexura by its id (from the control room's list). */
+export function openNexuraRunId(runId: string): void {
+  if (!toNexura({ type: 'nexura:open-run', runId })) openInNexura({ kind: 'run', runId }, `${nexuraWindows.url}/runs/${runId}`);
 }
 
 /** Opens the Nexura run a worker stands for: around the office when Nexura frames it, else in Nexura's window. */
@@ -78,6 +97,9 @@ export function nexuraDeskKey(w: WorkerInfo, key: string): void {
     window.open(w.pr.url, '_blank', 'noopener');
     return;
   }
+  if (key === 'P' && openApprove(w, () => openNexuraRun(w))) return;
+  const flow = w.external && flowOf(w.external.runId);
+  if (key === 'C' && flow) return openPorra(flow);
   if (key === 'E' || key === 'O' || key === 'C' || key === 'P') openNexuraRun(w);
 }
 
@@ -99,11 +121,14 @@ export function nexuraHint(
   aside: (text: string) => HTMLElement,
 ): { k: string; parts: (HTMLElement | string)[] } {
   return {
-    k: `nexura${w.id}${w.status}${w.activity ?? ''}${w.pr?.number ?? ''}`,
+    k: `nexura${w.id}${w.status}${w.activity ?? ''}${w.pr?.number ?? ''}${approveLabel(w) ?? ''}${w.external?.costUsd ?? ''}`,
     parts: [
       h('span.title', {}, `${w.name} · ${status}`),
       w.activity ? aside(w.activity) : '',
-      key('E', 'Open in Nexura'),
+      w.external?.costUsd ? aside(`💸 $${w.external.costUsd.toFixed(2)}`) : '',
+      approveLabel(w) ? key('P', approveLabel(w)!) : '',
+      w.external && flowOf(w.external.runId) ? key('C', 'Porra') : '',
+      key('E', 'Abrir en Nexura'),
       w.pr ? key('O', `PR #${w.pr.number}`) : '',
     ],
   };
@@ -124,21 +149,25 @@ function githubRepo(url: string | undefined): string | undefined {
  * filled in, around the office or in Nexura's own window. Nothing starts until you confirm there.
  */
 export function nexuraIssueButton(issue: { number: number }, project: { dir: string; remote?: string } | null): HTMLElement | '' {
-  if (!project || (window.parent === window && !nexuraWindows.url)) return '';
-  const source = azureRemote(project.remote) ? 'azure' : 'github';
-  const ticketId = String(issue.number);
+  if (!project || !canStartFlows()) return '';
   return h(
     'button.btn',
-    {
-      type: 'button',
-      title: 'Open a new Nexura flow for this issue (you pick the profile and model there; nothing runs yet)',
-      onclick: () => {
-        if (toNexura({ type: 'nexura:new-run', ticketId, source, repoDir: project.dir, project: source === 'github' ? githubRepo(project.remote) : undefined })) return;
-        openInNexura({ kind: 'new-run', ticketId, source, repoDir: project.dir }, `${nexuraWindows.url}/new?ticket=${ticketId}&source=${source}`);
-      },
-    },
+    { type: 'button', title: 'Open a new Nexura flow for this issue (you pick the profile and model there; nothing runs yet)', onclick: () => startNexuraFlow(issue.number, project) },
     '🚀 Resolve with Nexura',
   );
+}
+
+/** Whether there is a Nexura to start a flow in: around the office, or a window of its own. */
+export function canStartFlows(): boolean {
+  return window.parent !== window || !!nexuraWindows.url;
+}
+
+/** Opens Nexura's New flow with an issue of this floor's project filled in. Nothing runs until you confirm there. */
+export function startNexuraFlow(issue: number, project: { dir: string; remote?: string }): void {
+  const source = azureRemote(project.remote) ? 'azure' : 'github';
+  const ticketId = String(issue);
+  if (toNexura({ type: 'nexura:new-run', ticketId, source, repoDir: project.dir, project: source === 'github' ? githubRepo(project.remote) : undefined })) return;
+  openInNexura({ kind: 'new-run', ticketId, source, repoDir: project.dir }, `${nexuraWindows.url}/new?ticket=${ticketId}&source=${source}`);
 }
 
 /** What the office's windows say about GitHub, as it reads on a floor whose boards come from Azure DevOps. */

@@ -7,7 +7,7 @@ const root = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const tests = readdirSync(path.join(root, 'tests')).filter((name) => name.endsWith('.test.ts'));
 
 function run(files, options = []) {
-  const result = spawnSync(process.execPath, ['--import', 'tsx', '--test', ...options, ...files.map((file) => path.join('tests', file))], {
+  const result = spawnSync(process.execPath, ['--import', 'tsx', '--import=#tests/css', '--test', ...options, ...files.map((file) => path.join('tests', file))], {
     cwd: root,
     stdio: 'inherit',
   });

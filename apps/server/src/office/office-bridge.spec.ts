@@ -59,6 +59,7 @@ describe("officeWorkers", () => {
       createdAt: Date.parse("2026-09-28T11:58:00Z"),
       waitingSince: undefined,
       screen: { steps: [{ name: "implement", status: "running" }], log: [], repos: ["app"], agent: "claude · opus" },
+      costUsd: 0,
     });
   });
 

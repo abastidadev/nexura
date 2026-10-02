@@ -1,37 +1,13 @@
-import { DESK_BY_ID } from '../../shared/layout';
-import type { AgentEffort, AgentProvider, GhIssue, GhLabel, GhPull, WorkerInfo } from '../../shared/protocol';
+import './boards.css';
+import type { GhIssue, GhLabel, GhPull, WorkerInfo } from '../../shared/protocol';
 import type { Net } from '../net';
 import { store, workerForPull } from '../state';
 import { h, openModal, timeAgo } from './dom';
-import { labelChip, openIssue, openLabels, openPull } from './pull';
+import { openIssue } from './github/issue-window';
+import { labelChip, openLabels } from './github/labels';
+import type { BoardActions } from './github/prompts';
+import { openPull } from './github/pull-window';
 import { providerLabel } from './provider';
-import type { MeetingPreset } from './meeting';
-import { officePrompt } from './prompts';
-
-export interface BoardActions {
-  /** Start a worker on a ready-made prompt (shown for editing first). */
-  assign(prompt: string, title: string): void;
-  /** Your own prompt about an issue or PR; `context` goes first so the worker knows which. */
-  ask(context: string, title: string): void;
-  /** Walks you to the desk a pull request came from. */
-  goToDesk(deskId: string): void;
-  /** Put an issue on the 📋 task queue; a worker is seated for it when there's room. */
-  queue(prompt: string, title: string, issue: number, provider?: AgentProvider, model?: string, effort?: AgentEffort): void;
-  /** Take the issue's card off the board, to carry to a desk or the queue. */
-  pickUp(issue: GhIssue): void;
-  /** Call a meeting about it: the meeting room's form, filled in. */
-  meeting(preset: MeetingPreset): void;
-}
-
-/** The task a worker gets for an issue, from the board, a carried card or the queue (the 'issue.work' prompt). */
-export function issuePrompt(it: Pick<GhIssue, 'number' | 'title'> & { url?: string }): string {
-  return officePrompt('issue.work', issueVars(it));
-}
-
-/** What an issue's prompts fill in. A carried card has no URL, but the board usually knows it. */
-export function issueVars(it: Pick<GhIssue, 'number' | 'title'> & { url?: string }) {
-  return { number: it.number, title: it.title, url: it.url ?? store.issues.items.find((i) => i.number === it.number)?.url ?? '' };
-}
 
 const TILTS = ['-1.2deg', '0.8deg', '-0.4deg', '1.4deg', '0deg', '-0.9deg'];
 const NOTE_COLORS = ['#fff7b0', '#ffd6e0', '#caffbf', '#bde0fe', '#ffe5b4'];
@@ -112,7 +88,7 @@ const CHECK_ICON: Record<GhPull['checks'], string> = { pass: '🟢', fail: '🔴
 
 /** A chip naming a worker and desk, color-coded to match the worker back on the floor. */
 function workerChip(w: WorkerInfo, title: string) {
-  return h('span.desk-link', { style: `--dot:${w.color}`, title }, `🪑 ${w.name} · ${DESK_BY_ID.get(w.deskId)?.label ?? 'a desk'}`);
+  return h('span.desk-link', { style: `--dot:${w.color}`, title }, `🪑 ${w.name} · ${store.plan().byId.get(w.deskId)?.label ?? 'a desk'}`);
 }
 
 /** A chip naming the worker and desk a pull request came from. */
@@ -128,7 +104,7 @@ function queueChip(issue: number): Node | '' {
   if (t.status === 'queued') return h('span.qchip', {}, `${store.queue.tasks.find((x) => x.status === 'queued') === t ? '📋 up next' : '📋 queued'} · ${provider}`);
   if (t.status === 'running') {
     const w = t.workerId ? store.workers.get(t.workerId) : undefined;
-    if (w) return workerChip(w, `${w.name} is working on this at ${DESK_BY_ID.get(w.deskId)?.label ?? 'a desk'} · ${provider}`);
+    if (w) return workerChip(w, `${w.name} is working on this at ${store.plan().byId.get(w.deskId)?.label ?? 'a desk'} · ${provider}`);
     return h('span.qchip.running', {}, `🤖 ${t.workerName ?? 'a worker'} · ${provider}`);
   }
   return t.pr ? h('span.qchip.done', {}, `🔀 PR #${t.pr.number} · ${provider}`) : '';
@@ -158,6 +134,8 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
   const el = h('div.modal.board', { role: 'dialog', 'aria-label': kind === 'issues' ? 'Issues board' : 'Pull requests board' }, h('header', {}, h('h2', {}, kind === 'issues' ? '📌 Issues' : '🔀 Pull Requests'), status, refresh, close), body);
 
   const filters = loadFilters(kind);
+  /** What each column's filter box holds (column key → text), for as long as the board is open. */
+  const queries: Record<string, string> = {};
   /** The column whose label picker is open, if any. */
   let picking: string | null = null;
   const setFilter = (key: string, labels: string[]) => {
@@ -188,16 +166,46 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
     return h('div.col-filter', {}, list, h('div.col-filter-foot', {}, h('small', {}, hint), picked.length ? h('button.btn.small', { type: 'button', onclick: () => setFilter(col.key, []) }, 'Clear') : null));
   };
 
-  /** A column of cards. Click its header to filter it by label. */
+  /** A column of cards. Type in its box to narrow it by title; click its header to filter it by label. */
   const column = <T extends GhIssue | GhPull>(col: Column<T>, all: Map<string, string>, cardOf: (it: T, i: number) => HTMLElement) => {
     const picked = filters[col.key] ?? [];
-    const matching = picked.length ? col.items.filter((it) => it.labels.some((l) => picked.includes(l.name))) : col.items;
-    const shown = matching.slice(0, col.max);
+    const labelled = picked.length ? col.items.filter((it) => it.labels.some((l) => picked.includes(l.name))) : col.items;
     const ul = h('ul');
-    shown.forEach((it, i) => ul.append(cardOf(it, i)));
-    if (!shown.length) ul.append(h('li.empty', {}, picked.length ? 'Nothing here with those labels' : 'Nothing here'));
+    const count = h('span');
+    const name = col.title.replace(/^\S+ /, '');
+    const search = h('input', {
+      type: 'text',
+      value: queries[col.key] ?? '',
+      placeholder: 'Filter by title…',
+      'aria-label': `Filter ${name} by title`,
+      'data-focus': `search:${col.key}`,
+      spellcheck: 'false',
+      autocomplete: 'off',
+    }) as HTMLInputElement;
+    const clear = h('button.col-search-clear', { type: 'button', 'aria-label': 'Clear the title filter', title: 'Clear' }, '✕');
+    const section = h('section.column');
+    /** Deals the cards that match both filters. Typing only redoes this column, so the box keeps focus. */
+    const fill = () => {
+      const words = search.value.toLowerCase().split(/\s+/).filter(Boolean);
+      const matching = words.length ? labelled.filter((it) => words.every((w) => it.title.toLowerCase().includes(w))) : labelled;
+      const shown = matching.slice(0, col.max);
+      ul.replaceChildren(...shown.map((it, i) => cardOf(it, i)));
+      if (!shown.length) ul.append(h('li.empty', {}, words.length ? `No titles match “${search.value.trim()}”${picked.length ? ' with those labels' : ''}` : picked.length ? 'Nothing here with those labels' : 'Nothing here'));
+      count.textContent = picked.length || words.length ? `${shown.length} / ${col.items.slice(0, col.max).length}` : String(shown.length);
+      clear.classList.toggle('hidden', !search.value);
+      section.classList.toggle('filtered', picked.length > 0 || words.length > 0);
+    };
+    search.addEventListener('input', () => {
+      queries[col.key] = search.value;
+      ul.scrollTop = 0;
+      fill();
+    });
+    clear.addEventListener('click', () => {
+      search.value = queries[col.key] = '';
+      fill();
+      search.focus();
+    });
     const open = picking === col.key;
-    const count = picked.length ? `${shown.length} / ${col.items.slice(0, col.max).length}` : String(shown.length);
     const head = h(
       'button.col-head',
       {
@@ -213,7 +221,7 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
       h('span', {}, col.title),
       h('span.col-count', {}, count, h('span.col-caret', { 'aria-hidden': 'true' }, open ? '▴' : '▾')),
     );
-    const section = h('section.column', { class: picked.length ? 'filtered' : '' }, h('h4', {}, head));
+    section.append(h('h4', {}, head), h('div.col-search', {}, search, clear));
     if (open) section.append(labelPicker(col, all, picked));
     else if (picked.length) {
       section.append(
@@ -226,6 +234,7 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
       );
     }
     section.append(ul);
+    fill();
     return section;
   };
 
@@ -233,11 +242,12 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
     const st = kind === 'issues' ? store.issues : store.pulls;
     status.textContent = st.loading ? 'Refreshing…' : st.fetchedAt ? `Updated ${timeAgo(st.fetchedAt)}` : '';
     // Every refresh rebuilds the columns, so note how far each was scrolled and put it back afterwards,
-    // and keep focus on the header or label toggle it was on.
+    // and keep focus (and the caret, in a filter box) on the header, label toggle or box it was on.
     const scrolled = [...body.querySelectorAll('.column > ul')].map((ul) => ul.scrollTop);
     const { scrollLeft, scrollTop } = body;
     const active = document.activeElement;
     const focused = active && body.contains(active) ? active.getAttribute('data-focus') : null;
+    const caret = active instanceof HTMLInputElement ? ([active.selectionStart, active.selectionEnd] as const) : null;
     body.replaceChildren();
     if (st.error && !st.items.length) {
       body.append(h('div.board-error', {}, `Couldn't load from GitHub: ${st.error}`, h('br'), h('small', {}, 'The server runs `gh` in the project directory — make sure it is installed and authenticated (gh auth login).')));
@@ -281,7 +291,9 @@ export function openBoard(kind: 'issues' | 'pulls', net: Net, actions: BoardActi
     body.querySelectorAll('.column > ul').forEach((ul, i) => (ul.scrollTop = scrolled[i] ?? 0));
     body.scrollLeft = scrollLeft;
     body.scrollTop = scrollTop;
-    if (focused !== null) [...body.querySelectorAll<HTMLElement>('[data-focus]')].find((b) => b.dataset.focus === focused)?.focus();
+    const again = focused === null ? undefined : [...body.querySelectorAll<HTMLElement>('[data-focus]')].find((b) => b.dataset.focus === focused);
+    again?.focus();
+    if (caret && again instanceof HTMLInputElement) again.setSelectionRange(caret[0], caret[1]);
   };
 
   const unsubs = [store.on(kind, render), store.on('queue', render)];

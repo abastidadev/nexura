@@ -9,3 +9,4 @@ export const RUNS_DIR = join(DATA_DIR, "runs");
 export const DB_FILE = join(DATA_DIR, "nexura.sqlite");
 export const MEMORY_DB_FILE = join(DATA_DIR, "memory.sqlite");
 export const ACHIEVEMENTS_DB_FILE = join(DATA_DIR, "achievements.sqlite");
+export const REWARDS_DB_FILE = join(DATA_DIR, "rewards.sqlite");

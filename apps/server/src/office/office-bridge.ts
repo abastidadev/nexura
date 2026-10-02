@@ -28,6 +28,8 @@ export type OfficeWorker = {
   waitingSince?: number;
   /** What its laptop shows, the way a CLI's shows its terminal: the run's page, or its PR's. */
   screen?: OfficeScreen;
+  /** What the run has cost so far (USD), for the card over its head. */
+  costUsd?: number;
 };
 
 /** A run's page in small, for the laptop at its desk (third_party/agent-office/src/client/nexura/screen.ts). */
@@ -211,6 +213,7 @@ export function officeWorkers(
       createdAt: Date.parse(run.createdAt),
       waitingSince: status === "needs_input" ? (options.waitingSince?.get(run.id) ?? options.now) : undefined,
       screen: screenOf(run, options.logs?.get(run.id) ?? [], step),
+      costUsd: Math.round(run.totalCostUsd * 100) / 100,
     });
   }
   return workers;

@@ -75,8 +75,40 @@ Los logros de Nexura (sección **Logros**) también están en la oficina. Todo p
 
 - **Vitrina**: en la pared este, entre el tablero Services y la tele. Muestra una copa por logro conseguido, con el color de su nivel, y siluetas de los que faltan. Con E se abre la lista completa, con los secretos ocultos.
 - **Lo que haces en la oficina cuenta**: acariciar al perro, tomar café, tocar el gong, jugar en la recreativa, bajar por la barra, subir a la azotea… Cada E sobre un objeto se manda a Nexura (`POST /api/nexura/achievements`, validado en los dos servidores).
-- **Secretos**: cinco patitos de goma escondidos, el código Konami, pasar por la oficina de madrugada y un hoyo en uno en el golf del balcón. Dónde están los patitos está en `src/client/nexura/achievements.ts` (`DUCKS`).
+- **Secretos**: cinco patitos de goma escondidos (cambian de sitio cada semana, ver abajo), el código Konami, pasar por la oficina de madrugada y un hoyo en uno en el golf del balcón.
 - **Aviso**: dentro de Nexura, el toast del trofeo lo pone Nexura; con la oficina en su propia ventana, lo pone la oficina, arriba a la derecha. Dura 20 segundos y no genera una segunda notificación del navegador.
+
+### Tienda, monedas y salas
+
+El monedero y la tienda son de Nexura (`apps/server/src/rewards`, catálogo y sorteo diario en `packages/shared/src/rewards.ts`). La oficina los pide a través de su servidor (`src/server/nexura/proxy.ts`, solo las rutas de esa lista) y, para pintar sus salas, pide a Nexura un resumen de una vez (`GET /api/office/digest`): flujos en marcha, PR integradas, el día en números, PR por revisar y cuota.
+
+Como Nexura es personal, el monedero, la tienda y la ropa solo aparecen en la oficina abierta dentro de Nexura o en la propia máquina (`localhost`). Si comparte la oficina con más gente, ven tu ropa puesta, pero no tus monedas.
+
+- **Monedas**: arriba a la izquierda; con un clic, la tienda.
+- **Tienda**: un puesto con toldo junto al ascensor (E). La misma ventana que la sección Tienda de Nexura: ofertas del día y tu colección para ponerte y quitarte cosas.
+- **Tu personaje**: lo que llevas puesto lo ve toda la planta (`PeerInfo.nexura`). Los sombreros, complementos, mascotas, estelas y placas se construyen en `src/client/nexura/cosmetics.ts`. Un sombrero tapa el de Halloween o Navidad.
+- **Patitos**: cinco por planta, en 5 de los 12 escondites de `src/client/nexura/ducks.ts` (`DUCK_SPOTS`), que cambian cada semana ISO. Cada uno paga monedas una vez por temporada, y los cinco, un extra. Para los logros siguen contando del 1 al 5.
+
+Las salas y cosas nuevas, y dónde están (`src/client/nexura/places.ts`):
+
+| Qué | Dónde | Qué hace |
+|---|---|---|
+| 🛰️ Sala de control | Pasillo oeste, mirando a las mesas | Un monitor por flujo en marcha, con su pipeline, agente, coste y si te espera (si hay más de tres, se turnan). Con E, la lista: aprobar, apostar o abrir. |
+| ✋ Aprobar desde la mesa | La mesa de cada flujo | Con P, un flujo en pausa sigue tal como lo propone Nexura (el paso, la PR o las respuestas) o se salta el paso (`POST /api/office/runs/:id/continue`). Editarlo sigue siendo cosa de Nexura. |
+| 🎲 Porra | La mesa de cada flujo (C) o la sala de control | Apostar si pasa a la primera. |
+| 📮 Buzón | Pared oeste, bajo la esquina del tablero de Issues | Soltar ahí una tarjeta del tablero de Issues abre Nuevo flujo en Nexura con ella. |
+| 👁️ Por revisar | Junto a la escalera | Las PR de otras personas que esperan tu revisión. Con E, la lista, y cada una abre Revisiones. |
+| 📅 Hoy en Nexura | Junto a la pizarra | Flujos terminados, PR, revisiones, gasto, monedas y logros del día. Con E, Métricas. |
+| 🥤 Máquina de cuota | Al final de la encimera de la cocina | Cuánta cuota de Claude queda (5 h y semana). |
+| 🖼️ Galería de la fama | Entre las islas y el salón | Un cuadro por PR integrada de tus flujos. Se compra en la tienda; hasta entonces, cordón y cuadros tapados. |
+| 🎮 Sala de juegos | Entre las islas y el salón, al sur | Futbolín (contra la máquina o dos en un teclado; ganar paga, con tope diario), Trivial del repo (preguntas sacadas de `git log` de tus repos) y el Gran Premio (un circuito de sobremesa: cada flujo es un coche que avanza según sus pasos). Cada juego se compra en la tienda; hasta entonces, bajo una lona. |
+
+Además:
+
+- Cada flujo lleva una gorra del color de su agente y el objeto de su paso (lupa, teclado, probeta…). Su tarjeta dice cuánto lleva gastado, y el gong suena cuando se integra su PR.
+- En el mapa de castillo, el heraldo pregona los flujos que esperan o terminan.
+- La paleta (Ctrl+K) encuentra todo lo anterior y las páginas de Nexura.
+- La primera vez hay una visita guiada, que vuelve desde la paleta («Visita guiada de Nexura»).
 
 ### Probar sin cuota
 

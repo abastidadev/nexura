@@ -1,6 +1,7 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, resource, viewChild } from "@angular/core";
 import { DomSanitizer, type SafeResourceUrl } from "@angular/platform-browser";
 import { Router } from "@angular/router";
+import { OFFICE_PAGES, type OfficePage } from "@nexura/shared";
 import { Api } from "../../core/api";
 import { NexuraStore } from "../../core/nexura-store";
 
@@ -12,7 +13,10 @@ const samePath = (a: string, b: string): boolean => {
 };
 
 /** What the office sends up when a Nexura worker or a board card is opened (third_party/agent-office/src/client/nexura). */
-type OfficeMessage = { type: "nexura:open-run"; runId: string } | { type: "nexura:new-run"; repoDir?: string; ticketId: string; source: "azure" | "github"; project?: string };
+type OfficeMessage =
+  | { type: "nexura:open-run"; runId: string }
+  | { type: "nexura:new-run"; repoDir?: string; ticketId: string; source: "azure" | "github"; project?: string }
+  | { type: "nexura:open-page"; page: OfficePage; repo?: string };
 
 function officeMessage(data: unknown): OfficeMessage | undefined {
   const message = data as Partial<OfficeMessage> | null;
@@ -20,6 +24,9 @@ function officeMessage(data: unknown): OfficeMessage | undefined {
     return message as OfficeMessage;
   }
   if (message?.type === "nexura:new-run" && typeof message.ticketId === "string" && (message.source === "azure" || message.source === "github")) {
+    return message as OfficeMessage;
+  }
+  if (message?.type === "nexura:open-page" && typeof message.page === "string" && Object.hasOwn(OFFICE_PAGES, message.page)) {
     return message as OfficeMessage;
   }
   return undefined;
@@ -71,6 +78,9 @@ export class Office3DPage {
       const repoDir = message.repoDir;
       const repo = repoDir ? this.store.config()?.repos.find((candidate) => samePath(candidate.path, repoDir))?.name : undefined;
       void this.router.navigate(["/new"], { queryParams: { ticket: message.ticketId, source: message.source, repo } });
+    } else if (message?.type === "nexura:open-page") {
+      const repo = typeof message.repo === "string" ? this.store.config()?.repos.find((candidate) => candidate.name === message.repo)?.name : undefined;
+      void this.router.navigate([OFFICE_PAGES[message.page]], repo ? { queryParams: { repo } } : {});
     }
   }
 }

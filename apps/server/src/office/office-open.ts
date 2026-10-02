@@ -1,4 +1,4 @@
-import type { RepoConfig, ServerMessage } from "@nexura/shared";
+import { OFFICE_PAGES, type RepoConfig, type ServerMessage } from "@nexura/shared";
 
 export type OpenMessage = Extract<ServerMessage, { type: "open" }>;
 
@@ -24,6 +24,10 @@ export function openTarget(body: unknown, repos: readonly RepoConfig[]): OpenMes
     const repoDir = typeof request.repoDir === "string" ? request.repoDir : undefined;
     const repo = repoDir ? repos.find((candidate) => sameDir(candidate.path, repoDir))?.name : undefined;
     return { type: "open", path: ["/new"], queryParams: { ticket: request.ticketId, source: request.source, ...(repo ? { repo } : {}) } };
+  }
+  if (request?.kind === "page" && typeof request.page === "string" && Object.hasOwn(OFFICE_PAGES, request.page)) {
+    const repo = typeof request.repo === "string" && repos.some((candidate) => candidate.name === request.repo) ? request.repo : undefined;
+    return { type: "open", path: [OFFICE_PAGES[request.page as keyof typeof OFFICE_PAGES]], ...(repo ? { queryParams: { repo } } : {}) };
   }
   return undefined;
 }

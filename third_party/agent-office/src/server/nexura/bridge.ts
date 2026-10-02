@@ -9,6 +9,7 @@ import type { AgentProvider, ServerMsg, WorkerInfo, WorkerStatus } from '../../s
 import { BEANBAGS, DESKS } from '../../shared/layout.js';
 import { toolAction } from '../../shared/actions.js';
 import { parseNexuraScreen, type NexuraScreen } from '../../shared/nexura-screen.js';
+import { watchNexuraDesks } from './workers.js';
 
 /** One run as Nexura sends it (OfficeWorker in Nexura). */
 export interface NexuraWorker {
@@ -29,13 +30,15 @@ export interface NexuraWorker {
   waitingSince?: number;
   /** What its laptop shows: the run's page in small, or its PR's. */
   screen?: NexuraScreen;
+  /** What the run has cost so far (USD). */
+  costUsd?: number;
 }
 
 /** What the bridge needs from a floor. */
 export interface BridgeFloor {
   id: string;
   dir: string;
-  workers: { list(): WorkerInfo[]; nexuraDesk?: (deskId: string) => boolean };
+  workers: { list(): WorkerInfo[] };
 }
 
 export interface BridgeDeps {
@@ -96,6 +99,7 @@ export function parseWorker(raw: unknown): NexuraWorker | undefined {
     createdAt: num(r.createdAt) ?? Date.now(),
     waitingSince: num(r.waitingSince),
     screen: parseNexuraScreen(r.screen),
+    costUsd: num(r.costUsd),
   };
 }
 
@@ -137,9 +141,9 @@ export function workerInfo(w: NexuraWorker, deskId: string): WorkerInfo {
     viewerIds: [],
     activity: w.activity,
     action,
-    task: { name: w.step ? `Nexura · ${w.step}` : 'Nexura', summary: w.activity ? `${w.title} — ${w.activity}` : w.title },
+    task: { name: `Nexura${w.step ? ` · ${w.step}` : ''}${w.costUsd ? ` · $${w.costUsd.toFixed(2)}` : ''}`, summary: w.activity ? `${w.title} — ${w.activity}` : w.title },
     pr: w.pr,
-    external: { source: 'nexura', runId: w.runId, url: w.url, ...(w.screen ? { screen: w.screen } : {}) },
+    external: { source: 'nexura', runId: w.runId, url: w.url, ...(w.screen ? { screen: w.screen } : {}), ...(w.step ? { step: w.step } : {}), ...(w.costUsd !== undefined ? { costUsd: w.costUsd } : {}) },
   };
 }
 
@@ -203,7 +207,7 @@ export class NexuraBridge {
       this.expiry.unref();
     }
     const floors = [...this.deps.floors()];
-    for (const floor of floors) floor.workers.nexuraDesk ??= (deskId) => this.deskTaken(floor.id, deskId);
+    for (const floor of floors) watchNexuraDesks(floor.workers, (deskId) => this.deskTaken(floor.id, deskId));
 
     // Where each one sits now: same floor and desk as before when it's still free, else the next free seat.
     const next = new Map<string, Map<string, WorkerInfo>>(floors.map((f) => [f.id, new Map()]));
@@ -234,6 +238,9 @@ export class NexuraBridge {
       }
       for (const [id, cur] of now) {
         const old = was.get(id);
+        // A flow's PR just merged: the floor's gong rings for it, as for the office's own.
+        const pr = cur.external?.screen?.pr;
+        if (old && pr?.state === 'merged' && old.external?.screen?.pr?.state !== 'merged') this.deps.emit(floor, { t: 'gong', why: 'merged', pr: pr.number, by: 'Nexura' });
         if (!old || old.deskId !== cur.deskId || JSON.stringify(old) !== JSON.stringify(cur)) this.deps.emit(floor, { t: 'worker.update', worker: cur });
       }
     }

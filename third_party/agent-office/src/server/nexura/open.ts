@@ -6,6 +6,8 @@ import type http from 'node:http';
 import { nexuraUrl } from './tracker.js';
 
 const MAX_BODY = 2048;
+/** Nexura's pages the office may open (OFFICE_PAGES in Nexura). */
+const PAGES = new Set(['reviews', 'shop', 'achievements', 'metrics', 'runs']);
 
 /** Only what Nexura can open, rebuilt field by field; undefined for anything else. */
 export function openRequest(raw: unknown): Record<string, string> | undefined {
@@ -14,6 +16,9 @@ export function openRequest(raw: unknown): Record<string, string> | undefined {
   if (r.kind === 'run' && typeof r.runId === 'string' && /^[\w-]{1,40}$/.test(r.runId)) return { kind: 'run', runId: r.runId };
   if (r.kind === 'new-run' && typeof r.ticketId === 'string' && /^\d{1,12}$/.test(r.ticketId) && (r.source === 'azure' || r.source === 'github')) {
     return { kind: 'new-run', ticketId: r.ticketId, source: r.source, ...(typeof r.repoDir === 'string' ? { repoDir: r.repoDir.slice(0, 1024) } : {}) };
+  }
+  if (r.kind === 'page' && typeof r.page === 'string' && PAGES.has(r.page)) {
+    return { kind: 'page', page: r.page, ...(typeof r.repo === 'string' && /^[\w.-]{1,80}$/.test(r.repo) ? { repo: r.repo } : {}) };
   }
   return undefined;
 }

@@ -733,5 +733,7 @@ export type ServerMessage =
   | { type: "aiSetupDeleted"; id: string }
   /** A trophy just unlocked. */
   | { type: "achievement"; achievement: AchievementView }
+  /** Coins came in (or went out): what for, and the balance after. */
+  | { type: "coins"; delta: number; balance: number; reason: string }
   /** The 3D office, in its own window, asks the Nexura window the user last used to show this page. */
   | { type: "open"; path: string[]; queryParams?: Record<string, string> };

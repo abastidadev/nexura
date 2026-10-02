@@ -4,7 +4,7 @@
 // it with the same code as a CLI's (world/laptop.ts, paintScreen).
 import { FLAG_BOLD, RGB_FLAG, type Run, type WorkerInfo } from '../../shared/protocol';
 import type { NexuraScreen, NexuraStepStatus } from '../../shared/nexura-screen';
-import type { ScreenState } from '../world/laptop';
+import type { ScreenState } from '../state/store';
 
 const COLS = 64;
 const ROWS = 22;
