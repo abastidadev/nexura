@@ -56,12 +56,6 @@ export class RunView {
 
   /** The diff of the run's branches over the pipeline / inspector / aside grid. */
   protected readonly showChanges = linkedSignal<string, boolean>({ source: this.id, computation: () => false });
-  /** Read the diff again whenever a step ends or the run pauses / finishes. */
-  protected readonly changesVersion = computed(() => {
-    const run = this.run();
-    return run ? `${run.steps.length}:${run.steps.at(-1)?.status ?? ""}:${run.status}` : "";
-  });
-
   protected readonly planned = computed(() => {
     const run = this.run();
     return run ? plannedSteps(run, this.store.config()) : [];

@@ -160,7 +160,7 @@
   }
 
   @if (showChanges() && !(terminal() && terminalMaximized())) {
-    <nx-run-changes class="min-h-0 flex-1" [runId]="run.id" [version]="changesVersion()" (closed)="showChanges.set(false)" />
+    <nx-run-changes class="min-h-0 flex-1" [run]="run" (closed)="showChanges.set(false)" />
   }
   <div
     class="relative grid min-h-0 flex-1"

@@ -724,6 +724,63 @@ describe("Release with a PR (push and PR mocked)", () => {
   });
 });
 
+describe("Changes requested on the diff", () => {
+  const comment = { repo: "sandbox", file: "impl-1.txt", side: "new" as const, startLine: 1, endLine: 1, body: "Renombra esta línea" };
+
+  it("at the PR approval goes back to implement with the comments, then pauses again", async () => {
+    createdPrs.length = 0;
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Con cambios pedidos", release: "pr" }));
+    let pauses = 0;
+    orchestrator.on("message", (message) => {
+      if (message.type === "run" && message.run.id === started.id && message.run.status === "paused" && message.run.pendingStep?.prDrafts) {
+        pauses++;
+        const first = pauses === 1;
+        setImmediate(() => (first ? void orchestrator.requestChanges(started.id, { comments: [comment], note: "Y nada más" }) : orchestrator.continue(started.id)));
+      }
+    });
+    const run = await waitFor(orchestrator, started.id);
+
+    expect(run.status).toBe("done");
+    expect(pauses).toBe(2);
+    expect(run.steps.map((s) => `${s.step}#${s.attempt}`)).toEqual(["implement#1", "qaCode#1", "release#1", "implement#2", "qaCode#2", "release#2"]);
+    const correction = run.steps[3]!.prompt!;
+    expect(correction).toContain("`impl-1.txt:1`");
+    expect(correction).toContain("+implement 1");
+    expect(correction).toContain("Renombra esta línea");
+    expect(correction).toContain("Indicación general: Y nada más");
+    expect(run.requestedChanges).toBeUndefined();
+    // Only the second approval pushed.
+    expect(createdPrs).toHaveLength(1);
+    await orchestrator.cleanup(run.id, true);
+  });
+
+  it("relaunches a finished flow from implement, and refuses what it cannot correct", async () => {
+    const store = new RunStore(":memory:");
+    const orchestrator = new Orchestrator(loadConfig(), store, { concurrency: 1 });
+    const started = orchestrator.start(request({ profile: "minimal", ticketText: "Terminado y corregido" }));
+    const finished = await waitFor(orchestrator, started.id);
+    expect(finished.status).toBe("done");
+
+    await expect(orchestrator.requestChanges(started.id, { comments: [] })).rejects.toThrow("al menos un comentario");
+    await expect(orchestrator.requestChanges(started.id, { comments: [{ ...comment, file: "nope.txt" }] })).rejects.toThrow("no está en el diff");
+    await expect(orchestrator.requestChanges(started.id, { comments: [{ ...comment, startLine: 9, endLine: 9 }] })).rejects.toThrow("no están en el diff");
+
+    const again = waitFor(orchestrator, started.id);
+    await orchestrator.requestChanges(started.id, { comments: [comment] });
+    await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("está trabajando");
+    const run = await again;
+
+    expect(run.status).toBe("done");
+    expect(run.steps.map((s) => `${s.step}#${s.attempt}`)).toEqual(["implement#1", "qaCode#1", "release#1", "implement#2", "qaCode#2", "release#2"]);
+    expect(run.steps[3]!.prompt).toContain("Renombra esta línea");
+    expect(run.requestedChanges).toBeUndefined();
+    await orchestrator.cleanup(run.id, true);
+    await expect(orchestrator.requestChanges(started.id, { comments: [comment] })).rejects.toThrow("worktrees");
+  });
+});
+
 describe("addressReview (provider mocked)", () => {
   it("fixes, commits, pauses with the replies and only pushes and answers after approval", async () => {
     createdPrs.length = 0;

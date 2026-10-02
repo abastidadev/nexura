@@ -1,6 +1,6 @@
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname } from "node:path";
-import type { DiffHunk, DiffLine, FileDiff, PrFileStatus, RepoDiff, Run, RunDiff, Worktree } from "@nexura/shared";
+import type { DiffComment, DiffHunk, DiffLine, FileDiff, PrFileStatus, RepoDiff, Run, RunDiff, Worktree } from "@nexura/shared";
 import { gitRaw, LOCAL_CLAUDE_FILES } from "./git.ts";
 
 /** Lines kept per file and per diff: the UI renders every one of them. */
@@ -183,4 +183,97 @@ export async function runDiff(run: Run, savedFile: string): Promise<RunDiff> {
 export function saveRunDiff(file: string, diff: RunDiff): void {
   mkdirSync(dirname(file), { recursive: true });
   writeFileSync(file, JSON.stringify({ repos: diff.repos.map((repo) => ({ ...repo, source: "saved" })) } satisfies RunDiff));
+}
+
+export const MAX_DIFF_COMMENTS = 50;
+const MAX_COMMENT_LENGTH = 4000;
+/** Lines of code quoted under each comment, at most. */
+const QUOTE_LINES = 12;
+
+/** The diff lines a comment covers, on its side (a removed line has no new number, an added one no old number). */
+export function commentedLines(file: FileDiff, comment: Pick<DiffComment, "side" | "startLine" | "endLine">): DiffLine[] {
+  return file.hunks.flatMap((hunk) =>
+    hunk.lines.filter((line) => {
+      const number = comment.side === "new" ? line.new : line.old;
+      return number !== undefined && number >= comment.startLine && number <= comment.endLine;
+    }),
+  );
+}
+
+/**
+ * Checks the comments of a change request against the diff they were written on: each one
+ * names a file of the diff and lines it shows, with some text. Errors are for the user.
+ */
+export function checkDiffComments(input: unknown, diff: RunDiff): DiffComment[] {
+  if (!Array.isArray(input)) {
+    throw new Error("Faltan los comentarios");
+  }
+  if (input.length > MAX_DIFF_COMMENTS) {
+    throw new Error(`Demasiados comentarios (máximo ${MAX_DIFF_COMMENTS})`);
+  }
+  return input.map((raw: Partial<DiffComment>, index): DiffComment => {
+    const label = `Comentario ${index + 1}`;
+    const body = typeof raw?.body === "string" ? raw.body.trim() : "";
+    if (!body) {
+      throw new Error(`${label}: está vacío`);
+    }
+    if (body.length > MAX_COMMENT_LENGTH) {
+      throw new Error(`${label}: es demasiado largo (máximo ${MAX_COMMENT_LENGTH} caracteres)`);
+    }
+    const file = diff.repos.find((repo) => repo.repo === raw.repo)?.files.find((candidate) => candidate.path === raw.file);
+    if (!file) {
+      throw new Error(`${label}: ${String(raw.repo)}/${String(raw.file)} no está en el diff`);
+    }
+    const side = raw.side === "old" ? "old" : "new";
+    const startLine = Number(raw.startLine);
+    const endLine = Number(raw.endLine ?? raw.startLine);
+    if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine) {
+      throw new Error(`${label}: líneas no válidas`);
+    }
+    const comment = { repo: raw.repo!, file: file.path, side, startLine, endLine, body } satisfies DiffComment;
+    if (commentedLines(file, comment).length === 0) {
+      throw new Error(`${label}: las líneas ${startLine}-${endLine} de ${file.path} no están en el diff (actualízalo y vuelve a comentar)`);
+    }
+    return comment;
+  });
+}
+
+/** A fence longer than any backtick run in the code, so quoted code cannot close it. */
+function fence(text: string): string {
+  const longest = Math.max(0, ...[...text.matchAll(/`+/g)].map((match) => match[0].length));
+  return "`".repeat(Math.max(3, longest + 1));
+}
+
+/**
+ * The user's comments as corrections for implement: where (file and lines), the code they
+ * point at as the diff shows it, and what to change.
+ */
+export function formatChangeRequest(comments: DiffComment[], diff: RunDiff, note?: string): string {
+  const several = new Set(comments.map((comment) => comment.repo)).size > 1 || diff.repos.length > 1;
+  const parts = ["Comentarios del usuario sobre el diff de la rama. Aplícalos todos; si alguno no se puede o no se debe hacer, explícalo en `notes`."];
+  comments.forEach((comment, index) => {
+    const range = comment.endLine > comment.startLine ? `${comment.startLine}-${comment.endLine}` : `${comment.startLine}`;
+    const where = [several ? `repo ${comment.repo}` : "", comment.side === "old" ? "líneas borradas, numeración de la base" : ""].filter(Boolean).join(", ");
+    const file = diff.repos.find((repo) => repo.repo === comment.repo)?.files.find((candidate) => candidate.path === comment.file);
+    const lines = file ? commentedLines(file, comment) : [];
+    const code = lines
+      .slice(0, QUOTE_LINES)
+      .map((line) => (line.kind === "add" ? "+" : line.kind === "del" ? "-" : " ") + line.text)
+      .concat(lines.length > QUOTE_LINES ? ["…"] : [])
+      .join("\n");
+    const marks = fence(code);
+    parts.push(
+      [
+        `${index + 1}. \`${comment.file}:${range}\`${where ? ` (${where})` : ""}`,
+        code ? `${marks}diff\n${code}\n${marks}` : "",
+        comment.body,
+      ]
+        .filter(Boolean)
+        .join("\n"),
+    );
+  });
+  if (note?.trim()) {
+    parts.push(`Indicación general: ${note.trim()}`);
+  }
+  return parts.join("\n\n");
 }

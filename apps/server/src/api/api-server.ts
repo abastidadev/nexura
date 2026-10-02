@@ -6,6 +6,8 @@ import {
   STEP_NAMES,
   TICKET_SOURCES,
   type AgentInfo,
+  type ChangeRequest,
+  type OwnReviewComment,
   type ConversationChange,
   type ConversationImage,
   type ConversationUpdate,
@@ -211,6 +213,10 @@ export function createApiServer(
       throw new HttpError(502, String((error as Error).message));
     }
   });
+  /** The user's comments on the diff go back to implement (at a pause, or relaunching a stopped flow). */
+  route("POST", "/api/runs/:id/request-changes", ([id], body) => orchestrator.requestChanges(requireRun(id!).id, body as ChangeRequest));
+  /** A comment of the user added to a finished PR review, on lines of the PR's diff. */
+  route("POST", "/api/runs/:id/review-comments", ([id], body) => orchestrator.addOwnReviewComment(requireRun(id!).id, body as OwnReviewComment));
   route("POST", "/api/runs/:id/address-review", ([id]) => orchestrator.addressReview(id!));
   route("POST", "/api/runs/:id/cleanup", async ([id], body) => {
     requireRun(id!);

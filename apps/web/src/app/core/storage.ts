@@ -15,3 +15,11 @@ export function writeStorage(key: string, value: unknown): void {
     // Storage unavailable (private mode): the UI still works, it just forgets tabs.
   }
 }
+
+export function removeStorage(key: string): void {
+  try {
+    localStorage.removeItem(key);
+  } catch {
+    // Storage unavailable: nothing was kept.
+  }
+}

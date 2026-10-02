@@ -4,7 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, describe, expect, it } from "vitest";
 import type { Run, Worktree } from "@nexura/shared";
-import { parseNameStatus, parseStatus, parseUnifiedDiff, runDiff, saveRunDiff, worktreeDiff } from "./diff.ts";
+import { checkDiffComments, formatChangeRequest, parseNameStatus, parseStatus, parseUnifiedDiff, runDiff, saveRunDiff, worktreeDiff } from "./diff.ts";
 
 const repo = mkdtempSync(join(tmpdir(), "nexura-diff-"));
 const git = (...args: string[]): string => execFileSync("git", args, { cwd: repo, encoding: "utf8" }).trim();
@@ -124,5 +124,35 @@ describe("runDiff", () => {
 
   it("skips the uncommitted list of a PR checkout (Nexura's own edits)", async () => {
     expect((await runDiff(run([{ ...worktree, detached: true }]), join(dir, "none"))).repos[0]!.uncommitted).toEqual([]);
+  });
+});
+
+describe("change requests", () => {
+  const text = ["diff --git a/f b/f", "@@ -1,3 +1,3 @@", " uno", "-dos ```", "+DOS ```", " tres", ""].join("\n");
+  const diff = { repos: [{ repo: "demo", branch: "b", baseRef: "main", source: "worktree" as const, uncommitted: [], ...parseUnifiedDiff(text, [{ path: "f", status: "modified" }]) }] };
+
+  it("keep comments on lines the diff shows, on either side", () => {
+    const comments = checkDiffComments(
+      [
+        { repo: "demo", file: "f", side: "new", startLine: 2, endLine: 3, body: "  cambia esto  " },
+        { repo: "demo", file: "f", side: "old", startLine: 2, body: "¿por qué se borra?" },
+      ],
+      diff,
+    );
+    expect(comments).toEqual([
+      { repo: "demo", file: "f", side: "new", startLine: 2, endLine: 3, body: "cambia esto" },
+      { repo: "demo", file: "f", side: "old", startLine: 2, endLine: 2, body: "¿por qué se borra?" },
+    ]);
+    expect(() => checkDiffComments([{ repo: "demo", file: "f", side: "new", startLine: 2, endLine: 3, body: " " }], diff)).toThrow("vacío");
+    expect(() => checkDiffComments([{ repo: "otro", file: "f", side: "new", startLine: 2, endLine: 2, body: "x" }], diff)).toThrow("no está en el diff");
+    expect(() => checkDiffComments([{ repo: "demo", file: "f", side: "new", startLine: 3, endLine: 2, body: "x" }], diff)).toThrow("no válidas");
+    expect(() => checkDiffComments({}, diff)).toThrow("Faltan");
+  });
+
+  it("quote the code they point at in a fence the code cannot close", () => {
+    const comments = checkDiffComments([{ repo: "demo", file: "f", side: "old", startLine: 2, endLine: 2, body: "Recupera esto" }], diff);
+    const formatted = formatChangeRequest(comments, diff, " revisa también los tests ");
+    expect(formatted).toContain("1. `f:2` (líneas borradas, numeración de la base)\n````diff\n-dos ```\n````\nRecupera esto");
+    expect(formatted).toContain("Indicación general: revisa también los tests");
   });
 });

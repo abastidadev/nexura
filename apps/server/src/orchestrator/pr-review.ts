@@ -1,6 +1,9 @@
 import {
   PR_REVIEW_SEVERITIES,
   PR_VOTES,
+  type DiffLine,
+  type FileDiff,
+  type OwnReviewComment,
   type PrReviewComment,
   type PrReviewPublish,
   type PrReviewResult,
@@ -226,4 +229,53 @@ export function reviewPosts(result: PrReviewResult, selection: PrReviewPublish["
     }
   }
   return posts;
+}
+
+const MAX_OWN_POST = 4000;
+
+/**
+ * A comment the user writes on new-side lines of the PR's diff, shaped like the reviewer's
+ * so that it is picked, edited and published with them. Its lines must sit inside one hunk:
+ * that is where the forges accept an inline comment.
+ */
+export function ownReviewComment(file: FileDiff, input: OwnReviewComment, id: number): PrReviewComment {
+  const post = typeof input?.post === "string" ? input.post.trim() : "";
+  if (!post) {
+    throw new Error("El comentario está vacío");
+  }
+  if (post.length > MAX_OWN_POST) {
+    throw new Error(`El comentario es demasiado largo (máximo ${MAX_OWN_POST} caracteres)`);
+  }
+  const startLine = Number(input.startLine);
+  const endLine = Number(input.endLine ?? input.startLine);
+  if (!Number.isInteger(startLine) || !Number.isInteger(endLine) || startLine < 1 || endLine < startLine) {
+    throw new Error("Líneas no válidas");
+  }
+  const newSide = (lines: DiffLine[]) => lines.filter((line): line is DiffLine & { new: number } => line.new !== undefined);
+  const hunk = file.hunks
+    .map((candidate) => newSide(candidate.lines))
+    .find((lines) => lines.some((line) => line.new === startLine) && lines.some((line) => line.new === endLine));
+  if (!hunk) {
+    throw new Error(`Las líneas ${startLine}-${endLine} de ${file.path} no están en un mismo bloque del diff`);
+  }
+  const from = Math.max(hunk[0]!.new, startLine - SNIPPET_CONTEXT);
+  const to = Math.min(hunk.at(-1)!.new, endLine + SNIPPET_CONTEXT);
+  const shown = hunk.filter((line) => line.new >= from && line.new <= to);
+  const first = hunk.find((line) => line.new === startLine)!.text;
+  const final = hunk.find((line) => line.new === endLine)!.text.trimEnd();
+  const severity: PrReviewSeverity = PR_REVIEW_SEVERITIES.includes(input.severity as PrReviewSeverity) ? input.severity! : "minor";
+  return {
+    id,
+    severity,
+    file: file.path,
+    startLine,
+    endLine,
+    title: post.split(/\r?\n/)[0]!.trim().slice(0, 80),
+    post,
+    why: "",
+    inline: true,
+    own: true,
+    snippet: { startLine: from, lines: shown.map((line) => line.text), added: shown.filter((line) => line.kind === "add").map((line) => line.new) },
+    anchor: { startOffset: first.length - first.trimStart().length + 1, endOffset: final.length + 1 },
+  };
 }
