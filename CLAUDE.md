@@ -26,7 +26,7 @@ npm run build:web   # ng build (also checks Angular templates)
 npm start           # builds the UI and serves UI + API at http://localhost:4310
 ```
 
-To see the UI or a flow without spending quota, use the `/try-fake` skill.
+To see the UI or a flow without spending quota, use the `/try-fake` skill. `npm run demo` (`scripts/demo.mjs`) starts Nexura and the 3D office in "god mode" to show them off: fresh temporary data (no trophies), a full wallet and the fake agents on a sandbox repo (`fixtures/sandbox.mjs`, shared with `/try-fake`).
 
 ## Quota: never spend tokens without permission
 

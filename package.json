@@ -16,6 +16,7 @@
     "setup:office": "node scripts/setup-office.mjs",
     "start": "npm run build:web && node apps/server/src/cli/cli.ts serve",
     "start:all": "npm run build:web && node scripts/start-all.mjs",
+    "demo": "npm run build:web && npm run build:office && node scripts/demo.mjs",
     "serve:office": "node third_party/agent-office/bin/agent-office.js --host 127.0.0.1 --port 4600",
     "build:office": "npm run build --prefix third_party/agent-office",
     "update:office": "node scripts/update-office.mjs",
