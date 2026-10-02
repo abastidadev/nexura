@@ -24,6 +24,7 @@ const ACTIONS: { value: ReviewReply["action"]; label: string }[] = [
           }
         </span>
         <div class="ml-auto flex gap-2">
+          <button type="button" class="nx-btn nx-btn-sm" (click)="viewChanges.emit()">Ver cambios</button>
           <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="keepLocal.emit()">
             Descartar (sin push ni respuestas)
           </button>
@@ -74,6 +75,8 @@ export class ReviewApproval {
   public readonly busy = input(false);
   public readonly approve = output<ReviewReply[]>();
   public readonly keepLocal = output<void>();
+  /** Open the diff of what is about to be pushed. */
+  public readonly viewChanges = output<void>();
 
   protected readonly actions = ACTIONS;
   protected readonly rows = linkedSignal<ReplyRow[]>(() => this.replies().map((reply) => ({ ...reply, include: true })));

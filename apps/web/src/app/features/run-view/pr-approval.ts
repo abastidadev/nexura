@@ -14,6 +14,7 @@ import { SOURCE_LABELS } from "../new-run/ticket-picker";
         <h2 id="pr-title" class="font-semibold">⇪ Aprobar la PR en {{ providers() }}</h2>
         <span class="text-sm text-fg-soft">Al aprobar se hace <code class="font-mono">git push</code> de la rama y se abre la PR con el ticket enlazado.</span>
         <div class="ml-auto flex gap-2">
+          <button type="button" class="nx-btn nx-btn-sm" (click)="viewChanges.emit()">Ver cambios</button>
           <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy()" (click)="keepLocal.emit()">
             Dejar en local
           </button>
@@ -71,6 +72,8 @@ export class PrApproval {
   public readonly busy = input(false);
   public readonly approve = output<PrDraft[]>();
   public readonly keepLocal = output<void>();
+  /** Open the diff of what is about to be pushed. */
+  public readonly viewChanges = output<void>();
 
   /** Drafts saved before GitHub support have no provider: they were Azure DevOps. */
   protected readonly edited = linkedSignal(() =>

@@ -6,7 +6,6 @@ import {
   modelsFor,
   type AgentKind,
   type Effort,
-  type PrFileStatus,
   type PrReviewerState,
   type PullRequestSummary,
   type Run,
@@ -15,6 +14,7 @@ import { Api, apiError } from "../../core/api";
 import { modelDetail, RUN_STATUS, timeOfDay, type Tone } from "../../core/format";
 import { NexuraStore } from "../../core/nexura-store";
 import { readStorage, writeStorage } from "../../core/storage";
+import { FILE_STATUS } from "../../shared/diff-view";
 import { Icon } from "../../shared/icon";
 import { ModelPicker } from "../../shared/model-picker";
 import { StatusPill } from "../../shared/status-pill";
@@ -24,13 +24,6 @@ const REVIEWER_KEY = "nexura.reviewer";
 const ACTIVE = new Set(["queued", "running", "waiting-rate-limit", "paused"]);
 
 type Reviewer = { agent: AgentKind; model: string; effort: Effort };
-
-const FILE_STATUS: Record<PrFileStatus, { letter: string; label: string; classes: string }> = {
-  added: { letter: "A", label: "Añadido", classes: "bg-ok-soft text-ok" },
-  modified: { letter: "M", label: "Modificado", classes: "bg-info-soft text-info" },
-  deleted: { letter: "D", label: "Borrado", classes: "bg-err-soft text-err" },
-  renamed: { letter: "R", label: "Renombrado", classes: "bg-warn-soft text-warn" },
-};
 
 const REVIEWER_STATE: Record<PrReviewerState, { label: string; tone: Tone }> = {
   approved: { label: "Aprobada", tone: "ok" },

@@ -5,6 +5,7 @@ import { elapsedMs, formatDuration, RUN_STATUS, timeOfDay, type Tone } from "../
 import { NexuraStore } from "../../core/nexura-store";
 import { StatusPill } from "../../shared/status-pill";
 import { EventTimeline } from "../run-view/event-timeline";
+import { RunChanges } from "../run-view/run-changes";
 import { PrReviewCommentCard, SEVERITY } from "./pr-review-comment";
 import { Icon } from "../../shared/icon";
 
@@ -19,7 +20,7 @@ type Draft = { selected: boolean; post: string };
 /** One PR review: live while it runs; then the proposed comments to pick, edit and publish with a vote. */
 @Component({
   selector: "nx-pr-review-view",
-  imports: [StatusPill, EventTimeline, PrReviewCommentCard, Icon],
+  imports: [StatusPill, EventTimeline, PrReviewCommentCard, RunChanges, Icon],
   template: `
     @let target = run().request.prReview;
     <header class="flex flex-wrap items-center gap-3 border-b border-border px-5 py-2.5">
@@ -42,6 +43,18 @@ type Draft = { selected: boolean; post: string };
         </p>
       </div>
       <div class="flex shrink-0 items-center gap-2">
+        @if (run().status !== "queued") {
+          <button
+            type="button"
+            class="nx-btn nx-btn-sm"
+            [class.nx-btn-primary]="showChanges()"
+            [attr.aria-pressed]="showChanges()"
+            title="Diff de la PR revisada"
+            (click)="showChanges.set(!showChanges())"
+          >
+            <nx-icon name="fork" [size]="14" />Cambios
+          </button>
+        }
         @if (active()) {
           <button type="button" class="nx-btn nx-btn-sm" [disabled]="busy() || cancelling()" (click)="cancel()">
             <nx-icon name="stop" [size]="14" />
@@ -73,7 +86,9 @@ type Draft = { selected: boolean; post: string };
       <p class="mx-5 mt-3 rounded-md border border-err/40 bg-err-soft px-3 py-2 text-err" role="alert">{{ message }}</p>
     }
 
-    @if (!review()) {
+    @if (showChanges()) {
+      <nx-run-changes class="min-h-0 flex-1" [runId]="run().id" [version]="run().status" (closed)="showChanges.set(false)" />
+    } @else if (!review()) {
       @if (run().error) {
         <p class="mx-5 mt-3 rounded-md border border-err/40 bg-err-soft px-3 py-2 whitespace-pre-wrap text-err" role="alert">{{ run().error }}</p>
       }
@@ -219,6 +234,9 @@ export class PrReviewView {
   public readonly canRereview = input(true);
   public readonly rereview = output<void>();
   public readonly deleted = output<void>();
+
+  /** The PR's diff in place of the comments (same run: kept while it changes status). */
+  protected readonly showChanges = linkedSignal<string, boolean>({ source: () => this.run().id, computation: () => false });
 
   protected readonly Boolean = Boolean;
   protected readonly timeOfDay = timeOfDay;
